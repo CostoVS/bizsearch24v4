@@ -48,6 +48,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
     }
 
+    if (password.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d])/.test(password)) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.' }, { status: 400 });
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
     
     // Check if user exists

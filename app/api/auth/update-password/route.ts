@@ -16,8 +16,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'This user is not registered in our database. Please double-check the email.' }, { status: 404 });
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters long.' }, { status: 400 });
+    if (password.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d])/.test(password)) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.' }, { status: 400 });
     }
 
     // Save the updated password, reset lock status and failed login counters on successful reset

@@ -33,10 +33,11 @@ export async function POST(req: Request) {
 
     // We would normally generate a secure token and save it to the DB
     // e.g., const resetToken = crypto.randomBytes(32).toString('hex');
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://searchbiz.co.za';
+    const host = req.headers.get('host');
+    const protocol = host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (host ? `${protocol}://${host}` : 'https://searchbiz.co.za');
     const mockResetToken = 'xyz123-reset-token';
     const resetLink = `${baseUrl}/reset-password?email=${encodeURIComponent(email)}&token=${mockResetToken}`;
-    const logoUrl = `${baseUrl}/icon.svg`;
 
     const mailOptions = {
       from: `"SearchBiz.co.za" <${fromEmail}>`,
@@ -46,7 +47,6 @@ export async function POST(req: Request) {
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc;">
           <div style="background-color: #ffffff; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; border-bottom: 3px solid #059669;">
-             <img src="${logoUrl}" alt="SearchBiz Logo" style="width: 48px; height: 48px; margin-bottom: 12px;" />
              <h1 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;">SearchBiz.co.za</h1>
              <p style="color: #059669; margin: 4px 0 0 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">South Africa</p>
           </div>

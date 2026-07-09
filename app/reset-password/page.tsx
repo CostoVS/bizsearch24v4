@@ -45,9 +45,9 @@ function ResetPasswordForm() {
       return;
     }
 
-    if (password.length < 6) {
+    if (password.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d])/.test(password)) {
       setStatus("error");
-      setMessage("Password must be at least 6 characters long.");
+      setMessage("Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.");
       return;
     }
 

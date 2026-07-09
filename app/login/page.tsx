@@ -78,6 +78,11 @@ export default function LoginPage() {
         }
 
         // 1. REGISTRATION FLOW - call server-side API with plan data
+        if (password.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d])/.test(password)) {
+          setErrorMsg("Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.");
+          return;
+        }
+
         const res = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
