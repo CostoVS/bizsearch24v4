@@ -153,7 +153,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/verify-2fa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
+        body: JSON.stringify({ email: normalizedEmail, token: twoFaCode }),
       });
       const data = await res.json();
 
@@ -505,12 +505,17 @@ export default function LoginPage() {
                           )}
                         </button>
                      </div>
-                     <p className="text-[10px] text-emerald-700 mt-2 text-center uppercase font-black tracking-normal leading-normal">
-                       16-Character Compliant Base32 Key
-                     </p>
-                     <p className="text-[9px] text-emerald-600/70 mt-1 text-center font-medium leading-relaxed">
-                       Copy/paste directly into Google Authenticator or scan/manual add. Do not enter old keys with numbers like &quot;0&quot; or &quot;-&quot; hyphens.
-                     </p>
+                     
+                     <div className="text-left bg-white p-3 rounded-lg border border-emerald-100 shadow-sm mt-3 mb-2">
+                        <h3 className="text-xs font-bold text-slate-800 mb-2 border-b border-slate-100 pb-1">Setup Instructions:</h3>
+                        <ol className="text-[11px] text-slate-600 space-y-1.5 list-decimal pl-4 font-medium">
+                          <li>Download <strong>Google Authenticator</strong> from the App Store or Google Play.</li>
+                          <li>Open the app and tap the <strong>+</strong> icon in the bottom right.</li>
+                          <li>Select <strong>Enter a setup key</strong>.</li>
+                          <li>Enter an Account Name (e.g., SearchBiz), paste the 16-character key above into the Key field, and leave it as Time-based.</li>
+                          <li>Tap <strong>Add</strong>. Enter the 6-digit code it generates below.</li>
+                        </ol>
+                     </div>
                   </div>
                 ) : (
                   <div className="bg-slate-50 p-4 rounded-2xl mb-6 border border-slate-200/60 text-center">
