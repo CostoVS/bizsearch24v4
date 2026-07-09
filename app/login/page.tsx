@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogIn, AlertCircle, Eye, EyeOff, ShieldCheck, Key, Smartphone, Copy, Check } from "lucide-react";
+import { SA_PROVINCES } from "@/lib/locations";
+import { CATEGORIES } from "@/lib/categories";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -19,8 +21,15 @@ export default function LoginPage() {
   const [copied, setCopied] = useState(false);
   
   // Premium Tier Registration States
-  const [selectedPlan, setSelectedPlan] = useState<"FREE" | "PREMIUM">("FREE");
+  const [selectedPlan, setSelectedPlan] = useState<"FREE" | "ESSENTIAL" | "PRO" | "SPONSOR">("FREE");
+  const [fullName, setFullName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [phone, setPhone] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [province, setProvince] = useState("Gauteng");
+  const [businessCategory, setBusinessCategory] = useState("Retail Shopping");
+  const [idNumber, setIdNumber] = useState("");
   const [cipcFile, setCipcFile] = useState<any>(null);
   const [sarsFile, setSarsFile] = useState<any>(null);
   const [bankFile, setBankFile] = useState<any>(null);
@@ -62,17 +71,27 @@ export default function LoginPage() {
           return;
         }
 
-        if (selectedPlan === "PREMIUM") {
+        const isPremium = selectedPlan !== "FREE";
+
+        if (isPremium) {
+          if (!fullName.trim()) {
+            setErrorMsg("Full Name is required for paid plan registration.");
+            return;
+          }
+          if (!whatsapp.trim() && !phone.trim()) {
+            setErrorMsg("Please provide at least WhatsApp or Phone details for communication.");
+            return;
+          }
           if (!companyName.trim()) {
-            setErrorMsg("Business Company Name is required for Premium Tier registration.");
+            setErrorMsg("Business Company Name is required for paid plan registration.");
+            return;
+          }
+          if (!idNumber.trim()) {
+            setErrorMsg("Legal ID Number is required for paid plan registration.");
             return;
           }
           if (!cipcFile || !sarsFile || !bankFile || !idFile) {
             setErrorMsg("Please upload all 4 required verification documents (CIPC, SARS, Bank, ID).");
-            return;
-          }
-          if (!debitMandate) {
-            setErrorMsg("You must accept the debit mandate to proceed with Premium Paid registration.");
             return;
           }
         }
@@ -90,12 +109,18 @@ export default function LoginPage() {
             email: normalizedEmail, 
             password,
             plan: selectedPlan,
-            companyName: selectedPlan === "PREMIUM" ? companyName : undefined,
-            cipcDoc: selectedPlan === "PREMIUM" ? cipcFile : undefined,
-            sarsDoc: selectedPlan === "PREMIUM" ? sarsFile : undefined,
-            bankDoc: selectedPlan === "PREMIUM" ? bankFile : undefined,
-            idDoc: selectedPlan === "PREMIUM" ? idFile : undefined,
-            debitMandate: selectedPlan === "PREMIUM" ? debitMandate : undefined
+            fullName: isPremium ? fullName : undefined,
+            whatsapp: isPremium ? whatsapp : undefined,
+            phone: isPremium ? phone : undefined,
+            companyName: isPremium ? companyName : undefined,
+            businessAddress: isPremium ? businessAddress : undefined,
+            province: isPremium ? province : undefined,
+            businessCategory: isPremium ? businessCategory : undefined,
+            idNumber: isPremium ? idNumber : undefined,
+            cipcDoc: isPremium ? cipcFile : undefined,
+            sarsDoc: isPremium ? sarsFile : undefined,
+            bankDoc: isPremium ? bankFile : undefined,
+            idDoc: isPremium ? idFile : undefined
           }),
         });
         const data = await res.json();
@@ -186,7 +211,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex-grow flex items-center justify-center py-20 px-4 sm:px-6 lg:px-8 bg-slate-50 relative">
-      <div className={`w-full relative z-10 transition-all duration-300 ${isRegister && selectedPlan === "PREMIUM" ? "max-w-2xl" : "max-w-md"}`}>
+      <div className={`w-full relative z-10 transition-all duration-300 ${isRegister && selectedPlan !== "FREE" ? "max-w-2xl" : "max-w-md"}`}>
         <div className="bg-white p-10 sm:p-12 rounded-[2rem] shadow-sm border border-slate-100">
           
           {step === "LOGIN" ? (
@@ -260,10 +285,13 @@ export default function LoginPage() {
                       <label className="block text-sm font-bold text-slate-800">
                         Choose Your Directory Tier:
                       </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Free Tier */}
+                      <div className="space-y-3">
+                        {/* Basic Free Tier */}
                         <div 
-                          onClick={() => setSelectedPlan("FREE")}
+                          onClick={() => {
+                            setSelectedPlan("FREE");
+                            setErrorMsg("");
+                          }}
                           className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
                             selectedPlan === "FREE" 
                             ? "border-emerald-600 bg-emerald-50/40 text-emerald-950" 
@@ -272,20 +300,23 @@ export default function LoginPage() {
                         >
                           <div>
                             <div className="flex items-center justify-between font-bold mb-1">
-                              <span>Free Tier</span>
+                              <span>Basic Free Tier</span>
                               <span className="text-emerald-600">R0</span>
                             </div>
                             <p className="text-xs text-slate-500 leading-normal">
-                              Ideal for starting out. Strictly limited to 1 live listing & free placement features.
+                              1 Free unverified ad listing. Ideal for simple entry-level testing.
                             </p>
                           </div>
                         </div>
 
-                        {/* Premium Paid Tier */}
+                        {/* Essential Tier */}
                         <div 
-                          onClick={() => setSelectedPlan("PREMIUM")}
+                          onClick={() => {
+                            setSelectedPlan("ESSENTIAL");
+                            setErrorMsg("");
+                          }}
                           className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
-                            selectedPlan === "PREMIUM" 
+                            selectedPlan === "ESSENTIAL" 
                             ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
                             : "border-slate-200 hover:border-slate-300 text-slate-700"
                           }`}
@@ -293,141 +324,298 @@ export default function LoginPage() {
                           <div>
                             <div className="flex items-center justify-between font-bold mb-1">
                               <span className="flex items-center gap-1.5">
-                                Premium Paid ★
+                                Essential Tier ★
                               </span>
-                              <span className="text-emerald-600">R199/mo</span>
+                              <span className="text-emerald-600">R199.99/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
-                              <div>• Unlimited static hosting & email accounts</div>
-                              <div>• Smart static website included</div>
-                              <div>• Premium SearchBiz.co.za key & 1 listing</div>
-                              <div>• Animated Verified Premium Badge on ads</div>
-                              <div className="pt-1.5 border-t border-slate-100 text-[10px] text-emerald-800 font-bold">
-                                Extras: +R49/mo per additional listing | .co.za domain R99/yr
-                              </div>
+                              <div>• Unlimited Hosting, Unlimited Email Accounts, Smart Static Website</div>
+                              <div>• 1 Verified SearchBiz Listing, Your Own Logins</div>
+                              <div>• .co.za domain registration included at R99 per year</div>
+                              <div>• Extra Verified Listings at R199.00 per listing per month</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Pro Premium Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("PRO");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "PRO" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between font-bold mb-1">
+                              <span className="flex items-center gap-1.5">
+                                Pro Premium Tier ★★
+                              </span>
+                              <span className="text-emerald-600">R9,999.90/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• Everything in Essential Tier included</div>
+                              <div>• Unlimited Premium Ads, 1 Ad Per Area</div>
+                              <div>• Ads always displayed above basic Free tier and Essential tier ads</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Enterprise Sponsor Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("SPONSOR");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "SPONSOR" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between font-bold mb-1">
+                              <span className="flex items-center gap-1.5">
+                                Enterprise Sponsor Tier ★★★
+                              </span>
+                              <span className="text-emerald-600">R100,000.00/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• Everything from Essential & Pro Premium Tiers included</div>
+                              <div>• A dedicated Sponsor Ad, pinned always on top of all other ads</div>
+                              <div>• Included in future company marketing: Facebook, YouTube, TikTok, Instagram, X marketing</div>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Premium Document Upload Area */}
-                      {selectedPlan === "PREMIUM" && (
+                      {/* Document and Details Area for non-free plan selection */}
+                      {selectedPlan !== "FREE" && (
                         <div className="pt-4 mt-2 space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 animate-fadeIn text-slate-800">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 mb-2">
                             South African Business Verification required
                           </h4>
 
                           <div className="space-y-3">
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                Legal Business Registered Name (CIPC/SARS) *
-                              </label>
-                              <input
-                                type="text"
-                                required
-                                placeholder="e.g. Acme Services PTY LTD"
-                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                value={companyName}
-                                onChange={(e) => setCompanyName(e.target.value)}
-                              />
+                            {/* Contact Details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Your Full Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. John Doe"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={fullName}
+                                  onChange={(e) => setFullName(e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  WhatsApp Number *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. 082 123 4567"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={whatsapp}
+                                  onChange={(e) => setWhatsapp(e.target.value)}
+                                />
+                              </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              {/* CIPC File */}
                               <div>
-                                <span className="block font-medium text-slate-600 mb-1">CIPC Registration Doc *</span>
-                                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
-                                  <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    required 
-                                    accept=".pdf,.png,.jpg"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (f) setCipcFile({ name: f.name, size: f.size });
-                                    }} 
-                                  />
-                                  <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
-                                    {cipcFile ? cipcFile.name : "Attach (PDF)"}
-                                  </span>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Phone Number
                                 </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 011 123 4567"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={phone}
+                                  onChange={(e) => setPhone(e.target.value)}
+                                />
                               </div>
-
-                              {/* SARS File */}
                               <div>
-                                <span className="block font-medium text-slate-600 mb-1">SARS Tax Certificate *</span>
-                                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
-                                  <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    required 
-                                    accept=".pdf,.png,.jpg"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (f) setSarsFile({ name: f.name, size: f.size });
-                                    }} 
-                                  />
-                                  <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
-                                    {sarsFile ? sarsFile.name : "Attach (PDF/Img)"}
-                                  </span>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Legal Business Name *
                                 </label>
-                              </div>
-
-                              {/* Bank Proof File */}
-                              <div>
-                                <span className="block font-medium text-slate-600 mb-1">Business Account Proof *</span>
-                                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
-                                  <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    required 
-                                    accept=".pdf,.png,.jpg"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (f) setBankFile({ name: f.name, size: f.size });
-                                    }} 
-                                  />
-                                  <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
-                                    {bankFile ? bankFile.name : "Attach (PDF)"}
-                                  </span>
-                                </label>
-                              </div>
-
-                              {/* ID File */}
-                              <div>
-                                <span className="block font-medium text-slate-600 mb-1">Owner Identification ID *</span>
-                                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
-                                  <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    required 
-                                    accept=".pdf,.png,.jpg"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      if (f) setIdFile({ name: f.name, size: f.size });
-                                    }} 
-                                  />
-                                  <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
-                                    {idFile ? idFile.name : "Attach ID Copy"}
-                                  </span>
-                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Acme Services PTY LTD"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={companyName}
+                                  onChange={(e) => setCompanyName(e.target.value)}
+                                />
                               </div>
                             </div>
 
-                            {/* Monthly Debit Order Mandate Section */}
-                            <div className="pt-2">
-                              <label className="flex items-start gap-2 cursor-pointer p-3 bg-red-50/60 border border-red-100 rounded-xl">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Province *
+                                </label>
+                                <select
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={province}
+                                  onChange={(e) => setProvince(e.target.value)}
+                                >
+                                  {SA_PROVINCES.filter(p => p.slug !== "national").map((prov) => (
+                                    <option key={prov.slug} value={prov.name}>
+                                      {prov.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Business Category *
+                                </label>
+                                <select
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={businessCategory}
+                                  onChange={(e) => setBusinessCategory(e.target.value)}
+                                >
+                                  {CATEGORIES.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                      {cat}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div className="col-span-1 sm:col-span-2">
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  Business Physical Address
+                                </label>
                                 <input
-                                  type="checkbox"
-                                  required
-                                  className="mt-0.5 rounded border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                                  checked={debitMandate}
-                                  onChange={(e) => setDebitMandate(e.target.checked)}
+                                  type="text"
+                                  placeholder="e.g. 123 Jan Smuts Avenue, Rosebank"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  value={businessAddress}
+                                  onChange={(e) => setBusinessAddress(e.target.value)}
                                 />
-                                <div className="text-[10px] text-red-950 font-medium leading-relaxed leading-snug">
-                                  <strong>Accept Debit Mandate (ZAR 199/month):</strong> I hereby issue a formal authorization and legally binding monthly service mandate accepting automated collection of R199.00 inclusive of VAT per month from my legal business bank account, commencing on active review.
+                              </div>
+                            </div>
+
+                            <div className="border-t border-slate-200 pt-3 mt-1">
+                              <span className="block text-[11px] font-bold text-slate-700 mb-2">
+                                Verification Proof Uploads & Details
+                              </span>
+                              <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
+                                Paid tiers are subject to strict administrative verification. You must submit proof of legal compliance (CIPC registration, SARS tax compliance, and Business Bank account proof) plus your legal ID Number.
+                              </p>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Legal ID / Passport Number *
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="e.g. 8901235123081"
+                                    className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                    value={idNumber}
+                                    onChange={(e) => setIdNumber(e.target.value)}
+                                  />
                                 </div>
-                              </label>
+
+                                <div>
+                                  <span className="block font-semibold text-slate-700 mb-1">CIPC Registration Doc *</span>
+                                  <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      required 
+                                      accept=".pdf,.png,.jpg"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) setCipcFile({ name: f.name, size: f.size });
+                                      }} 
+                                    />
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
+                                      {cipcFile ? cipcFile.name : "Attach (PDF)"}
+                                    </span>
+                                  </label>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-3">
+                                <div>
+                                  <span className="block font-semibold text-slate-700 mb-1">SARS Tax Doc *</span>
+                                  <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      required 
+                                      accept=".pdf,.png,.jpg"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) setSarsFile({ name: f.name, size: f.size });
+                                      }} 
+                                    />
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                      {sarsFile ? sarsFile.name : "Attach (PDF/Img)"}
+                                    </span>
+                                  </label>
+                                </div>
+
+                                <div>
+                                  <span className="block font-semibold text-slate-700 mb-1">Business Account Proof *</span>
+                                  <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      required 
+                                      accept=".pdf,.png,.jpg"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) setBankFile({ name: f.name, size: f.size });
+                                      }} 
+                                    />
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                      {bankFile ? bankFile.name : "Attach (PDF)"}
+                                    </span>
+                                  </label>
+                                </div>
+
+                                <div>
+                                  <span className="block font-semibold text-slate-700 mb-1">Owner ID Document Copy *</span>
+                                  <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      required 
+                                      accept=".pdf,.png,.jpg"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) setIdFile({ name: f.name, size: f.size });
+                                      }} 
+                                    />
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                      {idFile ? idFile.name : "Attach ID Copy"}
+                                    </span>
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Info Box */}
+                            <div className="pt-2">
+                              <div className="text-[10px] text-slate-600 leading-normal bg-slate-100 p-3 rounded-xl border border-slate-200">
+                                <strong>Admin Communication & Payment Setup:</strong> Upon submitting your application, you will instantly get a direct chat thread with Nicholaus, the SearchBiz Administrator. Your account is held as PENDING verification until payment is processed and business legitimacy documents are verified.
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -443,6 +631,11 @@ export default function LoginPage() {
                   >
                     {isRegister ? "Create Account" : "Sign In"}
                   </button>
+                  {isRegister && (
+                    <p className="mt-3 text-center text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2.5">
+                      🔒 Password requirement: must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.
+                    </p>
+                  )}
                 </div>
               </form>
               
@@ -453,7 +646,12 @@ export default function LoginPage() {
                     setIsRegister(!isRegister);
                     // Reset field values
                     setSelectedPlan("FREE");
+                    setFullName("");
+                    setWhatsapp("");
+                    setPhone("");
                     setCompanyName("");
+                    setBusinessAddress("");
+                    setIdNumber("");
                     setCipcFile(null);
                     setSarsFile(null);
                     setBankFile(null);

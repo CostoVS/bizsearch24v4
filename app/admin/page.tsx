@@ -1182,82 +1182,97 @@ export default function AdminDashboard() {
             </div>
 
             <div className="space-y-4">
-              {premiumApps.map((app) => (
-                <div key={app.id} className="border border-slate-200 rounded-2xl p-6 bg-slate-50">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/60 pb-4 mb-4">
-                    <div>
+              {premiumApps.map((app) => {
+                const planFormatted = app.plan || "PREMIUM";
+                let priceText = "R199.99 / Month";
+                if (planFormatted === "PRO") priceText = "R9,999.90 / Month";
+                else if (planFormatted === "SPONSOR" || planFormatted === "ENTERPRISE") priceText = "R100,000.00 / Month";
+
+                return (
+                  <div key={app.id} className="border border-slate-200 rounded-2xl p-6 bg-slate-50">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/60 pb-4 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900">{app.companyName}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-200`}>
+                            {planFormatted}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                            app.status === "APPROVED" ? "bg-emerald-100 text-emerald-800" :
+                            app.status === "REJECTED" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
+                          }`}>
+                            {app.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium mt-1">
+                          Applicant: <strong>{app.fullName || "Not Specified"}</strong> • WhatsApp: <strong>{app.whatsapp || "N/A"}</strong> • Phone: <strong>{app.phone || "N/A"}</strong>
+                        </p>
+                        <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                          User Email: <strong>{app.email}</strong> • ID Number: <strong>{app.idNumber || "N/A"}</strong> • Submitted: {new Date(app.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900">{app.companyName}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                          app.status === "APPROVED" ? "bg-emerald-100 text-emerald-800" :
-                          app.status === "REJECTED" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
-                        }`}>
-                          {app.status}
-                        </span>
+                        {app.status === "PENDING" && (
+                          <>
+                            <button
+                              onClick={() => handleRejectPremium(app.id)}
+                              className="px-3.5 py-1.5 border border-slate-300 hover:border-rose-400 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-lg transition"
+                            >
+                              Decline Application
+                            </button>
+                            <button
+                              onClick={() => handleApprovePremium(app.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm"
+                            >
+                              Approve & Update Plan
+                            </button>
+                          </>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500 font-medium mt-1">User Email: <strong>{app.email}</strong> • Submitted: {new Date(app.createdAt).toLocaleString()}</p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {app.status === "PENDING" && (
-                        <>
-                          <button
-                            onClick={() => handleRejectPremium(app.id)}
-                            className="px-3.5 py-1.5 border border-slate-300 hover:border-rose-400 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-lg transition"
-                          >
-                            Decline Application
-                          </button>
-                          <button
-                            onClick={() => handleApprovePremium(app.id)}
-                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm"
-                          >
-                            Approve & Update Plan
-                          </button>
-                        </>
-                      )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
+                        <div className="truncate">
+                          <p className="font-bold text-slate-500 text-[10px] uppercase">CIPC Registration</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.cipcDoc?.name || app.cipcDoc || "Attached"}</p>
+                        </div>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
+                        <div className="truncate">
+                          <p className="font-bold text-slate-500 text-[10px] uppercase">SARS Letter Copy</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.sarsDoc?.name || app.sarsDoc || "Attached"}</p>
+                        </div>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
+                        <div className="truncate">
+                          <p className="font-bold text-slate-500 text-[10px] uppercase">Bank Verification</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.bankDoc?.name || app.bankDoc || "Attached"}</p>
+                        </div>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
+                        <div className="truncate">
+                          <p className="font-bold text-slate-500 text-[10px] uppercase">Owner Photo ID</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.idDoc?.name || app.idDoc || "Attached"}</p>
+                        </div>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-950">Debit Order mandate amount authorized</span>
+                      <span className="text-xs font-bold text-emerald-700">{priceText} / Month (ZAR)</span>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
-                      <div className="truncate">
-                        <p className="font-bold text-slate-500 text-[10px] uppercase">CIPC Registration</p>
-                        <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.cipcDoc?.name || app.cipcDoc || "Attached"}</p>
-                      </div>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
-                      <div className="truncate">
-                        <p className="font-bold text-slate-500 text-[10px] uppercase">SARS Letter Copy</p>
-                        <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.sarsDoc?.name || app.sarsDoc || "Attached"}</p>
-                      </div>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
-                      <div className="truncate">
-                        <p className="font-bold text-slate-500 text-[10px] uppercase">Bank Verification</p>
-                        <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.bankDoc?.name || app.bankDoc || "Attached"}</p>
-                      </div>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
-                      <div className="truncate">
-                        <p className="font-bold text-slate-500 text-[10px] uppercase">Owner Photo ID</p>
-                        <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.idDoc?.name || app.idDoc || "Attached"}</p>
-                      </div>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-emerald-950">Debit Order mandate amount authorized</span>
-                    <span className="text-xs font-bold text-emerald-700">R199.00 / Month (ZAR)</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
               {premiumApps.length === 0 && !isAppLoading && (
                 <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">

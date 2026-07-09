@@ -53,15 +53,16 @@ export async function POST(req: NextRequest) {
     apps[appIndex].status = status;
     saveApplications(apps);
 
-    // If status is APPROVED, let's make sure the user's plan is updated to PREMIUM on server!
+    // If status is APPROVED, let's make sure the user's plan is updated on server!
     if (status === "APPROVED") {
       const email = apps[appIndex].email;
+      const appliedPlan = apps[appIndex].plan || "PREMIUM";
       const allUsers = await getUsersList();
       const user = allUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
       if (user) {
-        user.plan = "PREMIUM";
+        user.plan = appliedPlan;
         await saveUser(user);
-        console.log(`User ${email} successfully upgraded to PREMIUM via application approval.`);
+        console.log(`User ${email} successfully upgraded to ${appliedPlan} via application approval.`);
       }
     }
 

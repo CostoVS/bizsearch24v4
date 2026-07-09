@@ -6,12 +6,12 @@ type User = {
   id: string;
   email: string;
   role: "ADMIN" | "USER";
-  plan: "FREE" | "PREMIUM";
+  plan: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR";
 };
 
 type AuthContextType = {
   user: User | null;
-  login: (email: string, role?: "ADMIN" | "USER", plan?: "FREE" | "PREMIUM") => void;
+  login: (email: string, role?: "ADMIN" | "USER", plan?: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR") => void;
   logout: () => void;
   isLoading: boolean;
 };
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(false);
   }, [user]);
 
-  const login = (email: string, role: "ADMIN" | "USER" = "USER", plan: "FREE" | "PREMIUM" = "FREE") => {
+  const login = (email: string, role: "ADMIN" | "USER" = "USER", plan: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR" = "FREE") => {
     const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com";
     const resolvedRole = isOwnerAdmin ? "ADMIN" : role;
     const resolvedPlan = isOwnerAdmin ? "PREMIUM" : plan;

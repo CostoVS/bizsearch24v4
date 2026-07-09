@@ -30,13 +30,88 @@ function saveIpBinding(ip: string, email: string) {
   }
 }
 
+// Helper to inject a system message into the shared storage (db.json and drizzle PG if available)
+async function createVerificationSystemMessage(normalizedEmail: string, fullName: string, plan: string, companyName: string, idNumber: string) {
+  try {
+    const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
+    let storageData: any = { messages: [] };
+    
+    // 1. Read local storage
+    if (fs.existsSync(JSON_PATH)) {
+      try {
+        storageData = JSON.parse(fs.readFileSync(JSON_PATH, 'utf-8')) || { messages: [] };
+      } catch (e) {}
+    }
+    
+    if (!storageData.messages) storageData.messages = [];
+    
+    // 2. Generate new message
+    const adminEmail = "nicholauscostochetty@gmail.com";
+    const planFormatted = plan.toUpperCase();
+    let priceText = "R199.99/month";
+    if (planFormatted === "PRO") priceText = "R9,999.90/month";
+    if (planFormatted === "SPONSOR") priceText = "R100,000.00/month";
+
+    const newMessage = {
+      id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(7),
+      threadId: `thread-${normalizedEmail}`,
+      adId: "system",
+      adTitle: "SearchBiz Account Verification",
+      senderEmail: adminEmail,
+      senderName: "SearchBiz Admin (Nicholaus)",
+      recipientEmail: normalizedEmail,
+      content: `Hi ${fullName || 'there'},\n\nThank you for choosing the **${planFormatted} Tier**! I have received your registration details for your business **${companyName}**.\n\nTo approve your account and launch your premium benefits, please provide proof of your business: **CIPC registration, SARS tax certificate, Business Bank account proof, and your ID Number (${idNumber || 'Not specified'})**.\n\nPlease reply here or WhatsApp me at **075 161 3007** once payments of **${priceText}** are settled so we can finalize verification!\n\nBest regards,\nNicholaus\nSearchBiz Admin`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    
+    storageData.messages.push(newMessage);
+    storageData.updatedAt = Date.now();
+    
+    // 3. Write back to file
+    fs.writeFileSync(JSON_PATH, JSON.stringify(storageData, null, 2), 'utf-8');
+    
+    // 4. Also sync to database if active
+    try {
+      const { db: dClient, initDb } = require('@/lib/db');
+      initDb();
+      if (dClient) {
+        const { storage: storageTable } = require('@/lib/db/schema');
+        const { eq } = require('drizzle-orm');
+        const record = await dClient.select().from(storageTable).where(eq(storageTable.key, 'main')).limit(1);
+        if (record && record.length > 0) {
+          const dbParsed = JSON.parse(record[0].data);
+          if (dbParsed) {
+            if (!dbParsed.messages) dbParsed.messages = [];
+            dbParsed.messages.push(newMessage);
+            dbParsed.updatedAt = Date.now();
+            await dClient.update(storageTable).set({ data: JSON.stringify(dbParsed, null, 2) }).where(eq(storageTable.key, 'main'));
+          }
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Could not sync message to pg database, local file saved successfully:", dbErr);
+    }
+    
+  } catch (err) {
+    console.error("Failed to inject auto direct chat verification message:", err);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { 
       email, 
       password, 
       plan, 
+      fullName,
+      whatsapp,
+      phone,
       companyName, 
+      businessAddress,
+      province,
+      businessCategory,
+      idNumber,
       cipcDoc, 
       sarsDoc, 
       bankDoc, 
@@ -74,17 +149,23 @@ export async function POST(req: Request) {
       }
     }
 
-    const isPremium = plan === "PREMIUM";
+    const isPremium = plan && plan !== "FREE";
 
     if (isPremium) {
+      if (!fullName?.trim()) {
+        return NextResponse.json({ error: "Registrations for paid tiers require your Full Name." }, { status: 400 });
+      }
+      if (!whatsapp?.trim() && !phone?.trim()) {
+        return NextResponse.json({ error: "Paid tiers require at least WhatsApp or Phone details for admin communication." }, { status: 400 });
+      }
       if (!companyName?.trim()) {
-        return NextResponse.json({ error: "Premium registrations require a valid business company name." }, { status: 400 });
+        return NextResponse.json({ error: "Paid tier registrations require a valid business/company name." }, { status: 400 });
+      }
+      if (!idNumber?.trim()) {
+        return NextResponse.json({ error: "Paid tier registrations require your ID Number." }, { status: 400 });
       }
       if (!cipcDoc || !sarsDoc || !bankDoc || !idDoc) {
-        return NextResponse.json({ error: "Premium registrations require uploading CIPC, SARS, Business Account, and ID Documents." }, { status: 400 });
-      }
-      if (!debitMandate) {
-        return NextResponse.json({ error: "You must accept the debit per month mandate to register for the Premium plan." }, { status: 400 });
+        return NextResponse.json({ error: "Paid tier registrations require uploading CIPC, SARS, Business Account, and ID Documents." }, { status: 400 });
       }
     }
 
@@ -96,7 +177,7 @@ export async function POST(req: Request) {
       email: normalizedEmail,
       password: password,
       role: 'USER' as const,
-      plan: isPremium ? 'PREMIUM' as const : 'FREE' as const,
+      plan: 'FREE' as const, // All accounts initially registered as FREE until admin approves
       secretKey: generatedSecret,
       hasSetup2FA: false,
     };
@@ -121,13 +202,19 @@ export async function POST(req: Request) {
       const newApplication = {
         id: 'app-' + Date.now(),
         email: normalizedEmail,
+        plan: plan, // "ESSENTIAL", "PRO", or "SPONSOR"
+        fullName: fullName.trim(),
+        whatsapp: whatsapp ? whatsapp.trim() : '',
+        phone: phone ? phone.trim() : '',
         companyName: companyName.trim(),
+        businessAddress: businessAddress ? businessAddress.trim() : '',
+        province: province || 'Gauteng',
+        businessCategory: businessCategory || 'Retail',
+        idNumber: idNumber.trim(),
         cipcDoc: cipcDoc.name || 'CIPC_Doc.pdf',
         sarsDoc: sarsDoc.name || 'SARS_Doc.pdf',
         bankDoc: bankDoc.name || 'BankAccount_Doc.pdf',
         idDoc: idDoc.name || 'Identification_ID.pdf',
-        debitMandateAccepted: true,
-        mandateAmountZar: 199.00,
         status: 'PENDING',
         createdAt: new Date().toISOString()
       };
@@ -138,6 +225,9 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("Failed to write to premium applications store:", e);
       }
+
+      // Auto-inject system message in Direct Chat
+      await createVerificationSystemMessage(normalizedEmail, fullName.trim(), plan, companyName.trim(), idNumber.trim());
 
       // Relay submission details securely to business owner email
       try {
@@ -158,41 +248,65 @@ export async function POST(req: Request) {
         const mailOptions = {
           from: `"SearchBiz System" <${process.env.SMTP_USER || "mailsearchbiz@gmail.com"}>`,
           to: "mailsearchbiz@gmail.com",
-          subject: `🚨 [PREMIUM SIGNUP SPECIAL] New Verification Submission from ${normalizedEmail}`,
+          subject: `🚨 [PREMIUM SIGNUP SPECIAL] New Verification Submission (${plan}) from ${normalizedEmail}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; color: #1e293b;">
-              <h2 style="color: #052e22; font-size: 20px; border-b: 2px solid #052e22; padding-bottom: 12px; margin-top: 0;">New Premium Registration Application</h2>
+              <h2 style="color: #052e22; font-size: 20px; border-b: 2px solid #052e22; padding-bottom: 12px; margin-top: 0;">New Premium Registration Application (${plan})</h2>
               <p>Hello SearchBiz Admin,</p>
-              <p>A new user has signed up for the Premium Plan (<strong>R199 per month</strong>) and submitted verification documents.</p>
+              <p>A new user has signed up for the <strong>${plan} Plan</strong> and submitted verification documents.</p>
               
               <table style="width: 100%; border-collapse: collapse; margin: 18px 0;">
                 <tr style="background-color: #f8fafc;">
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">User Full Name:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${fullName}</td>
+                </tr>
+                <tr>
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">User Email:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0;">${normalizedEmail}</td>
                 </tr>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">WhatsApp:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${whatsapp || 'N/A'}</td>
+                </tr>
                 <tr>
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Phone:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${phone || 'N/A'}</td>
+                </tr>
+                <tr style="background-color: #f8fafc;">
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Business Name:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0;">${companyName}</td>
                 </tr>
+                <tr>
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Business Address:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${businessAddress || 'N/A'}</td>
+                </tr>
                 <tr style="background-color: #f8fafc;">
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Province:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${province}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Category:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${businessCategory}</td>
+                </tr>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">ID Number:</td>
+                  <td style="padding: 10px; border: 1px solid #e2e8f0;">${idNumber}</td>
+                </tr>
+                <tr>
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">CIPC Proof:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0; color: #16a34a; font-family: monospace;">${cipcDoc.name || 'Attached CIPC Doc'}</td>
                 </tr>
-                <tr>
+                <tr style="background-color: #f8fafc;">
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">SARS Copy:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0; color: #16a34a; font-family: monospace;">${sarsDoc.name || 'Attached SARS Doc'}</td>
                 </tr>
-                <tr style="background-color: #f8fafc;">
+                <tr>
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Bank Statement:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0; color: #16a34a; font-family: monospace;">${bankDoc.name || 'Attached Bank Doc'}</td>
                 </tr>
-                <tr>
+                <tr style="background-color: #f8fafc;">
                   <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Identification ID:</td>
                   <td style="padding: 10px; border: 1px solid #e2e8f0; color: #16a34a; font-family: monospace;">${idDoc.name || 'Attached ID Doc'}</td>
-                </tr>
-                <tr style="background-color: #f8fafc;">
-                  <td style="padding: 10px; font-weight: bold; border: 1px solid #e2e8f0;">Monthly Debt Mandate:</td>
-                  <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold; color: #dc2626;">ACCEPTED AND SIGNED (${new Date().toLocaleDateString()})</td>
                 </tr>
               </table>
               

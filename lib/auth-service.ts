@@ -12,7 +12,7 @@ export interface ServerUser {
   email: string;
   password?: string;
   role: 'ADMIN' | 'USER';
-  plan: 'FREE' | 'PREMIUM';
+  plan: 'FREE' | 'PREMIUM' | 'ESSENTIAL' | 'PRO' | 'SPONSOR';
   secretKey: string;
   hasSetup2FA: boolean;
   createdAt?: string;
@@ -109,7 +109,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
             email: u.email,
             password: u.password || '',
             role: (u.role as 'ADMIN' | 'USER') || 'USER',
-            plan: (u.plan as 'FREE' | 'PREMIUM') || 'FREE',
+            plan: (u.plan as 'FREE' | 'PREMIUM' | 'ESSENTIAL' | 'PRO' | 'SPONSOR') || 'FREE',
             secretKey: u.secretKey || getDeterministicSecretKey(u.email),
             hasSetup2FA: u.hasSetup2FA || false,
             failedAttempts: backup ? (backup.failedAttempts || 0) : 0,
