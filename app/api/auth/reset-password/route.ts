@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const fromEmail = (process.env.FROM_EMAIL || 'mail@searchbiz.co.za').trim();
 
     // Fallback directly to the user's Gmail app password, and clean up any whitespace/spaces
-    const rawSmtpPass = process.env.SMTP_PASS || 'feqn hfps huhn kjhh';
+    const rawSmtpPass = process.env.SMTP_PASS || 'ygrv hhqi hdhi bxwt';
     const smtpPass = rawSmtpPass.replace(/\s+/g, ''); // Google app passwords are 16 letters with no spaces
 
     const transporterConfig = {
