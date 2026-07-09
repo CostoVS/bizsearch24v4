@@ -1,0 +1,6 @@
+{
+  "name": "SearchBiz",
+  "description": "Modern business listings website for South Africa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

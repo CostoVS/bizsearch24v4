@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Allow: /directory
+Allow: /posts
+Disallow: /admin
+Disallow: /dashboard
+
+Sitemap: https://searchbiz.co.za/sitemap.xml

@@ -1,0 +1,6 @@
+export interface Message { id: string; senderId: string; senderName: string; receiverId: string; receiverName: string; content: string; timestamp: string; read: boolean; adId?: string; adTitle?: string; } 
+export const getMessages = (): Message[] => { if (typeof window === "undefined") return []; const stored = localStorage.getItem("searchbiz_messages"); return stored ? JSON.parse(stored) : []; }; 
+export const saveMessages = (msgs: Message[]) => { if (typeof window !== "undefined") { localStorage.setItem("searchbiz_messages", JSON.stringify(msgs)); } }; 
+export const sendMessage = (msg: Omit<Message, "id" | "timestamp" | "read">) => { const msgs = getMessages(); const newMsg: Message = { ...msg, id: Date.now().toString() + Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString(), read: false }; saveMessages([...msgs, newMsg]); return newMsg; }; 
+export const markAsRead = (messageId: string) => { const msgs = getMessages(); const updated = msgs.map(m => m.id === messageId ? { ...m, read: true } : m); saveMessages(updated); }; 
+export const deleteMessage = (messageId: string) => { const msgs = getMessages(); const updated = msgs.filter(m => m.id !== messageId); saveMessages(updated); };
