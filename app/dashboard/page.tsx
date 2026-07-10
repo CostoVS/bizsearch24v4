@@ -11,6 +11,7 @@ import {
   Trash2
 } from "lucide-react";
 import { getLocalProfile, saveLocalProfile, UserProfile } from "@/lib/profile-utils";
+import { CATEGORIES } from "@/lib/categories";
 
 interface UploadReport {
   filename: string;
@@ -44,8 +45,58 @@ export default function UserDashboard() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Password Change State
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!user) return;
+
+    if (newPassword.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d])/.test(newPassword)) {
+      setPasswordError("Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Confirm password does not match.");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await fetch("/api/auth/update-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          password: newPassword,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setPasswordSuccess("Your password has been changed successfully!");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        setPasswordError(data.error || "Failed to change password. Please try again.");
+      }
+    } catch (err) {
+      setPasswordError("A server communication error occurred.");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -55,8 +106,14 @@ export default function UserDashboard() {
 
   useEffect(() => {
     if (user) {
-      // Fetch user profile
-      const userProfile = getLocalProfile(user.id, user.email);
+      // Fetch user profile with automatic sync of registration details
+      const userProfile = getLocalProfile(user.id, user.email, {
+        fullName: user.fullName || "",
+        businessName: user.businessName || "",
+        address: user.address || "",
+        category: user.businessCategory || "",
+        phoneNumber: user.phone || ""
+      });
       Promise.resolve().then(() => {
         setProfile(userProfile);
       });
@@ -669,6 +726,21 @@ export default function UserDashboard() {
                       className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Business Category</label>
+                    <select
+                      value={profile.category || ""}
+                      onChange={(e) => setProfile(prev => prev ? { ...prev, category: e.target.value } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-semibold text-slate-800 transition"
+                    >
+                      <option value="">Select Category</option>
+                      {CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">CIPC Registration Number</label>
                     <input
@@ -840,6 +912,68 @@ export default function UserDashboard() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* SECTION F: SECURITY & PASSWORD MANAGEMENT */}
+              <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6">
+                <div className="border-b border-slate-100 pb-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Security & Password Management</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-slate-400" /> New Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+                  <div className="text-xs text-slate-500 max-w-md font-medium leading-normal">
+                    🔒 Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={handleChangePassword}
+                    disabled={changingPassword}
+                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-black text-xs px-6 py-3 rounded-xl transition uppercase tracking-widest shadow-md inline-flex items-center justify-center gap-2"
+                  >
+                    {changingPassword ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                    Change Password
+                  </button>
+                </div>
+
+                {passwordError && (
+                  <div className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-3 animate-fade-in">
+                    ⚠️ {passwordError}
+                  </div>
+                )}
+
+                {passwordSuccess && (
+                  <div className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-xl p-3 animate-fade-in">
+                    ✅ {passwordSuccess}
+                  </div>
+                )}
               </div>
 
               {/* Floating or fixed Action save confirmation button */}

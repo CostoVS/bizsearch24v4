@@ -159,12 +159,23 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
+    // Validation for all plans (required for new users upon registration)
+    if (!fullName?.trim()) {
+      return NextResponse.json({ error: "Full Name is required for registration." }, { status: 400 });
+    }
+    if (!companyName?.trim()) {
+      return NextResponse.json({ error: "Business/company name is required for registration." }, { status: 400 });
+    }
+    if (!businessAddress?.trim()) {
+      return NextResponse.json({ error: "Business physical address is required for registration." }, { status: 400 });
+    }
+    if (!businessCategory?.trim()) {
+      return NextResponse.json({ error: "Business category is required for registration." }, { status: 400 });
+    }
+
     const isPremium = plan && plan !== "FREE";
 
     if (isPremium) {
-      if (!fullName?.trim()) {
-        return NextResponse.json({ error: "Registrations for paid tiers require your Full Name." }, { status: 400 });
-      }
       if (whatsapp) {
         const cleanWhatsapp = whatsapp.replace(/[\s\-\(\)]/g, "");
         if (!saPhoneRegex.test(cleanWhatsapp)) {
@@ -172,9 +183,6 @@ export async function POST(req: Request) {
             error: "Invalid WhatsApp Number. If provided, it must be a valid South African phone number (e.g., 0821231234 or +27821231234)." 
           }, { status: 400 });
         }
-      }
-      if (!companyName?.trim()) {
-        return NextResponse.json({ error: "Paid tier registrations require a valid business/company name." }, { status: 400 });
       }
       if (!idNumber?.trim()) {
         return NextResponse.json({ error: "Paid tier registrations require your ID Number." }, { status: 400 });
@@ -196,6 +204,10 @@ export async function POST(req: Request) {
       secretKey: generatedSecret,
       hasSetup2FA: false,
       phone: cleanPhone,
+      fullName: fullName.trim(),
+      address: businessAddress.trim(),
+      businessName: companyName.trim(),
+      businessCategory: businessCategory.trim(),
     };
 
     await saveUser(newUser);

@@ -10,6 +10,7 @@ export interface UserProfile {
   whatsappNumber: string;
   email: string;
   displayName: string;
+  category?: string;
   
   // Socials
   tiktok: string;
@@ -50,6 +51,7 @@ export const DEFAULT_PROFILE = (userId: string, email: string): UserProfile => (
   whatsappNumber: "",
   email: email || "",
   displayName: "",
+  category: "",
   
   tiktok: "",
   instagram: "",
@@ -74,21 +76,39 @@ export const DEFAULT_PROFILE = (userId: string, email: string): UserProfile => (
   isPremiumVerified: false,
 });
 
-export function getLocalProfile(userId: string, defaultEmail: string = ""): UserProfile {
+export function getLocalProfile(userId: string, defaultEmail: string = "", extraData?: Partial<UserProfile>): UserProfile {
   if (typeof window === "undefined") return DEFAULT_PROFILE(userId, defaultEmail);
   const stored = localStorage.getItem(`searchbiz_profile_${userId}`);
+  let profile = DEFAULT_PROFILE(userId, defaultEmail);
+  
   if (stored) {
     try {
       const parsed = JSON.parse(stored);
-      return {
-        ...DEFAULT_PROFILE(userId, defaultEmail),
+      profile = {
+        ...profile,
         ...parsed,
       };
     } catch (e) {
-      return DEFAULT_PROFILE(userId, defaultEmail);
+      profile = DEFAULT_PROFILE(userId, defaultEmail);
     }
   }
-  return DEFAULT_PROFILE(userId, defaultEmail);
+
+  if (extraData) {
+    let changed = false;
+    for (const key of Object.keys(extraData) as Array<keyof UserProfile>) {
+      if (extraData[key] !== undefined && extraData[key] !== null && extraData[key] !== "") {
+        if (!profile[key]) {
+          (profile as any)[key] = extraData[key];
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      localStorage.setItem(`searchbiz_profile_${userId}`, JSON.stringify(profile));
+    }
+  }
+
+  return profile;
 }
 
 export function saveLocalProfile(userId: string, profile: UserProfile): void {

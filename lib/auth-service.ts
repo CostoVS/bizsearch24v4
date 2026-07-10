@@ -19,6 +19,10 @@ export interface ServerUser {
   createdAt?: string;
   failedAttempts?: number;
   isLocked?: boolean;
+  fullName?: string;
+  address?: string;
+  businessName?: string;
+  businessCategory?: string;
 }
 
 // Deterministic Base32 Secret Key Generator per User Email
@@ -120,6 +124,10 @@ export async function getUsersList(): Promise<ServerUser[]> {
             phone: backup ? backup.phone : undefined,
             failedAttempts: backup ? (backup.failedAttempts || 0) : 0,
             isLocked: backup ? (backup.isLocked || false) : false,
+            fullName: backup ? backup.fullName : undefined,
+            address: backup ? backup.address : undefined,
+            businessName: backup ? backup.businessName : undefined,
+            businessCategory: backup ? backup.businessCategory : undefined,
           });
         });
       }

@@ -89,23 +89,33 @@ export default function LoginPage() {
           return;
         }
 
+        // Validate generic business profile fields for all plans
+        if (!fullName.trim()) {
+          setErrorMsg("Full Name is required for registration.");
+          return;
+        }
+        if (!companyName.trim()) {
+          setErrorMsg("Business Company Name is required for registration.");
+          return;
+        }
+        if (!businessAddress.trim()) {
+          setErrorMsg("Business Physical Address is required for registration.");
+          return;
+        }
+        if (!businessCategory.trim()) {
+          setErrorMsg("Business Category is required for registration.");
+          return;
+        }
+
         const isPremium = selectedPlan !== "FREE";
 
         if (isPremium) {
-          if (!fullName.trim()) {
-            setErrorMsg("Full Name is required for paid plan registration.");
-            return;
-          }
           if (whatsapp.trim()) {
             const cleanWhatsapp = whatsapp.replace(/[\s\-\(\)]/g, "");
             if (!saPhoneRegex.test(cleanWhatsapp)) {
               setErrorMsg("Invalid WhatsApp Number. If provided, it must be a valid South African phone number starting with +27 or 0 followed by 9 digits.");
               return;
             }
-          }
-          if (!companyName.trim()) {
-            setErrorMsg("Business Company Name is required for paid plan registration.");
-            return;
           }
           if (!idNumber.trim()) {
             setErrorMsg("Legal ID Number is required for paid plan registration.");
@@ -130,13 +140,13 @@ export default function LoginPage() {
             email: normalizedEmail, 
             password,
             plan: selectedPlan,
-            fullName: isPremium ? fullName : undefined,
-            whatsapp: isPremium ? whatsapp : undefined,
+            fullName,
+            companyName,
+            businessAddress,
+            province,
+            businessCategory,
             phone: cleanPhone,
-            companyName: isPremium ? companyName : undefined,
-            businessAddress: isPremium ? businessAddress : undefined,
-            province: isPremium ? province : undefined,
-            businessCategory: isPremium ? businessCategory : undefined,
+            whatsapp: isPremium ? whatsapp : undefined,
             idNumber: isPremium ? idNumber : undefined,
             cipcDoc: isPremium ? cipcFile : undefined,
             sarsDoc: isPremium ? sarsFile : undefined,
@@ -223,7 +233,17 @@ export default function LoginPage() {
             localStorage.setItem("searchbiz_device_registered_email", loginCheckData.user.email);
             document.cookie = `searchbiz_device_registered_email=${loginCheckData.user.email}; path=/; max-age=315360000; SameSite=Lax`;
           }
-          login(loginCheckData.user.email, loginCheckData.user.role, loginCheckData.user.plan);
+          login(
+            loginCheckData.user.email, 
+            loginCheckData.user.role, 
+            loginCheckData.user.plan,
+            loginCheckData.user.id,
+            loginCheckData.user.fullName,
+            loginCheckData.user.address,
+            loginCheckData.user.businessName,
+            loginCheckData.user.businessCategory,
+            loginCheckData.user.phone
+          );
           router.push("/dashboard");
         } else {
           setErrorMsg(loginCheckData.error || "Failed to finalize session.");
@@ -501,135 +521,143 @@ export default function LoginPage() {
                         </div>
                       </div>
 
-                      {/* Document and Details Area for non-free plan selection */}
+                      {/* Business Profile & Categorization - REQUIRED FOR ALL REGISTRATION TIERS */}
+                      <div className="pt-4 mt-2 space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 text-slate-800">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-2 flex items-center gap-1.5">
+                          💼 Business Profile & Details
+                        </h4>
+
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Your Full Name *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. John Doe"
+                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                value={fullName}
+                                onChange={(e) => setFullName(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Legal / Trading Business Name *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. Acme Services PTY LTD"
+                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                value={companyName}
+                                onChange={(e) => setCompanyName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Province *
+                              </label>
+                              <select
+                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                value={province}
+                                onChange={(e) => setProvince(e.target.value)}
+                              >
+                                {SA_PROVINCES.filter(p => p.slug !== "national").map((prov) => (
+                                  <option key={prov.slug} value={prov.name}>
+                                    {prov.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Business Category *
+                              </label>
+                              <select
+                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                value={businessCategory}
+                                onChange={(e) => setBusinessCategory(e.target.value)}
+                              >
+                                {CATEGORIES.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 text-xs">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Business Physical Address *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. 123 Jan Smuts Avenue, Rosebank"
+                                className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                value={businessAddress}
+                                onChange={(e) => setBusinessAddress(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Document and Details Area ONLY for premium/paid plan selection */}
                       {selectedPlan !== "FREE" && (
                         <div className="pt-4 mt-2 space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 animate-fadeIn text-slate-800">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 mb-2">
-                            South African Business Verification required
+                          <h4 className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-2 flex items-center gap-1.5">
+                            🔒 South African Business Verification Required
                           </h4>
 
                           <div className="space-y-3">
-                            {/* Contact Details */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                               <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Your Full Name *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  placeholder="e.g. John Doe"
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={fullName}
-                                  onChange={(e) => setFullName(e.target.value)}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
                                   WhatsApp Number *
                                 </label>
                                 <input
                                   type="text"
                                   required
                                   placeholder="e.g. 082 123 4567"
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
                                   value={whatsapp}
                                   onChange={(e) => setWhatsapp(e.target.value)}
                                 />
                               </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-3 text-xs">
                               <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Legal Business Name *
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                  Legal ID / Passport Number *
                                 </label>
                                 <input
                                   type="text"
                                   required
-                                  placeholder="e.g. Acme Services PTY LTD"
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={companyName}
-                                  onChange={(e) => setCompanyName(e.target.value)}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Province *
-                                </label>
-                                <select
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={province}
-                                  onChange={(e) => setProvince(e.target.value)}
-                                >
-                                  {SA_PROVINCES.filter(p => p.slug !== "national").map((prov) => (
-                                    <option key={prov.slug} value={prov.name}>
-                                      {prov.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Business Category *
-                                </label>
-                                <select
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={businessCategory}
-                                  onChange={(e) => setBusinessCategory(e.target.value)}
-                                >
-                                  {CATEGORIES.map((cat) => (
-                                    <option key={cat} value={cat}>
-                                      {cat}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div className="col-span-1 sm:col-span-2">
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Business Physical Address
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 123 Jan Smuts Avenue, Rosebank"
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={businessAddress}
-                                  onChange={(e) => setBusinessAddress(e.target.value)}
+                                  placeholder="e.g. 8901235123081"
+                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 font-medium"
+                                  value={idNumber}
+                                  onChange={(e) => setIdNumber(e.target.value)}
                                 />
                               </div>
                             </div>
 
                             <div className="border-t border-slate-200 pt-3 mt-1">
                               <span className="block text-[11px] font-bold text-slate-700 mb-2">
-                                Verification Proof Uploads & Details
+                                Verification Proof Uploads
                               </span>
-                              <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-                                Paid tiers are subject to strict administrative verification. You must submit proof of legal compliance (CIPC registration, SARS tax compliance, and Business Bank account proof) plus your legal ID Number.
+                              <p className="text-[10px] text-slate-500 mb-3 leading-relaxed font-medium">
+                                Paid tiers are subject to administrative verification. You must submit proof of legal compliance (CIPC, SARS Tax compliance, Business Bank account proof, and ID copy).
                               </p>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div className="grid grid-cols-2 gap-3 text-xs">
                                 <div>
-                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    Legal ID / Passport Number *
-                                  </label>
-                                  <input
-                                    type="text"
-                                    required
-                                    placeholder="e.g. 8901235123081"
-                                    className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                    value={idNumber}
-                                    onChange={(e) => setIdNumber(e.target.value)}
-                                  />
-                                </div>
-
-                                <div>
-                                  <span className="block font-semibold text-slate-700 mb-1">CIPC Registration Doc *</span>
+                                  <span className="block font-bold text-slate-700 mb-1">CIPC Registration *</span>
                                   <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
                                     <input 
                                       type="file" 
@@ -646,11 +674,9 @@ export default function LoginPage() {
                                     </span>
                                   </label>
                                 </div>
-                              </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-3">
                                 <div>
-                                  <span className="block font-semibold text-slate-700 mb-1">SARS Tax Doc *</span>
+                                  <span className="block font-bold text-slate-700 mb-1">SARS Tax Doc *</span>
                                   <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
                                     <input 
                                       type="file" 
@@ -662,14 +688,16 @@ export default function LoginPage() {
                                         if (f) setSarsFile({ name: f.name, size: f.size });
                                       }} 
                                     />
-                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
                                       {sarsFile ? sarsFile.name : "Attach (PDF/Img)"}
                                     </span>
                                   </label>
                                 </div>
+                              </div>
 
+                              <div className="grid grid-cols-2 gap-3 text-xs mt-3">
                                 <div>
-                                  <span className="block font-semibold text-slate-700 mb-1">Business Account Proof *</span>
+                                  <span className="block font-bold text-slate-700 mb-1">Business Account Proof *</span>
                                   <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
                                     <input 
                                       type="file" 
@@ -681,14 +709,14 @@ export default function LoginPage() {
                                         if (f) setBankFile({ name: f.name, size: f.size });
                                       }} 
                                     />
-                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
                                       {bankFile ? bankFile.name : "Attach (PDF)"}
                                     </span>
                                   </label>
                                 </div>
 
                                 <div>
-                                  <span className="block font-semibold text-slate-700 mb-1">Owner ID Document Copy *</span>
+                                  <span className="block font-bold text-slate-700 mb-1">Owner ID Copy *</span>
                                   <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-lg p-2.5 bg-white cursor-pointer hover:bg-slate-100 transition justify-center">
                                     <input 
                                       type="file" 
@@ -700,7 +728,7 @@ export default function LoginPage() {
                                         if (f) setIdFile({ name: f.name, size: f.size });
                                       }} 
                                     />
-                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[90px]">
+                                    <span className="truncate text-[10px] text-slate-600 font-semibold max-w-[120px]">
                                       {idFile ? idFile.name : "Attach ID Copy"}
                                     </span>
                                   </label>

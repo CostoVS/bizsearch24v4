@@ -7,11 +7,26 @@ type User = {
   email: string;
   role: "ADMIN" | "USER";
   plan: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR";
+  fullName?: string;
+  address?: string;
+  businessName?: string;
+  businessCategory?: string;
+  phone?: string;
 };
 
 type AuthContextType = {
   user: User | null;
-  login: (email: string, role?: "ADMIN" | "USER", plan?: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR") => void;
+  login: (
+    email: string, 
+    role?: "ADMIN" | "USER", 
+    plan?: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR",
+    id?: string,
+    fullName?: string,
+    address?: string,
+    businessName?: string,
+    businessCategory?: string,
+    phone?: string
+  ) => void;
   logout: () => void;
   isLoading: boolean;
 };
@@ -53,16 +68,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(false);
   }, [user]);
 
-  const login = (email: string, role: "ADMIN" | "USER" = "USER", plan: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR" = "FREE") => {
+  const login = (
+    email: string, 
+    role: "ADMIN" | "USER" = "USER", 
+    plan: "FREE" | "PREMIUM" | "ESSENTIAL" | "PRO" | "SPONSOR" = "FREE",
+    id?: string,
+    fullName?: string,
+    address?: string,
+    businessName?: string,
+    businessCategory?: string,
+    phone?: string
+  ) => {
     const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com";
     const resolvedRole = isOwnerAdmin ? "ADMIN" : role;
     const resolvedPlan = isOwnerAdmin ? "PREMIUM" : plan;
 
     const loggedInUser: User = {
-      id: isOwnerAdmin ? "admin-1" : "user-" + Math.random().toString(36).substring(7),
+      id: id || (isOwnerAdmin ? "admin-1" : "user-" + Math.random().toString(36).substring(7)),
       email,
       role: resolvedRole,
       plan: resolvedPlan,
+      fullName,
+      address,
+      businessName,
+      businessCategory,
+      phone,
     };
     
     setUser(loggedInUser);

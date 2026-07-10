@@ -51,12 +51,18 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       user: {
+        id: user.id,
         email: user.email,
         role: user.role,
         plan: user.plan,
         hasSetup2FA: user.hasSetup2FA,
         // Only return secret key to setup if they have not yet enrolled
         secretKey: user.hasSetup2FA ? undefined : user.secretKey,
+        fullName: user.fullName || "",
+        address: user.address || "",
+        businessName: user.businessName || "",
+        businessCategory: user.businessCategory || "",
+        phone: user.phone || "",
       }
     });
 
