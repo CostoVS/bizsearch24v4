@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { saveOtp } from '@/lib/otp-service';
+import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
   try {
@@ -19,23 +20,26 @@ export async function POST(req: Request) {
 
     // Send email via nodemailer
     try {
-      const nodemailer = require("nodemailer");
-      const rawSmtpPass = process.env.SMTP_PASS || "";
+      const smtpHost = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+      const smtpPort = Number(process.env.SMTP_PORT) || 465;
+      const smtpUser = (process.env.SMTP_USER || "mailsearchbiz@gmail.com").trim();
+      const rawSmtpPass = process.env.SMTP_PASS || "ygrv hhqi hdhi bxwt";
       const cleanSmtpPass = rawSmtpPass.replace(/\s+/g, "");
 
       const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp.gmail.com",
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: process.env.SMTP_SECURE === "true",
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
         auth: {
-          user: process.env.SMTP_USER || "mailsearchbiz@gmail.com",
+          user: smtpUser,
           pass: cleanSmtpPass,
         }
       });
 
       const mailOptions = {
-        from: `"SearchBiz Verification" <${process.env.SMTP_USER || "mailsearchbiz@gmail.com"}>`,
+        from: `"SearchBiz Verification" <${smtpUser}>`,
         to: normalizedEmail,
+        replyTo: smtpUser,
         subject: `🔑 [SearchBiz] Your Email Verification Code (Resent): ${otpCode}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; color: #1e293b; margin: 0 auto;">

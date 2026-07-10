@@ -387,6 +387,11 @@ export default function LoginPage() {
                         {showPassword ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
                       </button>
                     </div>
+                    {isRegister && (
+                      <p className="mt-2 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2.5">
+                        🔒 Password requirement: must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.
+                      </p>
+                    )}
                   </div>
 
                   {isRegister && (
@@ -428,9 +433,9 @@ export default function LoginPage() {
                           }`}
                         >
                           <div>
-                            <div className="flex items-center justify-between font-bold mb-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span>Basic Free Tier</span>
-                              <span className="text-emerald-600">R0</span>
+                              <span className="text-emerald-600 shrink-0">R0</span>
                             </div>
                             <p className="text-xs text-slate-500 leading-normal">
                               1 Free unverified ad listing. Ideal for simple entry-level testing.
@@ -451,11 +456,11 @@ export default function LoginPage() {
                           }`}
                         >
                           <div>
-                            <div className="flex items-center justify-between font-bold mb-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
                                 Essential Tier ★
                               </span>
-                              <span className="text-emerald-600">R199.99/mo</span>
+                              <span className="text-emerald-600 shrink-0">R199.99/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Unlimited Hosting, Unlimited Email Accounts, Smart Static Website</div>
@@ -479,11 +484,11 @@ export default function LoginPage() {
                           }`}
                         >
                           <div>
-                            <div className="flex items-center justify-between font-bold mb-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
                                 Pro Premium Tier ★★
                               </span>
-                              <span className="text-emerald-600">R9,999.90/mo</span>
+                              <span className="text-emerald-600 shrink-0">R9,999.90/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Everything in Essential Tier included</div>
@@ -506,11 +511,11 @@ export default function LoginPage() {
                           }`}
                         >
                           <div>
-                            <div className="flex items-center justify-between font-bold mb-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
                                 Enterprise Sponsor Tier ★★★
                               </span>
-                              <span className="text-emerald-600">R100,000.00/mo</span>
+                              <span className="text-emerald-600 shrink-0">R100,000.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Everything from Essential & Pro Premium Tiers included</div>
@@ -756,11 +761,6 @@ export default function LoginPage() {
                   >
                     {isRegister ? "Create Account" : "Sign In"}
                   </button>
-                  {isRegister && (
-                    <p className="mt-3 text-center text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2.5">
-                      🔒 Password requirement: must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.
-                    </p>
-                  )}
                 </div>
               </form>
               
