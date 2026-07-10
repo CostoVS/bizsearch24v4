@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, saveUser } from '@/lib/auth-service';
-import { TOTP } from 'otplib';
+import { TOTP, NobleCryptoPlugin, ScureBase32Plugin, createGuardrails } from 'otplib';
 
 export async function POST(req: Request) {
   try {
@@ -18,6 +18,7 @@ export async function POST(req: Request) {
     const user = await getUserByEmail(normalizedEmail);
 
     if (!user) {
+      console.warn(`[2FA ERROR] User session not found for email: "${normalizedEmail}"`);
       return NextResponse.json({ error: 'User session not found.' }, { status: 404 });
     }
 
@@ -33,8 +34,15 @@ export async function POST(req: Request) {
        });
     }
 
-    // Verify the TOTP token
-    const totp = new TOTP();
+    // Verify the TOTP token using otplib with properly configured plugins and guardrails
+    const totp = new TOTP({
+      crypto: new NobleCryptoPlugin(),
+      base32: new ScureBase32Plugin(),
+      guardrails: createGuardrails({
+        MIN_SECRET_BYTES: 10 // Allow 10-byte decoded keys (like our 16-character base32 secret)
+      })
+    });
+
     const result = await totp.verify(token, { secret: user.secretKey });
     const isValid = result.valid;
     

@@ -73,7 +73,7 @@ function readUsersBackup(): ServerUser[] {
     const parsed = JSON.parse(data);
     
     // Ensure admin exists in list
-    if (!parsed.some((u: ServerUser) => u.email.toLowerCase() === DEFAULT_ADMIN.email.toLowerCase())) {
+    if (!parsed.some((u: ServerUser) => u.email.trim().toLowerCase() === DEFAULT_ADMIN.email.trim().toLowerCase())) {
       parsed.push(DEFAULT_ADMIN);
       fs.writeFileSync(FILE_PATH, JSON.stringify(parsed, null, 2), 'utf-8');
     }
@@ -112,7 +112,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
       const list: ServerUser[] = [];
       if (dbUsers) {
         dbUsers.forEach((u: any) => {
-          const backup = backupUsers.find((b: any) => b.email.toLowerCase() === u.email.toLowerCase());
+          const backup = backupUsers.find((b: any) => b.email.trim().toLowerCase() === u.email.trim().toLowerCase());
           list.push({
             id: String(u.id),
             email: u.email,
@@ -134,7 +134,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
 
       // Add any users that exist in the backup but are not yet synced to the database (so we don't delete them!)
       backupUsers.forEach((backupUser) => {
-        if (!list.some((u) => u.email.toLowerCase() === backupUser.email.toLowerCase())) {
+        if (!list.some((u) => u.email.trim().toLowerCase() === backupUser.email.trim().toLowerCase())) {
           list.push(backupUser);
           
           // Try to sync this missing user back to the DB as a background self-healing action
@@ -167,7 +167,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
 export async function saveUser(newUser: ServerUser): Promise<boolean> {
   // First update backup file
   const fileUsers = readUsersBackup();
-  const existingIndex = fileUsers.findIndex((u: any) => u.email.toLowerCase() === newUser.email.toLowerCase());
+  const existingIndex = fileUsers.findIndex((u: any) => u.email.trim().toLowerCase() === newUser.email.trim().toLowerCase());
   
   const updatedUser = {
     ...newUser,
@@ -221,6 +221,6 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
 export async function getUserByEmail(email: string): Promise<ServerUser | null> {
   const usersList = await getUsersList();
   const lowerEmail = email.trim().toLowerCase();
-  const user = usersList.find((u: any) => u.email.toLowerCase() === lowerEmail);
+  const user = usersList.find((u: any) => u.email.trim().toLowerCase() === lowerEmail);
   return user || null;
 }
