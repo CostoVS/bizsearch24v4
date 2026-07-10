@@ -15,6 +15,7 @@ export interface ServerUser {
   plan: 'FREE' | 'PREMIUM' | 'ESSENTIAL' | 'PRO' | 'SPONSOR';
   secretKey: string;
   hasSetup2FA: boolean;
+  phone?: string;
   createdAt?: string;
   failedAttempts?: number;
   isLocked?: boolean;
@@ -116,6 +117,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
             plan: (u.plan as 'FREE' | 'PREMIUM' | 'ESSENTIAL' | 'PRO' | 'SPONSOR') || 'FREE',
             secretKey: u.secretKey || getDeterministicSecretKey(u.email),
             hasSetup2FA: u.hasSetup2FA || false,
+            phone: backup ? backup.phone : undefined,
             failedAttempts: backup ? (backup.failedAttempts || 0) : 0,
             isLocked: backup ? (backup.isLocked || false) : false,
           });

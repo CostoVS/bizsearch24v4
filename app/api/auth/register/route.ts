@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, saveUser, getDeterministicSecretKey } from '@/lib/auth-service';
+import { saveOtp } from '@/lib/otp-service';
 import fs from 'fs';
 import path from 'path';
 
@@ -149,14 +150,28 @@ export async function POST(req: Request) {
       }
     }
 
+    // Validate South African phone number format
+    const cleanPhone = phone ? phone.replace(/[\s\-\(\)]/g, "") : "";
+    const saPhoneRegex = /^(?:\+27|0)\d{9}$/;
+    if (!phone || !saPhoneRegex.test(cleanPhone)) {
+      return NextResponse.json({ 
+        error: "Invalid Phone Number. Registration requires a valid South African phone number starting with +27 or 0 followed by exactly 9 digits (e.g., 0821231234 or +27821231234)." 
+      }, { status: 400 });
+    }
+
     const isPremium = plan && plan !== "FREE";
 
     if (isPremium) {
       if (!fullName?.trim()) {
         return NextResponse.json({ error: "Registrations for paid tiers require your Full Name." }, { status: 400 });
       }
-      if (!whatsapp?.trim() && !phone?.trim()) {
-        return NextResponse.json({ error: "Paid tiers require at least WhatsApp or Phone details for admin communication." }, { status: 400 });
+      if (whatsapp) {
+        const cleanWhatsapp = whatsapp.replace(/[\s\-\(\)]/g, "");
+        if (!saPhoneRegex.test(cleanWhatsapp)) {
+          return NextResponse.json({ 
+            error: "Invalid WhatsApp Number. If provided, it must be a valid South African phone number (e.g., 0821231234 or +27821231234)." 
+          }, { status: 400 });
+        }
       }
       if (!companyName?.trim()) {
         return NextResponse.json({ error: "Paid tier registrations require a valid business/company name." }, { status: 400 });
@@ -180,9 +195,62 @@ export async function POST(req: Request) {
       plan: 'FREE' as const, // All accounts initially registered as FREE until admin approves
       secretKey: generatedSecret,
       hasSetup2FA: false,
+      phone: cleanPhone,
     };
 
     await saveUser(newUser);
+
+    // Generate 6-digit email OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    saveOtp(normalizedEmail, otpCode);
+
+    console.log(`[EMAIL OTP] Generated verification code ${otpCode} for ${normalizedEmail}`);
+
+    // Send Email Verification OTP
+    try {
+      const nodemailer = require("nodemailer");
+      const rawSmtpPass = process.env.SMTP_PASS || "";
+      const cleanSmtpPass = rawSmtpPass.replace(/\s+/g, "");
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: {
+          user: process.env.SMTP_USER || "mailsearchbiz@gmail.com",
+          pass: cleanSmtpPass,
+        }
+      });
+
+      const mailOptions = {
+        from: `"SearchBiz Verification" <${process.env.SMTP_USER || "mailsearchbiz@gmail.com"}>`,
+        to: normalizedEmail,
+        subject: `🔑 [SearchBiz] Your Email Verification Code: ${otpCode}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; color: #1e293b; margin: 0 auto;">
+            <h2 style="color: #052e22; font-size: 20px; border-bottom: 2px solid #10b981; padding-bottom: 12px; margin-top: 0;">Email Verification Required</h2>
+            <p>Hello,</p>
+            <p>Thank you for registering on SearchBiz.co.za! Please verify your email address to secure your account and complete your 2-step verification setup.</p>
+            
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
+              <p style="margin: 0; font-size: 14px; color: #15803d; font-weight: bold;">YOUR 6-DIGIT VERIFICATION CODE</p>
+              <h1 style="margin: 10px 0 0 0; font-size: 36px; letter-spacing: 6px; color: #047857; font-family: monospace;">${otpCode}</h1>
+            </div>
+            
+            <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
+              This code is valid for 10 minutes. If you did not register for an account on SearchBiz.co.za, please ignore this email.
+            </p>
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+            <p style="font-size: 11px; text-align: center; color: #94a3b8; margin: 0;">&copy; 2026 SearchBiz.co.za. All rights reserved.</p>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`Email OTP successfully sent to ${normalizedEmail}`);
+    } catch (nodemailerErr) {
+      console.warn("Nodemailer OTP relay warning (offline fallback or unconfigured SMTP):", nodemailerErr);
+    }
 
     // Save binding on successful registration
     if (clientIp && clientIp !== '127.0.0.1') {
@@ -331,7 +399,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Registration successful! Proceed to setup 2-Step Verification.',
+      requiresEmailVerify: true,
+      message: 'Registration successful! Please verify your email address first.',
       user: {
         email: newUser.email,
         role: newUser.role,

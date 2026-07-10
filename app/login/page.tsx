@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogIn, AlertCircle, Eye, EyeOff, ShieldCheck, Key, Smartphone, Copy, Check } from "lucide-react";
+import { LogIn, AlertCircle, Eye, EyeOff, ShieldCheck, Key, Smartphone, Copy, Check, Mail } from "lucide-react";
 import { SA_PROVINCES } from "@/lib/locations";
 import { CATEGORIES } from "@/lib/categories";
 
@@ -14,8 +14,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [step, setStep] = useState<"LOGIN" | "2FA">("LOGIN");
+  const [step, setStep] = useState<"LOGIN" | "EMAIL_VERIFY" | "2FA">("LOGIN");
   const [twoFaCode, setTwoFaCode] = useState("");
+  const [emailOtp, setEmailOtp] = useState("");
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [emailResendSuccess, setEmailResendSuccess] = useState("");
   const [secretKey, setSecretKey] = useState("BS24KPGQY567ABCD");
   const [hasSetup2FA, setHasSetup2FA] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -77,6 +81,14 @@ export default function LoginPage() {
           return;
         }
 
+        // Always validate South African phone number format for registration
+        const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
+        const saPhoneRegex = /^(?:\+27|0)\d{9}$/;
+        if (!phone.trim() || !saPhoneRegex.test(cleanPhone)) {
+          setErrorMsg("Invalid Phone Number. Registration requires a valid South African phone number starting with +27 or 0 followed by exactly 9 digits (e.g., 0821231234 or +27821231234).");
+          return;
+        }
+
         const isPremium = selectedPlan !== "FREE";
 
         if (isPremium) {
@@ -84,9 +96,12 @@ export default function LoginPage() {
             setErrorMsg("Full Name is required for paid plan registration.");
             return;
           }
-          if (!whatsapp.trim() && !phone.trim()) {
-            setErrorMsg("Please provide at least WhatsApp or Phone details for communication.");
-            return;
+          if (whatsapp.trim()) {
+            const cleanWhatsapp = whatsapp.replace(/[\s\-\(\)]/g, "");
+            if (!saPhoneRegex.test(cleanWhatsapp)) {
+              setErrorMsg("Invalid WhatsApp Number. If provided, it must be a valid South African phone number starting with +27 or 0 followed by 9 digits.");
+              return;
+            }
           }
           if (!companyName.trim()) {
             setErrorMsg("Business Company Name is required for paid plan registration.");
@@ -117,7 +132,7 @@ export default function LoginPage() {
             plan: selectedPlan,
             fullName: isPremium ? fullName : undefined,
             whatsapp: isPremium ? whatsapp : undefined,
-            phone: isPremium ? phone : undefined,
+            phone: cleanPhone,
             companyName: isPremium ? companyName : undefined,
             businessAddress: isPremium ? businessAddress : undefined,
             province: isPremium ? province : undefined,
@@ -132,11 +147,17 @@ export default function LoginPage() {
         const data = await res.json();
 
         if (res.ok) {
-          // Go to 2FA stage to finish verification setup
           setSecretKey(data.user.secretKey);
           setHasSetup2FA(false);
-          setStep("2FA");
+          
+          if (data.requiresEmailVerify) {
+            setStep("EMAIL_VERIFY");
+          } else {
+            setStep("2FA");
+          }
+          
           if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: "smooth" });
             localStorage.setItem("searchbiz_device_registered_email", normalizedEmail);
             document.cookie = `searchbiz_device_registered_email=${normalizedEmail}; path=/; max-age=315360000; SameSite=Lax`;
           }
@@ -215,6 +236,69 @@ export default function LoginPage() {
     }
   };
 
+  const handleVerifyEmailOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg("");
+    setEmailResendSuccess("");
+    
+    if (!emailOtp.trim()) {
+      setErrorMsg("Please enter the 6-digit verification code sent to your email.");
+      return;
+    }
+    
+    setVerifyingEmail(true);
+    try {
+      const res = await fetch("/api/auth/verify-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          code: emailOtp.trim()
+        })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        // Verification success! Transition to Google 2FA setup.
+        setStep("2FA");
+        // Scroll to top of page as requested
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } else {
+        setErrorMsg(data.error || "Verification failed. Please check the code and try again.");
+      }
+    } catch (err) {
+      setErrorMsg("An error occurred during verification. Please try again.");
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
+  const handleResendEmailOtp = async () => {
+    setErrorMsg("");
+    setEmailResendSuccess("");
+    setResendingEmail(true);
+    try {
+      const res = await fetch("/api/auth/resend-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setEmailResendSuccess("A new 6-digit verification code has been successfully sent to your email address!");
+      } else {
+        setErrorMsg(data.error || "Failed to resend code.");
+      }
+    } catch (err) {
+      setErrorMsg("Failed to resend verification code. Please try again.");
+    } finally {
+      setResendingEmail(false);
+    }
+  };
+
   return (
     <div className="flex-grow flex items-center justify-center py-20 px-4 sm:px-6 lg:px-8 bg-slate-50 relative">
       <div className={`w-full relative z-10 transition-all duration-300 ${isRegister && selectedPlan !== "FREE" ? "max-w-2xl" : "max-w-md"}`}>
@@ -284,6 +368,25 @@ export default function LoginPage() {
                       </button>
                     </div>
                   </div>
+
+                  {isRegister && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-800 mb-2">
+                        South African Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        className="block w-full rounded-xl bg-slate-100 px-4 py-3 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all text-sm border border-transparent focus:border-emerald-500"
+                        placeholder="e.g., 0821231234 or +27821231234"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500 font-medium">
+                        Must be a valid South African format starting with 0 or +27 followed by 9 digits.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Plan Tier Selection Panel - Shown during sign up only */}
                   {isRegister && (
@@ -436,19 +539,7 @@ export default function LoginPage() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  Phone Number
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 011 123 4567"
-                                  className="block w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900"
-                                  value={phone}
-                                  onChange={(e) => setPhone(e.target.value)}
-                                />
-                              </div>
+                            <div className="grid grid-cols-1 gap-3 text-xs">
                               <div>
                                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                                   Legal Business Name *
@@ -669,6 +760,79 @@ export default function LoginPage() {
                   {isRegister ? "Already have an account? Sign In" : "Need an account? Register Now"}
                 </button>
               </div>
+            </>
+          ) : step === "EMAIL_VERIFY" ? (
+            <>
+              <div className="text-center mb-8">
+                <div className="mx-auto w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-6">
+                  <Mail className="w-8 h-8 text-blue-600" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-3">
+                  Verify Your Email
+                </h2>
+                <p className="text-slate-500 font-medium text-sm">
+                  We've sent a 6-digit verification code to <span className="font-semibold text-slate-800">{email}</span>. Please enter it below to proceed.
+                </p>
+              </div>
+
+              {errorMsg && (
+                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 font-medium px-4 py-3 rounded-xl flex items-center text-sm">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  {errorMsg}
+                </div>
+              )}
+
+              {emailResendSuccess && (
+                <div className="mb-6 bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium px-4 py-3 rounded-xl flex items-center text-sm">
+                  <Check className="w-5 h-5 mr-3 flex-shrink-0" />
+                  {emailResendSuccess}
+                </div>
+              )}
+
+              <form className="space-y-6" onSubmit={handleVerifyEmailOtp}>
+                <div>
+                  <label className="block text-center text-sm font-semibold text-slate-800 mb-3">
+                    Verification Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    className="block w-full text-center rounded-xl bg-slate-100 px-4 py-4 text-2xl font-mono tracking-widest text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all border border-transparent focus:border-emerald-500"
+                    placeholder="000000"
+                    value={emailOtp}
+                    onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={verifyingEmail}
+                    className="w-full flex justify-center rounded-xl bg-slate-900 py-3.5 px-4 text-base font-semibold text-white hover:bg-slate-800 focus:outline-none transition-colors disabled:opacity-50"
+                  >
+                    {verifyingEmail ? "Verifying..." : "Verify Code"}
+                  </button>
+                </div>
+
+                <div className="text-center space-y-3">
+                  <button
+                    type="button"
+                    disabled={resendingEmail}
+                    onClick={handleResendEmailOtp}
+                    className="block w-full text-sm font-semibold text-emerald-600 hover:text-emerald-700 transition-colors disabled:opacity-50 inline-block text-center"
+                  >
+                    {resendingEmail ? "Sending Code..." : "Resend Verification Code"}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setStep("LOGIN")} 
+                    className="block w-full text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    Back to Registration
+                  </button>
+                </div>
+              </form>
             </>
           ) : (
             <>
