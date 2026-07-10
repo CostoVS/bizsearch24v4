@@ -5,23 +5,27 @@ import * as schema from './schema';
 let pool: Pool | null = null;
 export let db: ReturnType<typeof drizzle> | null = null;
 export let dbReadyPromise: Promise<boolean> | null = null;
+let isDbOffline = false;
 
 export const initDb = () => {
+  if (isDbOffline) return null;
   if (db) return db;
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     console.warn("DATABASE_URL is not set. Database connection will not be established.");
+    isDbOffline = true;
     return null;
   }
 
   pool = new Pool({
     connectionString,
-    connectionTimeoutMillis: 15000,
+    connectionTimeoutMillis: 2000, // Fast fail in 2 seconds
   });
 
   pool.on('error', (err) => {
     console.error('Unexpected error on idle SQL pool client:', err);
+    isDbOffline = true;
   });
 
   // Self-healing: Ensure tables exist, and keep a promise we can await
@@ -72,7 +76,8 @@ export const initDb = () => {
       console.log("Postgres 'ads' table checked/created successfully.");
       return true;
     } catch (err: any) {
-      console.error("Failed to self-heal/create database tables:", err.message);
+      console.error("Failed to self-heal/create database tables, setting isDbOffline=true:", err.message);
+      isDbOffline = true;
       return false;
     }
   })();

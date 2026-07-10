@@ -338,13 +338,6 @@ export default function LoginPage() {
                 </p>
               </div>
               
-              {errorMsg && (
-                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 font-medium px-4 py-3 rounded-xl flex items-center text-sm">
-                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                  {errorMsg}
-                </div>
-              )}
-              
               <form className="space-y-6" onSubmit={handleFirstStep}>
                 <div className="space-y-4">
                   <div>
@@ -754,13 +747,19 @@ export default function LoginPage() {
                   )}
                 </div>
 
-                <div className="pt-2 pb-4">
+                <div className="pt-2 pb-4 space-y-4">
                   <button
                     type="submit"
                     className="w-full flex justify-center rounded-xl bg-emerald-600 py-3.5 px-4 text-base font-semibold text-white hover:bg-emerald-700 focus:outline-none transition-colors"
                   >
                     {isRegister ? "Create Account" : "Sign In"}
                   </button>
+                  {errorMsg && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 font-semibold px-4 py-3.5 rounded-xl flex items-center text-xs sm:text-sm animate-in fade-in slide-in-from-top-1">
+                      <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 text-rose-600" />
+                      <span className="leading-normal text-left">{errorMsg}</span>
+                    </div>
+                  )}
                 </div>
               </form>
               

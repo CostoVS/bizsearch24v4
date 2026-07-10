@@ -448,6 +448,49 @@ export default function AdminDashboard() {
     console.log("User account has been locked. Access revoked until further manual override.");
   };
 
+  const handleUpdateUserPlan = async (userId: string, newPlan: string) => {
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, plan: newPlan }),
+      });
+      if (res.ok) {
+        setUsers(users.map(u => u.id === userId ? { ...u, plan: newPlan } : u));
+        console.log(`Successfully updated user ${userId} plan to ${newPlan}`);
+      } else {
+        const data = await res.json();
+        alert("Failed to update user plan: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Error communicating with user update server.");
+    }
+  };
+
+  const handleUpdateUserRole = async (userId: string, newRole: string) => {
+    const targetUser = users.find(u => u.id === userId);
+    if (targetUser && targetUser.email?.toLowerCase() === user?.email?.toLowerCase() && newRole !== "ADMIN") {
+      alert("Access Denied: You cannot downgrade your own active administrator role.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, role: newRole }),
+      });
+      if (res.ok) {
+        setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+        console.log(`Successfully updated user ${userId} role to ${newRole}`);
+      } else {
+        const data = await res.json();
+        alert("Failed to update user role: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Error communicating with user update server.");
+    }
+  };
+
   const removeAd = (id: string) => {
     if (confirm("Are you sure you want to remove this advertisement listing?")) {
       const updatedAds = ads.filter(a => a.id !== id);
@@ -1375,11 +1418,33 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap text-sm">
-                        <span className={`px-2.5 py-1 inline-flex text-[10px] uppercase tracking-widest font-extrabold rounded-lg ${
-                          u.plan === 'PREMIUM' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
-                          {u.plan}
-                        </span>
+                        <div className="flex flex-col space-y-1.5">
+                          <div className="flex items-center space-x-1">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase w-10">Plan:</span>
+                            <select
+                              value={u.plan || 'FREE'}
+                              onChange={(e) => handleUpdateUserPlan(u.id, e.target.value)}
+                              className="bg-slate-100 text-slate-800 text-[10px] font-extrabold uppercase tracking-wider rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                            >
+                              <option value="FREE">FREE</option>
+                              <option value="PREMIUM">PREMIUM</option>
+                              <option value="ESSENTIAL">ESSENTIAL</option>
+                              <option value="PRO">PRO</option>
+                              <option value="SPONSOR">SPONSOR</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase w-10">Role:</span>
+                            <select
+                              value={u.role || 'USER'}
+                              onChange={(e) => handleUpdateUserRole(u.id, e.target.value)}
+                              className="bg-slate-100 text-slate-800 text-[10px] font-extrabold uppercase tracking-wider rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                            >
+                              <option value="USER">USER</option>
+                              <option value="ADMIN">ADMIN</option>
+                            </select>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap text-xs text-slate-600 font-mono">
                         <span className="bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200">{u.lastLoginIP}</span>
@@ -1390,7 +1455,15 @@ export default function AdminDashboard() {
                           <MonitorSmartphone className="w-4 h-4 mr-2" />
                           {u.device}
                         </div>
-                        <div className="text-[9px] text-emerald-600 font-bold mt-1">2FA_VERIFIED</div>
+                        {u.hasSetup2FA ? (
+                          <div className="text-[9px] text-emerald-600 font-extrabold mt-1.5 inline-flex items-center bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 uppercase tracking-widest">
+                            ● 2FA Active (Completed)
+                          </div>
+                        ) : (
+                          <div className="text-[9px] text-amber-600 font-extrabold mt-1.5 inline-flex items-center bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">
+                            ○ Pending 2FA (Incomplete)
+                          </div>
+                        )}
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap text-right">
                         {user?.email?.toLowerCase() === u.email?.toLowerCase() ? (
