@@ -45,6 +45,12 @@ export default function LoginPage() {
     localStorage.removeItem("searchbiz_remembered_password");
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [step]);
+
   const handleFirstStep = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");

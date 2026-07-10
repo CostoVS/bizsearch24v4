@@ -27,6 +27,9 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsPageLoading(true);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
     const timer = setTimeout(() => {
       setIsPageLoading(false);
     }, 500);
