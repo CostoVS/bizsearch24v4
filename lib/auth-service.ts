@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { db, initDb } from './db';
+import { db, initDb, dbReadyPromise } from './db';
 import { users } from './db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -99,12 +99,16 @@ export async function getUsersList(): Promise<ServerUser[]> {
   try {
     const dClient = initDb();
     if (dClient) {
+      if (dbReadyPromise) {
+        await dbReadyPromise;
+      }
       const dbUsers = await dClient.select().from(users);
-      if (dbUsers && dbUsers.length > 0) {
-        // Map Drizzle output to ServerUser list, preserving extra fields from our backup file if they exist
-        const list: ServerUser[] = dbUsers.map((u: any) => {
+      
+      const list: ServerUser[] = [];
+      if (dbUsers) {
+        dbUsers.forEach((u: any) => {
           const backup = backupUsers.find((b: any) => b.email.toLowerCase() === u.email.toLowerCase());
-          return {
+          list.push({
             id: String(u.id),
             email: u.email,
             password: u.password || '',
@@ -114,13 +118,34 @@ export async function getUsersList(): Promise<ServerUser[]> {
             hasSetup2FA: u.hasSetup2FA || false,
             failedAttempts: backup ? (backup.failedAttempts || 0) : 0,
             isLocked: backup ? (backup.isLocked || false) : false,
-          };
+          });
         });
-        
-        // Keep file backup aligned with DB
-        writeUsersBackup(list);
-        return list;
       }
+
+      // Add any users that exist in the backup but are not yet synced to the database (so we don't delete them!)
+      backupUsers.forEach((backupUser) => {
+        if (!list.some((u) => u.email.toLowerCase() === backupUser.email.toLowerCase())) {
+          list.push(backupUser);
+          
+          // Try to sync this missing user back to the DB as a background self-healing action
+          dClient.insert(users).values({
+            email: backupUser.email,
+            password: backupUser.password,
+            role: backupUser.role,
+            plan: backupUser.plan,
+            secretKey: backupUser.secretKey || getDeterministicSecretKey(backupUser.email),
+            hasSetup2FA: backupUser.hasSetup2FA || false,
+          }).then(() => {
+            console.log(`Self-healed: Successfully synced missing backup user ${backupUser.email} back to Postgres.`);
+          }).catch((syncErr) => {
+            console.warn(`Self-healing sync for user ${backupUser.email} failed (likely expected if temporary DB issue):`, syncErr.message);
+          });
+        }
+      });
+      
+      // Keep file backup aligned with DB / Merged list
+      writeUsersBackup(list);
+      return list;
     }
   } catch (err) {
     console.warn('Database select failed or offline, falling back to server JSON file:', err);
@@ -151,6 +176,9 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
   try {
     const dClient = initDb();
     if (dClient) {
+      if (dbReadyPromise) {
+        await dbReadyPromise;
+      }
       // Check if user exists in database
       const existingDb = await dClient.select().from(users).where(eq(users.email, updatedUser.email));
       if (existingDb && existingDb.length > 0) {
