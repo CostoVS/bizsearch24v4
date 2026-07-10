@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, saveUser, getDeterministicSecretKey } from '@/lib/auth-service';
-import { saveOtp } from '@/lib/otp-service';
+import { saveOtp, generateOtp } from '@/lib/otp-service';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
@@ -213,8 +213,8 @@ export async function POST(req: Request) {
 
     await saveUser(newUser);
 
-    // Generate 6-digit email OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate 6-digit email OTP (stateless & deterministic to prevent multi-instance Cloud Run desync)
+    const otpCode = generateOtp(normalizedEmail);
     saveOtp(normalizedEmail, otpCode);
 
     console.log(`[EMAIL OTP] Generated verification code ${otpCode} for ${normalizedEmail}`);

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { saveOtp } from '@/lib/otp-service';
+import { saveOtp, generateOtp } from '@/lib/otp-service';
 import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
@@ -12,8 +12,8 @@ export async function POST(req: Request) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Generate new OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate new OTP (stateless & deterministic to prevent multi-instance Cloud Run desync)
+    const otpCode = generateOtp(normalizedEmail);
     saveOtp(normalizedEmail, otpCode);
 
     console.log(`[EMAIL OTP RESEND] Generated code ${otpCode} for ${normalizedEmail}`);
