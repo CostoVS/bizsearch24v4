@@ -224,3 +224,30 @@ export async function getUserByEmail(email: string): Promise<ServerUser | null> 
   const user = usersList.find((u: any) => u.email.trim().toLowerCase() === lowerEmail);
   return user || null;
 }
+
+const IP_BIND_FILE = path.join(process.cwd(), '.data', 'ip-bindings-db.json');
+
+export function getIpBindings(): Record<string, string> {
+  try {
+    if (fs.existsSync(IP_BIND_FILE)) {
+      return JSON.parse(fs.readFileSync(IP_BIND_FILE, 'utf-8'));
+    }
+  } catch (e) {
+    console.error("Failed to read IP bindings file, returning empty map:", e);
+  }
+  return {};
+}
+
+export function saveIpBinding(ip: string, email: string) {
+  try {
+    const fileDir = path.dirname(IP_BIND_FILE);
+    if (!fs.existsSync(fileDir)) {
+      fs.mkdirSync(fileDir, { recursive: true });
+    }
+    const binds = getIpBindings();
+    binds[ip] = email;
+    fs.writeFileSync(IP_BIND_FILE, JSON.stringify(binds, null, 2), 'utf-8');
+  } catch (e) {
+    console.error("Failed to write IP binding:", e);
+  }
+}

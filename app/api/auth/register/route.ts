@@ -1,36 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getUserByEmail, saveUser, getDeterministicSecretKey } from '@/lib/auth-service';
+import { getUserByEmail, saveUser, getDeterministicSecretKey, getIpBindings } from '@/lib/auth-service';
 import { saveOtp, generateOtp } from '@/lib/otp-service';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
-
-const IP_BIND_FILE = path.join(process.cwd(), '.data', 'ip-bindings-db.json');
-
-function getIpBindings(): Record<string, string> {
-  try {
-    if (fs.existsSync(IP_BIND_FILE)) {
-      return JSON.parse(fs.readFileSync(IP_BIND_FILE, 'utf-8'));
-    }
-  } catch (e) {
-    console.error("Failed to read IP bindings file, returning empty map:", e);
-  }
-  return {};
-}
-
-function saveIpBinding(ip: string, email: string) {
-  try {
-    const fileDir = path.dirname(IP_BIND_FILE);
-    if (!fs.existsSync(fileDir)) {
-      fs.mkdirSync(fileDir, { recursive: true });
-    }
-    const binds = getIpBindings();
-    binds[ip] = email;
-    fs.writeFileSync(IP_BIND_FILE, JSON.stringify(binds, null, 2), 'utf-8');
-  } catch (e) {
-    console.error("Failed to write IP binding:", e);
-  }
-}
 
 // Helper to inject a system message into the shared storage (db.json and drizzle PG if available)
 async function createVerificationSystemMessage(normalizedEmail: string, fullName: string, plan: string, companyName: string, idNumber: string) {
@@ -266,11 +239,6 @@ export async function POST(req: Request) {
       console.log(`Email OTP successfully sent to ${normalizedEmail}`);
     } catch (nodemailerErr) {
       console.warn("Nodemailer OTP relay warning (offline fallback or unconfigured SMTP):", nodemailerErr);
-    }
-
-    // Save binding on successful registration
-    if (clientIp && clientIp !== '127.0.0.1') {
-      saveIpBinding(clientIp, normalizedEmail);
     }
 
     // Store premium business verification application on backend

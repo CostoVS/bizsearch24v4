@@ -168,8 +168,6 @@ export default function LoginPage() {
           
           if (typeof window !== 'undefined') {
             window.scrollTo({ top: 0, behavior: "smooth" });
-            localStorage.setItem("searchbiz_device_registered_email", normalizedEmail);
-            document.cookie = `searchbiz_device_registered_email=${normalizedEmail}; path=/; max-age=315360000; SameSite=Lax`;
           }
         } else {
           setErrorMsg(data.error || "Registration failed.");
@@ -755,9 +753,11 @@ export default function LoginPage() {
                     {isRegister ? "Create Account" : "Sign In"}
                   </button>
                   {errorMsg && (
-                    <div className="bg-rose-50 border border-rose-200 text-rose-700 font-semibold px-4 py-3.5 rounded-xl flex items-center text-xs sm:text-sm animate-in fade-in slide-in-from-top-1">
-                      <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 text-rose-600" />
-                      <span className="leading-normal text-left">{errorMsg}</span>
+                    <div className="w-full bg-rose-50 border border-rose-200 text-rose-700 font-semibold px-4 py-3.5 rounded-xl flex items-start text-xs sm:text-sm animate-in fade-in slide-in-from-top-1 text-left whitespace-normal break-words overflow-hidden">
+                      <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 text-rose-600 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="leading-relaxed text-xs sm:text-sm whitespace-normal break-words">{errorMsg}</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -803,9 +803,11 @@ export default function LoginPage() {
               </div>
 
               {errorMsg && (
-                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 font-medium px-4 py-3 rounded-xl flex items-center text-sm">
-                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                  {errorMsg}
+                <div className="mb-6 w-full bg-rose-50 border border-rose-200 text-rose-700 font-semibold px-4 py-3.5 rounded-xl flex items-start text-xs sm:text-sm animate-in fade-in slide-in-from-top-1 text-left whitespace-normal break-words overflow-hidden">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="leading-relaxed text-xs sm:text-sm whitespace-normal break-words">{errorMsg}</p>
+                  </div>
                 </div>
               )}
 
@@ -928,9 +930,11 @@ export default function LoginPage() {
               </div>
               
               {errorMsg && (
-                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 font-medium px-4 py-3 rounded-xl flex items-center text-sm">
-                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                  {errorMsg}
+                <div className="mb-6 w-full bg-rose-50 border border-rose-200 text-rose-700 font-semibold px-4 py-3.5 rounded-xl flex items-start text-xs sm:text-sm animate-in fade-in slide-in-from-top-1 text-left whitespace-normal break-words overflow-hidden">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="leading-relaxed text-xs sm:text-sm whitespace-normal break-words">{errorMsg}</p>
+                  </div>
                 </div>
               )}
 
