@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUserByEmail, saveUser, saveIpBinding } from '@/lib/auth-service';
+import { getUserByEmail, saveUser } from '@/lib/auth-service';
 import { TOTP, NobleCryptoPlugin, ScureBase32Plugin, createGuardrails } from 'otplib';
 
 export async function POST(req: Request) {
@@ -29,13 +29,6 @@ export async function POST(req: Request) {
          await saveUser(user);
        }
        
-       // Save IP binding on successful 2FA verification/completion
-       const ipHeader = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
-       const clientIp = ipHeader.split(',')[0].trim();
-       if (clientIp && clientIp !== '127.0.0.1') {
-         saveIpBinding(clientIp, normalizedEmail);
-       }
-
        return NextResponse.json({
          success: true,
          message: '2-Step Verification verified successfully (Admin Bypass).'
@@ -59,13 +52,6 @@ export async function POST(req: Request) {
     
     if (!isValid) {
       return NextResponse.json({ error: 'Invalid verification code. Please try again.' }, { status: 401 });
-    }
-
-    // Save IP binding on successful 2FA verification/completion
-    const ipHeader = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
-    const clientIp = ipHeader.split(',')[0].trim();
-    if (clientIp && clientIp !== '127.0.0.1') {
-      saveIpBinding(clientIp, normalizedEmail);
     }
 
     // Toggle 2FA to setup completed!

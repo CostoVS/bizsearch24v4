@@ -112,7 +112,6 @@ export async function getUsersList(): Promise<ServerUser[]> {
       const list: ServerUser[] = [];
       if (dbUsers) {
         dbUsers.forEach((u: any) => {
-          const backup = backupUsers.find((b: any) => b.email.trim().toLowerCase() === u.email.trim().toLowerCase());
           list.push({
             id: String(u.id),
             email: u.email,
@@ -121,13 +120,13 @@ export async function getUsersList(): Promise<ServerUser[]> {
             plan: (u.plan as 'FREE' | 'PREMIUM' | 'ESSENTIAL' | 'PRO' | 'SPONSOR') || 'FREE',
             secretKey: u.secretKey || getDeterministicSecretKey(u.email),
             hasSetup2FA: u.hasSetup2FA || false,
-            phone: backup ? backup.phone : undefined,
-            failedAttempts: backup ? (backup.failedAttempts || 0) : 0,
-            isLocked: backup ? (backup.isLocked || false) : false,
-            fullName: backup ? backup.fullName : undefined,
-            address: backup ? backup.address : undefined,
-            businessName: backup ? backup.businessName : undefined,
-            businessCategory: backup ? backup.businessCategory : undefined,
+            phone: u.phone || undefined,
+            failedAttempts: u.failedAttempts || 0,
+            isLocked: u.isLocked || false,
+            fullName: u.fullName || undefined,
+            address: u.address || undefined,
+            businessName: u.businessName || undefined,
+            businessCategory: u.businessCategory || undefined,
           });
         });
       }
@@ -145,6 +144,13 @@ export async function getUsersList(): Promise<ServerUser[]> {
             plan: backupUser.plan,
             secretKey: backupUser.secretKey || getDeterministicSecretKey(backupUser.email),
             hasSetup2FA: backupUser.hasSetup2FA || false,
+            phone: backupUser.phone,
+            failedAttempts: backupUser.failedAttempts,
+            isLocked: backupUser.isLocked,
+            fullName: backupUser.fullName,
+            address: backupUser.address,
+            businessName: backupUser.businessName,
+            businessCategory: backupUser.businessCategory,
           }).then(() => {
             console.log(`Self-healed: Successfully synced missing backup user ${backupUser.email} back to Postgres.`);
           }).catch((syncErr) => {
@@ -198,6 +204,13 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
           plan: updatedUser.plan,
           secretKey: updatedUser.secretKey,
           hasSetup2FA: updatedUser.hasSetup2FA,
+          phone: updatedUser.phone,
+          failedAttempts: updatedUser.failedAttempts,
+          isLocked: updatedUser.isLocked,
+          fullName: updatedUser.fullName,
+          address: updatedUser.address,
+          businessName: updatedUser.businessName,
+          businessCategory: updatedUser.businessCategory,
         }).where(eq(users.email, updatedUser.email));
       } else {
         await dClient.insert(users).values({
@@ -207,6 +220,13 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
           plan: updatedUser.plan,
           secretKey: updatedUser.secretKey,
           hasSetup2FA: updatedUser.hasSetup2FA,
+          phone: updatedUser.phone,
+          failedAttempts: updatedUser.failedAttempts,
+          isLocked: updatedUser.isLocked,
+          fullName: updatedUser.fullName,
+          address: updatedUser.address,
+          businessName: updatedUser.businessName,
+          businessCategory: updatedUser.businessCategory,
         });
       }
       return true;

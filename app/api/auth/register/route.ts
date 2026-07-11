@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUserByEmail, saveUser, getDeterministicSecretKey, getIpBindings } from '@/lib/auth-service';
+import { getUserByEmail, saveUser, getDeterministicSecretKey } from '@/lib/auth-service';
 import { saveOtp, generateOtp } from '@/lib/otp-service';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
@@ -108,20 +108,6 @@ export async function POST(req: Request) {
     const existingUser = await getUserByEmail(normalizedEmail);
     if (existingUser) {
       return NextResponse.json({ error: 'This email is already registered. Please sign in instead.' }, { status: 400 });
-    }
-
-    // IP Address Restriction
-    const ipHeader = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
-    const clientIp = ipHeader.split(',')[0].trim();
-    
-    if (clientIp && clientIp !== '127.0.0.1') {
-      const binds = getIpBindings();
-      const boundEmail = binds[clientIp];
-      if (boundEmail && boundEmail.toLowerCase() !== normalizedEmail && normalizedEmail !== "nicholauscostochetty@gmail.com") {
-        return NextResponse.json({ 
-          error: `Access Denied: This device and IP address (${clientIp}) are already linked to an existing registered account (${boundEmail}). To ensure security and prevent abuse, only one account is permitted per device & IP.` 
-        }, { status: 400 });
-      }
     }
 
     // Validate South African phone number format

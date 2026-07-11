@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, boolean, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, boolean, varchar, integer } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -13,6 +13,13 @@ export const users = pgTable('users', {
   lastLoginIp: varchar('last_login_ip', { length: 45 }),
   deviceInfo: text('device_info'),
   location: varchar('location', { length: 255 }),
+  phone: varchar('phone', { length: 50 }),
+  failedAttempts: integer('failed_attempts').default(0),
+  isLocked: boolean('is_locked').default(false),
+  fullName: varchar('full_name', { length: 255 }),
+  address: text('address'),
+  businessName: varchar('business_name', { length: 255 }),
+  businessCategory: varchar('business_category', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

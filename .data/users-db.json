@@ -1,0 +1,30 @@
+[
+  {
+    "id": "admin-1",
+    "email": "nicholauscostochetty@gmail.com",
+    "password": "Nic6604211989!?",
+    "role": "ADMIN",
+    "plan": "PREMIUM",
+    "secretKey": "BS24KPGQY567ABCD",
+    "hasSetup2FA": false,
+    "failedAttempts": 0,
+    "isLocked": false
+  },
+  {
+    "id": "test1",
+    "email": "test1@test.com",
+    "role": "USER",
+    "plan": "FREE",
+    "secretKey": "test",
+    "hasSetup2FA": false
+  },
+  {
+    "id": "user-123",
+    "email": "flow@test.com",
+    "password": "password",
+    "role": "USER",
+    "plan": "FREE",
+    "secretKey": "BS24XWVUTSRQPONM",
+    "hasSetup2FA": false
+  }
+]

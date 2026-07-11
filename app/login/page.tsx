@@ -67,20 +67,6 @@ export default function LoginPage() {
     
     try {
       if (isRegister) {
-        // Enforce same-device restriction on the client early with cookies and localStorage
-        let deviceBoundEmail = typeof window !== 'undefined' ? localStorage.getItem("searchbiz_device_registered_email") : null;
-        if (!deviceBoundEmail && typeof document !== 'undefined') {
-          const cookieMatch = document.cookie.match(/(?:^|; )searchbiz_device_registered_email=([^;]*)/);
-          if (cookieMatch) {
-            deviceBoundEmail = decodeURIComponent(cookieMatch[1]);
-          }
-        }
-
-        if (deviceBoundEmail && deviceBoundEmail.toLowerCase() !== normalizedEmail && normalizedEmail !== "nicholauscostochetty@gmail.com") {
-          setErrorMsg(`Registration Denied: This device and browser are already linked to an existing registered account (${deviceBoundEmail}). Only one account is permitted per device & IP.`);
-          return;
-        }
-
         // Always validate South African phone number format for registration
         const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
         const saPhoneRegex = /^(?:\+27|0)\d{9}$/;
@@ -227,10 +213,6 @@ export default function LoginPage() {
         const loginCheckData = await loginCheckRes.json();
 
         if (loginCheckRes.ok) {
-          if (typeof window !== 'undefined' && loginCheckData.user.email !== "nicholauscostochetty@gmail.com") {
-            localStorage.setItem("searchbiz_device_registered_email", loginCheckData.user.email);
-            document.cookie = `searchbiz_device_registered_email=${loginCheckData.user.email}; path=/; max-age=315360000; SameSite=Lax`;
-          }
           login(
             loginCheckData.user.email, 
             loginCheckData.user.role, 

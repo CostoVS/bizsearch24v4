@@ -53,9 +53,36 @@ export const initDb = () => {
           last_login_ip VARCHAR(45),
           device_info TEXT,
           location VARCHAR(255),
+          phone VARCHAR(50),
+          failed_attempts INT DEFAULT 0,
+          is_locked BOOLEAN DEFAULT FALSE,
+          full_name VARCHAR(255),
+          address TEXT,
+          business_name VARCHAR(255),
+          business_category VARCHAR(255),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      // Attempt to add new columns if the table already existed and was missing them
+      const columnsToAdd = [
+        'phone VARCHAR(50)',
+        'failed_attempts INT DEFAULT 0',
+        'is_locked BOOLEAN DEFAULT FALSE',
+        'full_name VARCHAR(255)',
+        'address TEXT',
+        'business_name VARCHAR(255)',
+        'business_category VARCHAR(255)'
+      ];
+
+      for (const col of columnsToAdd) {
+        try {
+          await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col};`);
+        } catch (e) {
+          // Ignore if column already exists
+        }
+      }
+
       console.log("Postgres 'users' table checked/created successfully.");
 
       await pool.query(`
@@ -74,6 +101,7 @@ export const initDb = () => {
         );
       `);
       console.log("Postgres 'ads' table checked/created successfully.");
+
       return true;
     } catch (err: any) {
       console.error("Failed to self-heal/create database tables, setting isDbOffline=true:", err.message);
