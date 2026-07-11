@@ -145,7 +145,7 @@ export default function PublicProfilePage() {
             </p>
           </div>
           <button
-            onClick={() => router.back()}
+            onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
             className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-6 rounded-2xl transition shadow-sm inline-flex items-center justify-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" /> Go Back
@@ -363,7 +363,7 @@ export default function PublicProfilePage() {
         
         {/* Navigation Back Panel */}
         <button
-          onClick={() => router.back()}
+          onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest transition shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" /> Go Back
@@ -425,27 +425,8 @@ export default function PublicProfilePage() {
                     </p>
                   )}
                   
-                  {/* Public Followers counter & follow triggers */}
+                  {/* Action buttons */}
                   <div className="flex flex-wrap items-center gap-2 pt-2">
-                    <div className="inline-flex items-center gap-1.5 bg-slate-900 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] font-mono shadow">
-                      <Users className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                      <span>{followerCount.toLocaleString()} FOLLOWERS</span>
-                    </div>
-
-                    {!isOwnProfile && (
-                      <button 
-                        onClick={handleToggleFollow}
-                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 transform hover:scale-105 active:scale-95 ${
-                          isFollowingThis 
-                            ? "bg-rose-600 text-white shadow" 
-                            : "bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-800"
-                        }`}
-                      >
-                        <Heart className={`w-3.5 h-3.5 ${isFollowingThis ? "fill-white text-white" : "text-slate-400"}`} />
-                        <span>{isFollowingThis ? "Following Updates" : "Follow Partner"}</span>
-                      </button>
-                    )}
-
                     {isOwnProfile && (
                       <button 
                         onClick={() => {

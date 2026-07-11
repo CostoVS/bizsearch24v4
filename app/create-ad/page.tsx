@@ -1109,14 +1109,14 @@ export default function CreateAdPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between">
+                        <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                           <p className="text-xs text-indigo-950 font-medium leading-normal max-w-sm">
                             Upgrade to Premium to unlock WhatsApp Chat, Business
                             Email address and full Social Platform connectivity.
                           </p>
                           <Link
                             href="/premium"
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm ml-4"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm sm:ml-4 w-full sm:w-auto text-center"
                           >
                             Upgrade &rarr;
                           </Link>
@@ -1299,7 +1299,7 @@ export default function CreateAdPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between">
+                        <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                           <p className="text-xs text-indigo-950 font-medium leading-normal max-w-md">
                             Media features are locked: upgrade to Premium to
                             upload portfolio imagery, showcase items, and get
@@ -1307,7 +1307,7 @@ export default function CreateAdPage() {
                           </p>
                           <Link
                             href="/premium"
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm ml-4"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm sm:ml-4 w-full sm:w-auto text-center"
                           >
                             Upgrade &rarr;
                           </Link>
