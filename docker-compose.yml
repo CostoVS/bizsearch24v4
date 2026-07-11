@@ -12,7 +12,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://user:password@db:5432/bizsearch
+      - DATABASE_URL=postgresql://user:password@db:5432/searchbiz_db
     volumes:
       - ./data:/app/.data
 
