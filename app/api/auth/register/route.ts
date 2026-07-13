@@ -168,6 +168,7 @@ export async function POST(req: Request) {
       address: businessAddress.trim(),
       businessName: companyName.trim(),
       businessCategory: businessCategory.trim(),
+      idNumber: idNumber ? idNumber.trim() : '',
     };
 
     await saveUser(newUser);

@@ -539,15 +539,31 @@ export default function AdminDashboard() {
 
   const getFilteredAds = () => {
     return ads.filter(ad => {
-      // 1. Search term filter (title, description, phone, address, servicesOffered)
+      // 1. Search term filter (title, description, phone, address, servicesOffered, ownerDetails)
       if (adSearchTerm.trim()) {
         const query = adSearchTerm.toLowerCase();
+        
+        const owner = users.find(u => 
+          (u.email && ad.email && u.email.trim().toLowerCase() === ad.email.trim().toLowerCase()) ||
+          (u.id && ad.userId && String(u.id) === String(ad.userId)) ||
+          (u.email && ad.ownerEmail && u.email.trim().toLowerCase() === ad.ownerEmail.trim().toLowerCase()) ||
+          (u.email && ad.userEmail && u.email.trim().toLowerCase() === ad.userEmail.trim().toLowerCase())
+        );
+        const ownerMatches = owner ? (
+          (owner.email || "").toLowerCase().includes(query) ||
+          (owner.fullName || "").toLowerCase().includes(query) ||
+          (owner.businessName || "").toLowerCase().includes(query) ||
+          (owner.memberId || "").toLowerCase().includes(query) ||
+          (owner.idNumber || "").toLowerCase().includes(query)
+        ) : false;
+
         const matchesText = 
           (ad.title || "").toLowerCase().includes(query) ||
           (ad.description || "").toLowerCase().includes(query) ||
           (ad.servicesOffered || "").toLowerCase().includes(query) ||
           (ad.phone || "").toLowerCase().includes(query) ||
-          (ad.address || "").toLowerCase().includes(query);
+          (ad.address || "").toLowerCase().includes(query) ||
+          ownerMatches;
         if (!matchesText) return false;
       }
 
@@ -672,10 +688,19 @@ export default function AdminDashboard() {
     location: u.location || 'Durban, KZN'
   }));
 
-  const filteredUsers = mappedUsers.filter(u => 
-    u.email.toLowerCase().includes(userSearch.toLowerCase()) || 
-    u.location.toLowerCase().includes(userSearch.toLowerCase())
-  );
+  const filteredUsers = mappedUsers.filter(u => {
+    const term = userSearch.toLowerCase().trim();
+    if (!term) return true;
+    return (
+      (u.email || "").toLowerCase().includes(term) || 
+      (u.location || "").toLowerCase().includes(term) ||
+      (u.idNumber || "").toLowerCase().includes(term) ||
+      (u.memberId || "").toLowerCase().includes(term) ||
+      (u.fullName || "").toLowerCase().includes(term) ||
+      (u.businessName || "").toLowerCase().includes(term) ||
+      (u.phone || "").toLowerCase().includes(term)
+    );
+  });
 
   const todayStr = new Date().toISOString().split('T')[0];
   const usersTodayCount = mappedUsers.filter(u => u.joined === todayStr).length;
@@ -1426,8 +1451,19 @@ export default function AdminDashboard() {
                               {u.email[0].toUpperCase()}
                            </div>
                            <div>
-                              <div className="text-sm font-bold text-slate-900">{u.email}</div>
-                              <div className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-tighter">Joined {u.joined}</div>
+                              <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                                {u.email}
+                                {u.memberId && (
+                                  <span className="bg-slate-150 text-slate-700 border border-slate-200 text-[8px] font-mono px-1 rounded font-black tracking-tight">{u.memberId}</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 font-semibold">
+                                {u.fullName || "No Name Entered"} • {u.businessName || "No Biz Entered"}
+                              </div>
+                              {u.idNumber && (
+                                <div className="text-[9px] text-indigo-600 font-bold font-mono mt-0.5">ID: {u.idNumber}</div>
+                              )}
+                              <div className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter font-medium">Joined {u.joined}</div>
                            </div>
                         </div>
                       </td>
@@ -1905,6 +1941,27 @@ export default function AdminDashboard() {
                                   )}
                                 </div>
                                 <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[320px]">{ad.description || "No description provided."}</div>
+                                {(() => {
+                                  const owner = users.find(u => 
+                                    (u.email && ad.email && u.email.trim().toLowerCase() === ad.email.trim().toLowerCase()) ||
+                                    (u.id && ad.userId && String(u.id) === String(ad.userId)) ||
+                                    (u.email && ad.ownerEmail && u.email.trim().toLowerCase() === ad.ownerEmail.trim().toLowerCase()) ||
+                                    (u.email && ad.userEmail && u.email.trim().toLowerCase() === ad.userEmail.trim().toLowerCase())
+                                  );
+                                  if (!owner) return null;
+                                  return (
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-medium text-slate-500">
+                                      <span>Owner:</span>
+                                      <span className="text-slate-700 font-bold">{owner.email}</span>
+                                      {owner.memberId && (
+                                        <span className="bg-slate-100 text-slate-800 px-1 py-0.2 rounded font-mono font-bold">{owner.memberId}</span>
+                                      )}
+                                      {owner.idNumber && (
+                                        <span className="bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded font-mono font-bold">ID: {owner.idNumber}</span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                              </div>
                           </div>
                         </td>

@@ -23,6 +23,20 @@ export interface ServerUser {
   address?: string;
   businessName?: string;
   businessCategory?: string;
+  idNumber?: string;
+  memberId?: string;
+}
+
+// Deterministic member ID generator per User Email (yields SB-XXXXXX reference format)
+export function generateMemberId(email: string): string {
+  const normalized = email.toLowerCase().trim();
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    hash = (hash << 5) - hash + normalized.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  const code = Math.abs(hash % 900000) + 100000; // 6 digit number
+  return `SB-${code}`;
 }
 
 // Deterministic Base32 Secret Key Generator per User Email
@@ -65,22 +79,34 @@ function readUsersBackup(): ServerUser[] {
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
     }
+    const adminWithId = { ...DEFAULT_ADMIN, memberId: generateMemberId(DEFAULT_ADMIN.email) };
     if (!fs.existsSync(FILE_PATH)) {
-      fs.writeFileSync(FILE_PATH, JSON.stringify([DEFAULT_ADMIN], null, 2), 'utf-8');
-      return [DEFAULT_ADMIN];
+      fs.writeFileSync(FILE_PATH, JSON.stringify([adminWithId], null, 2), 'utf-8');
+      return [adminWithId];
     }
     const data = fs.readFileSync(FILE_PATH, 'utf-8');
     const parsed = JSON.parse(data);
     
+    let changed = false;
+    parsed.forEach((u: ServerUser) => {
+      if (!u.memberId) {
+        u.memberId = generateMemberId(u.email);
+        changed = true;
+      }
+    });
+
     // Ensure admin exists in list
     if (!parsed.some((u: ServerUser) => u.email.trim().toLowerCase() === DEFAULT_ADMIN.email.trim().toLowerCase())) {
-      parsed.push(DEFAULT_ADMIN);
+      parsed.push(adminWithId);
+      changed = true;
+    }
+    if (changed) {
       fs.writeFileSync(FILE_PATH, JSON.stringify(parsed, null, 2), 'utf-8');
     }
     return parsed;
   } catch (error) {
     console.error('Failed to read users JSON backup, returning default:', error);
-    return [DEFAULT_ADMIN];
+    return [{ ...DEFAULT_ADMIN, memberId: generateMemberId(DEFAULT_ADMIN.email) }];
   }
 }
 
@@ -112,6 +138,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
       const list: ServerUser[] = [];
       if (dbUsers) {
         dbUsers.forEach((u: any) => {
+          const backupU = backupUsers.find(bu => bu.email.trim().toLowerCase() === u.email.trim().toLowerCase());
           list.push({
             id: String(u.id),
             email: u.email,
@@ -127,6 +154,8 @@ export async function getUsersList(): Promise<ServerUser[]> {
             address: u.address || undefined,
             businessName: u.businessName || undefined,
             businessCategory: u.businessCategory || undefined,
+            idNumber: backupU?.idNumber || undefined,
+            memberId: backupU?.memberId || generateMemberId(u.email),
           });
         });
       }
@@ -179,6 +208,7 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
     ...newUser,
     // Ensure they have their deterministic secret key assigned
     secretKey: newUser.secretKey || getDeterministicSecretKey(newUser.email),
+    memberId: newUser.memberId || generateMemberId(newUser.email),
   };
 
   if (existingIndex !== -1) {

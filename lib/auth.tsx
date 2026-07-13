@@ -12,6 +12,8 @@ type User = {
   businessName?: string;
   businessCategory?: string;
   phone?: string;
+  idNumber?: string;
+  memberId?: string;
 };
 
 type AuthContextType = {
@@ -25,7 +27,9 @@ type AuthContextType = {
     address?: string,
     businessName?: string,
     businessCategory?: string,
-    phone?: string
+    phone?: string,
+    idNumber?: string,
+    memberId?: string
   ) => void;
   logout: () => void;
   isLoading: boolean;
@@ -77,7 +81,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     address?: string,
     businessName?: string,
     businessCategory?: string,
-    phone?: string
+    phone?: string,
+    idNumber?: string,
+    memberId?: string
   ) => {
     const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com";
     const resolvedRole = isOwnerAdmin ? "ADMIN" : role;
@@ -93,6 +99,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       businessName,
       businessCategory,
       phone,
+      idNumber,
+      memberId: memberId || (email ? "SB-" + Math.abs(email.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0) % 900000 + 100000) : ""),
     };
     
     setUser(loggedInUser);

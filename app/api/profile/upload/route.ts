@@ -33,6 +33,11 @@ export async function POST(req: NextRequest) {
       detectedMime = "image/gif";
       isSafe = true;
     }
+    // PDF: 25 50 44 46 (%PDF)
+    else if (headerHex === "25504446") {
+      detectedMime = "application/pdf";
+      isSafe = true;
+    }
     // WebP: RIFF ... WEBP
     else if (buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
       detectedMime = "image/webp";

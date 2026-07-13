@@ -63,6 +63,8 @@ export async function POST(req: Request) {
         businessName: user.businessName || "",
         businessCategory: user.businessCategory || "",
         phone: user.phone || "",
+        idNumber: user.idNumber || "",
+        memberId: user.memberId || "",
       }
     });
 
