@@ -333,8 +333,24 @@ ${signature}
               badge: "Verified Badge",
               price: "R199.00",
               period: "month",
-              desc: "1 Listing only, verified badge, hosting, emails & smart static website.",
-              features: ["1 Verified Listing", "WhatsApp & Email listed", "Unlimited hosting & emails"]
+              desc: "Complete digital presence for South African businesses.",
+              features: [
+                "1 Listing only",
+                "Business Name shown",
+                "Business Description included",
+                "Services Offered listed",
+                "Business Address",
+                "Phone Number",
+                "WhatsApp Number enabled",
+                "Business Email shown",
+                "Social media platform links",
+                "Unlimited hosting account",
+                "Unlimited email accounts",
+                "Smart static website design",
+                "Add-on: .co.za domain R99/yr",
+                "Add-on: Extra listings R199/area each/mo",
+                "Verified Badge unlocked"
+              ]
             },
             {
               id: "premium",
@@ -342,8 +358,14 @@ ${signature}
               badge: "Premium Verified Badge",
               price: "R9,999.00",
               period: "month",
-              desc: "Everything from Essential tier plus 1 ad listing in all areas across RSA.",
-              features: ["1 Listing in ALL areas", "Premium Verified Badge", "Priority Placement"]
+              desc: "Regional dominance and broad community reach.",
+              features: [
+                "Everything from Essential Tier",
+                "1 Ad listing in all areas across South Africa",
+                "Premium Verified Badge unlocked",
+                "Priority regional search placement",
+                "Premium SLA support response"
+              ]
             },
             {
               id: "enterprise",
@@ -351,8 +373,20 @@ ${signature}
               badge: "Sponsor Verified Badge",
               price: "R299,999.00",
               period: "month",
-              desc: "Unlimited Ads, comprehensive marketing package (Facebook, TikTok, YT, Google).",
-              features: ["Unlimited ads & posters", "Full social media marketing", "Enterprise Sponsor Badge"]
+              desc: "Full-scale managed marketing powerhouse.",
+              features: [
+                "Everything from Essential & Premium tiers",
+                "Unlimited Ads with top priority",
+                "Marketing ads, images, posters, videos",
+                "Facebook marketing campaigns",
+                "TikTok marketing campaigns",
+                "YouTube marketing campaigns",
+                "X marketing campaigns",
+                "Instagram marketing campaigns",
+                "Google search marketing campaigns",
+                "Dedicated marketing account manager",
+                "Enterprise Sponsor Premium Verified Badge"
+              ]
             }
           ].map((plan) => {
             const isSelected = selectedPlan === plan.id;

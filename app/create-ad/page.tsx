@@ -489,7 +489,7 @@ export default function CreateAdPage() {
                             Adds an emerald verification checkmark badge to your ad.
                           </span>
                         </div>
-                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
+                        <Link href="/premium?plan=essential" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
                     )}
 
@@ -521,7 +521,7 @@ export default function CreateAdPage() {
                             Unlocks photo/logo uploads, detailed contact channels, and social media.
                           </span>
                         </div>
-                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
+                        <Link href="/premium?plan=premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
                     )}
 
@@ -553,7 +553,7 @@ export default function CreateAdPage() {
                             Featured/priority delivery and multi-area target placement.
                           </span>
                         </div>
-                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
+                        <Link href="/premium?plan=enterprise" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
                     )}
                   </div>
@@ -573,7 +573,7 @@ export default function CreateAdPage() {
                       </button>
                     ) : (
                       <Link
-                        href="/premium"
+                        href="/premium?plan=essential"
                         className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 px-3 py-1.5 rounded-lg transition"
                       >
                         ✨ Upgrade to Select Options
@@ -1162,11 +1162,11 @@ export default function CreateAdPage() {
                       ) : (
                         <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                           <p className="text-xs text-indigo-950 font-medium leading-normal max-w-sm">
-                            Upgrade to Premium to unlock WhatsApp Chat, Business
+                            Upgrade to Essential to unlock WhatsApp Chat, Business
                             Email address and full Social Platform connectivity.
                           </p>
                           <Link
-                            href="/premium"
+                            href="/premium?plan=essential"
                             className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm sm:ml-4 w-full sm:w-auto text-center"
                           >
                             Upgrade &rarr;
@@ -1357,7 +1357,7 @@ export default function CreateAdPage() {
                             full visual listings on province dashboards.
                           </p>
                           <Link
-                            href="/premium"
+                            href="/premium?plan=premium"
                             className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm sm:ml-4 w-full sm:w-auto text-center"
                           >
                             Upgrade &rarr;

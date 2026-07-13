@@ -48,7 +48,7 @@ export default function ToolsDashboard() {
       if (!user) {
         router.push("/login");
       } else if (user.plan !== "PREMIUM" && user.role !== "ADMIN") {
-        router.push("/premium");
+        router.push("/premium?plan=premium");
       }
     }
   }, [user, isLoading, router, isClient]);
