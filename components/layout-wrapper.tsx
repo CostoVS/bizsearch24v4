@@ -12,28 +12,13 @@ import { ArrowUp } from 'lucide-react';
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const [legalOpen, setLegalOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isPageLoading, setIsPageLoading] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsPageLoading(true);
-    const timer = setTimeout(() => {
-      setIsPageLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsPageLoading(true);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
-    const timer = setTimeout(() => {
-      setIsPageLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {

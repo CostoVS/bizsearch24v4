@@ -33,11 +33,11 @@ function DirectoryContent() {
       setIsLocalLoading(true);
       const timer = setTimeout(() => {
         setIsLocalLoading(false);
-      }, 500);
+      }, 30);
 
       const scrollTimer = setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 150);
+      }, 50);
 
       return () => {
         clearTimeout(timer);

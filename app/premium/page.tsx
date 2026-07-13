@@ -148,6 +148,12 @@ export default function PremiumPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    if (success && typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [success]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, key: keyof typeof files) => {
     if (e.target.files && e.target.files[0]) {
       setFiles({ ...files, [key]: e.target.files[0] });

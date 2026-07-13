@@ -179,7 +179,10 @@ export function Navbar() {
                     </Link>
                   )}
                   <button
-                    onClick={logout}
+                    onClick={() => {
+                      logout();
+                      window.location.href = "/";
+                    }}
                     className="flex items-center space-x-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
@@ -367,6 +370,7 @@ export function Navbar() {
                     onClick={() => {
                       setMobileMenuOpen(false);
                       logout();
+                      window.location.href = "/";
                     }}
                     className="flex items-center w-full text-left px-4 py-4 text-lg font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
                   >
