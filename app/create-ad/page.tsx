@@ -462,72 +462,123 @@ export default function CreateAdPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* Verified Ad option */}
-                    <label className={`flex items-start gap-3 p-4 bg-white hover:bg-emerald-50/10 rounded-xl border cursor-pointer transition ${verified ? 'border-emerald-300 ring-2 ring-emerald-500/10' : 'border-slate-200'}`}>
-                      <input
-                        type="checkbox"
-                        checked={verified}
-                        onChange={(e) => setVerified(e.target.checked)}
-                        className="mt-1 h-4 w-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-                      />
-                      <div>
-                        <span className="block text-xs font-bold text-slate-800">
-                          Verified Ad
-                        </span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
-                          Adds an emerald verification checkmark badge to your ad.
-                        </span>
+                    {isPremiumOrAdmin ? (
+                      <label className={`flex items-start gap-3 p-4 bg-white hover:bg-emerald-50/10 rounded-xl border cursor-pointer transition ${verified ? 'border-emerald-300 ring-2 ring-emerald-500/10' : 'border-slate-200'}`}>
+                        <input
+                          type="checkbox"
+                          checked={verified}
+                          onChange={(e) => setVerified(e.target.checked)}
+                          className="mt-1 h-4 w-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                        />
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800">
+                            Verified Ad
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Adds an emerald verification checkmark badge to your ad.
+                          </span>
+                        </div>
+                      </label>
+                    ) : (
+                      <div className="flex flex-col gap-2 p-4 bg-slate-50 opacity-75 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="block text-xs font-bold text-slate-500 flex items-center justify-between">
+                            Verified Ad <span className="text-[9px] font-black tracking-wider bg-slate-200 px-1.5 py-0.5 rounded text-slate-500">LOCKED</span>
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Adds an emerald verification checkmark badge to your ad.
+                          </span>
+                        </div>
+                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
-                    </label>
+                    )}
 
                     {/* Premium Ad option */}
-                    <label className={`flex items-start gap-3 p-4 bg-white hover:bg-amber-50/10 rounded-xl border cursor-pointer transition ${isPremium ? 'border-amber-300 ring-2 ring-amber-500/10' : 'border-slate-200'}`}>
-                      <input
-                        type="checkbox"
-                        checked={isPremium}
-                        onChange={(e) => setIsPremium(e.target.checked)}
-                        className="mt-1 h-4 w-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500"
-                      />
-                      <div>
-                        <span className="block text-xs font-bold text-slate-800">
-                          Premium Ad
-                        </span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
-                          Unlocks photo/logo uploads, detailed contact channels, and social media.
-                        </span>
+                    {isPremiumOrAdmin ? (
+                      <label className={`flex items-start gap-3 p-4 bg-white hover:bg-amber-50/10 rounded-xl border cursor-pointer transition ${isPremium ? 'border-amber-300 ring-2 ring-amber-500/10' : 'border-slate-200'}`}>
+                        <input
+                          type="checkbox"
+                          checked={isPremium}
+                          onChange={(e) => setIsPremium(e.target.checked)}
+                          className="mt-1 h-4 w-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500"
+                        />
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800">
+                            Premium Ad
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Unlocks photo/logo uploads, detailed contact channels, and social media.
+                          </span>
+                        </div>
+                      </label>
+                    ) : (
+                      <div className="flex flex-col gap-2 p-4 bg-slate-50 opacity-75 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="block text-xs font-bold text-slate-500 flex items-center justify-between">
+                            Premium Ad <span className="text-[9px] font-black tracking-wider bg-slate-200 px-1.5 py-0.5 rounded text-slate-500">LOCKED</span>
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Unlocks photo/logo uploads, detailed contact channels, and social media.
+                          </span>
+                        </div>
+                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
-                    </label>
+                    )}
 
                     {/* Sponsored Ad option */}
-                    <label className={`flex items-start gap-3 p-4 bg-white hover:bg-indigo-50/10 rounded-xl border cursor-pointer transition ${isSponsor ? 'border-indigo-300 ring-2 ring-indigo-500/10' : 'border-slate-200'}`}>
-                      <input
-                        type="checkbox"
-                        checked={isSponsor}
-                        onChange={(e) => setIsSponsor(e.target.checked)}
-                        className="mt-1 h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="block text-xs font-bold text-slate-800">
-                          Sponsor Ad
-                        </span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
-                          Featured/priority delivery and multi-area target placement.
-                        </span>
+                    {isPremiumOrAdmin ? (
+                      <label className={`flex items-start gap-3 p-4 bg-white hover:bg-indigo-50/10 rounded-xl border cursor-pointer transition ${isSponsor ? 'border-indigo-300 ring-2 ring-indigo-500/10' : 'border-slate-200'}`}>
+                        <input
+                          type="checkbox"
+                          checked={isSponsor}
+                          onChange={(e) => setIsSponsor(e.target.checked)}
+                          className="mt-1 h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800">
+                            Sponsor Ad
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Featured/priority delivery and multi-area target placement.
+                          </span>
+                        </div>
+                      </label>
+                    ) : (
+                      <div className="flex flex-col gap-2 p-4 bg-slate-50 opacity-75 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="block text-xs font-bold text-slate-500 flex items-center justify-between">
+                            Sponsor Ad <span className="text-[9px] font-black tracking-wider bg-slate-200 px-1.5 py-0.5 rounded text-slate-500">LOCKED</span>
+                          </span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5 leading-normal">
+                            Featured/priority delivery and multi-area target placement.
+                          </span>
+                        </div>
+                        <Link href="/premium" className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline">Upgrade to Unlock</Link>
                       </div>
-                    </label>
+                    )}
                   </div>
 
                   <div className="flex justify-end pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setVerified(true);
-                        setIsPremium(true);
-                        setIsSponsor(true);
-                      }}
-                      className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 px-3 py-1.5 rounded-lg transition"
-                    >
-                      ✨ Select All (Verified + Premium + Sponsor) at Once
-                    </button>
+                    {isPremiumOrAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerified(true);
+                          setIsPremium(true);
+                          setIsSponsor(true);
+                        }}
+                        className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 px-3 py-1.5 rounded-lg transition"
+                      >
+                        ✨ Select All (Verified + Premium + Sponsor) at Once
+                      </button>
+                    ) : (
+                      <Link
+                        href="/premium"
+                        className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 px-3 py-1.5 rounded-lg transition"
+                      >
+                        ✨ Upgrade to Select Options
+                      </Link>
+                    )}
                   </div>
                 </div>
 

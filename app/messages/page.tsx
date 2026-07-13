@@ -133,6 +133,18 @@ export default function MessagesPage() {
 
   if (isLoading || !user) return <div className="p-20 text-center text-slate-500 text-sm">Authenticating Secure Session...</div>;
 
+  const handleExportChat = () => {
+    const dataStr = JSON.stringify(filteredMessages, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `searchbiz_chat_history_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 w-full">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 pb-6 border-b border-slate-200 gap-4">
@@ -148,6 +160,14 @@ export default function MessagesPage() {
             <p className="text-slate-500 text-sm mt-1">Direct Private Communications with Verified Businesses & Customers</p>
           </div>
         </div>
+        {user?.role === "ADMIN" && (
+          <button 
+            onClick={handleExportChat}
+            className="text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl transition shadow-sm self-start sm:self-center"
+          >
+            ↓ Export Chat History
+          </button>
+        )}
       </div>
 
       <div className="space-y-4">

@@ -1279,7 +1279,9 @@ export default function AdminDashboard() {
                       <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
                         <div className="truncate">
                           <p className="font-bold text-slate-500 text-[10px] uppercase">CIPC Registration</p>
-                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.cipcDoc?.name || app.cipcDoc || "Attached"}</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">
+                            {typeof app.cipcDoc === 'string' && app.cipcDoc.startsWith('data:') ? <a href={app.cipcDoc} target="_blank" className="text-emerald-600 underline">View CIPC</a> : (app.cipcDoc?.name || app.cipcDoc || "Attached")}
+                          </p>
                         </div>
                         <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
                       </div>
@@ -1287,7 +1289,9 @@ export default function AdminDashboard() {
                       <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
                         <div className="truncate">
                           <p className="font-bold text-slate-500 text-[10px] uppercase">SARS Letter Copy</p>
-                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.sarsDoc?.name || app.sarsDoc || "Attached"}</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">
+                            {typeof app.sarsDoc === 'string' && app.sarsDoc.startsWith('data:') ? <a href={app.sarsDoc} target="_blank" className="text-emerald-600 underline">View SARS</a> : (app.sarsDoc?.name || app.sarsDoc || "Attached")}
+                          </p>
                         </div>
                         <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
                       </div>
@@ -1295,7 +1299,9 @@ export default function AdminDashboard() {
                       <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
                         <div className="truncate">
                           <p className="font-bold text-slate-500 text-[10px] uppercase">Bank Verification</p>
-                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.bankDoc?.name || app.bankDoc || "Attached"}</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">
+                            {typeof app.bankDoc === 'string' && app.bankDoc.startsWith('data:') ? <a href={app.bankDoc} target="_blank" className="text-emerald-600 underline">View Bank</a> : (app.bankDoc?.name || app.bankDoc || "Attached")}
+                          </p>
                         </div>
                         <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
                       </div>
@@ -1303,11 +1309,19 @@ export default function AdminDashboard() {
                       <div className="bg-white p-3 rounded-xl border border-slate-200/80 flex items-center justify-between shadow-sm text-slate-700">
                         <div className="truncate">
                           <p className="font-bold text-slate-500 text-[10px] uppercase">Owner Photo ID</p>
-                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">{app.idDoc?.name || app.idDoc || "Attached"}</p>
+                          <p className="text-[11px] text-slate-850 font-semibold mt-0.5 truncate">
+                            {typeof app.idDoc === 'string' && app.idDoc.startsWith('data:') ? <a href={app.idDoc} target="_blank" className="text-emerald-600 underline">View ID</a> : (app.idDoc?.name || app.idDoc || "Attached")}
+                          </p>
                         </div>
                         <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 shrink-0">Attached</span>
                       </div>
                     </div>
+                    {app.signatureUrl && (
+                      <div className="mt-4 pt-4 border-t border-slate-200/60">
+                        <p className="font-bold text-slate-500 text-[10px] uppercase mb-2">Digital Signature</p>
+                        <img src={app.signatureUrl} alt="Signature" className="h-16 object-contain" />
+                      </div>
+                    )}
 
                     <div className="mt-4 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 flex items-center justify-between">
                       <span className="text-xs font-semibold text-emerald-950">Debit Order mandate amount authorized</span>
