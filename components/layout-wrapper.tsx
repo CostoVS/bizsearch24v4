@@ -108,10 +108,13 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             {/* The spinning ring with arrows around the favicon */}
             <div className="absolute inset-0 animate-spin text-emerald-600">
               <svg className="w-full h-full" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M 50 10 A 40 40 0 0 1 90 50" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                <polygon points="90,46 95,54 85,54" fill="currentColor" />
-                <path d="M 50 90 A 40 40 0 0 1 10 50" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                <polygon points="10,54 5,46 15,46" fill="currentColor" />
+                {/* Arc 1: Top to Right (Clockwise) */}
+                <path d="M 50 10 A 40 40 0 0 1 90 47" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                <polygon points="90,57 96,46 90,49 84,46" fill="currentColor" />
+                
+                {/* Arc 2: Bottom to Left (Clockwise) */}
+                <path d="M 50 90 A 40 40 0 0 1 10 53" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                <polygon points="10,43 16,54 10,51 4,54" fill="currentColor" />
               </svg>
             </div>
             
