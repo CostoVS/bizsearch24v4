@@ -299,9 +299,17 @@ export default function UserDashboard() {
               </div>
               <div>
                 <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Service Level</span>
-                {user.plan === "PREMIUM" ? (
-                  <span className="inline-flex items-center text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full text-xs font-bold">
-                    <Star className="w-3 h-3 mr-1.5 text-emerald-500 fill-emerald-500 animate-pulse" /> PREMIUM PLATINUM
+                {((user.plan as string) === "ESSENTIAL") ? (
+                  <span className="inline-flex items-center text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full text-xs font-bold uppercase">
+                    <BadgeCheck className="w-3 h-3 mr-1.5 text-emerald-600" /> Essential Verified
+                  </span>
+                ) : (((user.plan as string) === "PREMIUM") || ((user.plan as string) === "PRO")) ? (
+                  <span className="inline-flex items-center text-indigo-800 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full text-xs font-bold uppercase">
+                    <Star className="w-3 h-3 mr-1.5 text-indigo-600 fill-indigo-600 animate-pulse" /> Premium Verified
+                  </span>
+                ) : (((user.plan as string) === "ENTERPRISE") || ((user.plan as string) === "SPONSOR")) ? (
+                  <span className="inline-flex items-center text-purple-800 bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-full text-xs font-bold uppercase">
+                    <ShieldCheck className="w-3 h-3 mr-1.5 text-purple-600" /> Enterprise Sponsor
                   </span>
                 ) : (
                   <span className="inline-flex items-center text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full text-xs font-bold">
@@ -311,13 +319,13 @@ export default function UserDashboard() {
               </div>
             </div>
 
-            {user.plan === "FREE" && (
+            {((user.plan as string) === "FREE" || !user.plan) && (
               <div className="pt-4 border-t border-slate-100">
                 <button
                   onClick={() => router.push('/premium')}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
                 >
-                  Upgrade to Premium
+                  Upgrade Subscription
                 </button>
               </div>
             )}

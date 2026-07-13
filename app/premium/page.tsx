@@ -106,6 +106,18 @@ export default function PremiumPage() {
   const { user } = useAuth();
   const router = useRouter();
   
+  const [selectedPlan, setSelectedPlan] = useState("essential");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const plan = params.get("plan");
+      if (plan && ["essential", "premium", "enterprise"].includes(plan)) {
+        setSelectedPlan(plan);
+      }
+    }
+  }, []);
+
   const [formData, setFormData] = useState({
     fullName: "",
     idNumber: "",
@@ -181,8 +193,12 @@ export default function PremiumPage() {
       const idUrl = await uploadFile(files.idProof);
       const bankUrl = await uploadFile(files.bank);
 
+      let planPriceText = "R199.00";
+      if (selectedPlan === "premium") planPriceText = "R9,999.00";
+      else if (selectedPlan === "enterprise") planPriceText = "R299,999.00";
+
       // 2. Prepare message content
-      const messageContent = `*** NEW PREMIUM UPGRADE REQUEST ***
+      const messageContent = `*** NEW UPGRADE REQUEST (${selectedPlan.toUpperCase()}) ***
 Full Name: ${formData.fullName}
 ID Number: ${formData.idNumber}
 Date of Birth: ${formData.dob}
@@ -198,8 +214,9 @@ Account Holder: ${formData.accountHolder}
 Account Type: ${formData.accountType}
 Business Bank Account: ${formData.bankAccount}
 Branch Code: ${formData.branchCode}
+Requested Tier: ${selectedPlan.toUpperCase()} (${planPriceText} / month)
 
-* Consent to be debited R199.00 every month: YES
+* Consent to be debited ${planPriceText} every month: YES
 * Understood No contracts / Can cancel anytime with communication in advance: YES
 
 DOCUMENTS:
@@ -233,7 +250,8 @@ ${signature}
           branchCode: formData.branchCode,
           bankName: formData.bankName,
           accountHolder: formData.accountHolder,
-          accountType: formData.accountType
+          accountType: formData.accountType,
+          plan: selectedPlan.toUpperCase()
         })
       });
 
@@ -246,7 +264,7 @@ ${signature}
       const newMsg = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substring(2,9)}`,
         adId: "upgrade_request",
-        adTitle: `Premium Upgrade: ${formData.companyName}`,
+        adTitle: `${selectedPlan.toUpperCase()} Upgrade: ${formData.companyName}`,
         senderEmail: user.email,
         senderName: formData.fullName || user.fullName || "User",
         recipientEmail: "nicholauscostochetty@gmail.com",
@@ -275,7 +293,7 @@ ${signature}
           </div>
           <h2 className="text-2xl font-black text-slate-900 mb-2">Request Submitted</h2>
           <p className="text-slate-500 mb-8 font-medium">
-            Your upgrade request has been sent to our administration team. We will review your documents and activate your premium status shortly.
+            Your upgrade request for the <strong className="text-slate-800 uppercase">{selectedPlan} Tier</strong> has been sent to our administration team. We will review your documents and activate your upgraded status shortly.
           </p>
           <Link href="/dashboard" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-xl transition">
             Return to Dashboard
@@ -284,6 +302,8 @@ ${signature}
       </div>
     );
   }
+
+  const displayPrice = selectedPlan === "premium" ? "R9,999.00" : selectedPlan === "enterprise" ? "R299,999.00" : "R199.00";
 
   return (
     <div className="w-full bg-slate-50 min-h-[calc(100vh-80px)] pt-12 pb-24">
@@ -294,28 +314,88 @@ ${signature}
 
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-1.5 rounded-full text-emerald-700 text-xs font-black uppercase tracking-widest mb-4">
-            <Shield className="w-3.5 h-3.5" /> Verified Premium Upgrade
+            <Shield className="w-3.5 h-3.5" /> Verified Subscription upgrade
           </div>
           <h1 className="text-3xl md:text-4xl font-display font-black text-slate-900 tracking-tight mb-4">
-            Base Premium Plan
+            Choose Your Subscription Level
           </h1>
           <p className="text-slate-600 max-w-2xl mx-auto font-medium">
-            Complete the form below to upgrade your account to Premium. This unlocks unlimited website hosting, domain branding, verified badges, and advanced features.
+            Select the plan below that matches your requirements. Fill in your business details below to process your verification and custom setup.
           </p>
         </div>
 
-        {/* Pricing Info Card */}
-        <div className="bg-white border border-emerald-200 rounded-3xl shadow-sm p-6 mb-8 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div>
-            <h3 className="text-2xl font-black text-slate-900">R199.00 <span className="text-sm text-slate-500 font-bold">/ month</span></h3>
-            <p className="text-sm text-slate-500 mt-1">Billed via South African debit card mandate.</p>
-          </div>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs font-bold text-slate-700">
-            <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Unlimited Static Hosting</li>
-            <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Custom @domain.co.za emails</li>
-            <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> SearchBiz Verified Badge</li>
-            <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> 1 Custom Directory Listing</li>
-          </ul>
+        {/* Pricing Info Cards Selector */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {[
+            {
+              id: "essential",
+              name: "Essential Verified",
+              badge: "Verified Badge",
+              price: "R199.00",
+              period: "month",
+              desc: "1 Listing only, verified badge, hosting, emails & smart static website.",
+              features: ["1 Verified Listing", "WhatsApp & Email listed", "Unlimited hosting & emails"]
+            },
+            {
+              id: "premium",
+              name: "Premium Tier",
+              badge: "Premium Verified Badge",
+              price: "R9,999.00",
+              period: "month",
+              desc: "Everything from Essential tier plus 1 ad listing in all areas across RSA.",
+              features: ["1 Listing in ALL areas", "Premium Verified Badge", "Priority Placement"]
+            },
+            {
+              id: "enterprise",
+              name: "Enterprise Sponsor",
+              badge: "Sponsor Verified Badge",
+              price: "R299,999.00",
+              period: "month",
+              desc: "Unlimited Ads, comprehensive marketing package (Facebook, TikTok, YT, Google).",
+              features: ["Unlimited ads & posters", "Full social media marketing", "Enterprise Sponsor Badge"]
+            }
+          ].map((plan) => {
+            const isSelected = selectedPlan === plan.id;
+            return (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => setSelectedPlan(plan.id)}
+                className={`text-left p-5 rounded-2xl border-2 transition-all duration-300 relative flex flex-col justify-between ${
+                  isSelected
+                    ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20 shadow-md scale-[1.01]"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
+              >
+                <div>
+                  <div className="flex justify-between items-start gap-1">
+                    <span className="font-black text-xs uppercase tracking-wide text-slate-800">{plan.name}</span>
+                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 border border-slate-200"
+                    }`}>
+                      {plan.badge}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-1.5 leading-relaxed">{plan.desc}</p>
+                </div>
+                
+                <div className="mt-4 pt-3 border-t border-slate-100 w-full">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-black text-slate-900">{plan.price}</span>
+                    <span className="text-[10px] font-bold text-slate-400">/{plan.period}</span>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-[9px] font-bold text-slate-600">
+                    {plan.features.map((f, i) => (
+                      <li key={i} className="flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {/* The Form */}
@@ -524,7 +604,7 @@ ${signature}
               </div>
             </div>
 
-            {/* Consent & Signature */}
+             {/* Consent & Signature */}
             <div>
               <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">5. Authorization</h3>
               
@@ -532,7 +612,7 @@ ${signature}
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input required type="checkbox" checked={formData.consent} onChange={e => setFormData({...formData, consent: e.target.checked})} className="mt-1 h-5 w-5 text-emerald-600 rounded border-slate-300" />
                   <div>
-                    <span className="block text-sm font-bold text-slate-800">Consent to debit order of R199.00 / month</span>
+                    <span className="block text-sm font-bold text-slate-800">Consent to debit order of {displayPrice} / month</span>
                     <span className="block text-xs text-slate-500 mt-1 leading-relaxed">
                       I understand that there are <strong>no contracts</strong>, and I can cancel anytime with communication in advance.
                     </span>

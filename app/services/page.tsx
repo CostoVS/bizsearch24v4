@@ -39,61 +39,87 @@ export default function SearchBizServicesPage() {
 
   const pricingTiers = [
     {
-      name: "Basic Free Tier",
+      id: "free",
+      name: "Free Basic Tier",
       price: "R0",
+      badge: "Not Verified Badge",
       period: "forever",
       color: "border-slate-200 bg-white text-slate-800",
-      desc: "Ideal for starting out and testing the waters",
+      desc: "Ideal for starting out with a basic local listing.",
       features: [
-        "1 Free unverified ad listing",
-        "Basic search directory placement",
-        "Lead message receipt alerts"
+        "1 Listing only",
+        "Business Name shown",
+        "Business Address",
+        "Phone Number",
+        "Services Offered",
+        "Not Verified Badge"
       ],
       popular: false
     },
     {
-      name: "Essential Tier",
-      price: "R199.99",
+      id: "essential",
+      name: "Essential Verified Tier",
+      price: "R199",
+      badge: "Verified Badge",
       period: "month",
       color: "border-emerald-500 bg-emerald-50/40 text-emerald-950 ring-2 ring-emerald-500/20",
-      desc: "Complete digital setup for South African SMEs",
+      desc: "Complete digital presence for South African businesses.",
       features: [
-        "Unlimited Hosting",
-        "Unlimited Email Accounts",
-        "Smart Static Website",
-        "1 Verified SearchBiz Listing",
-        "Your Own Logins",
-        ".co.za domain R99 per year",
-        "Extra Verified Listings: R199.00 each / mo"
+        "1 Listing only",
+        "Business Name shown",
+        "Business Description included",
+        "Services Offered listed",
+        "Business Address",
+        "Phone Number",
+        "WhatsApp Number enabled",
+        "Business Email shown",
+        "Social media platform links",
+        "Unlimited hosting account",
+        "Unlimited email accounts",
+        "Smart static website design",
+        "Add-on: .co.za domain R99/yr",
+        "Add-on: Extra listings R199/area each/mo",
+        "Verified Badge unlocked"
       ],
       popular: true
     },
     {
-      name: "Pro Premium Tier",
-      price: "R9,999.90",
+      id: "premium",
+      name: "Premium Tier",
+      price: "R9,999",
+      badge: "Premium Verified Badge",
       period: "month",
       color: "border-slate-800 bg-slate-900 text-white",
-      desc: "Maximum reach and prime placement",
+      desc: "Regional dominance and broad community reach.",
       features: [
-        "Everything in Essential Tier",
-        "Unlimited Premium Ads",
-        "1 Ad Per Area",
-        "Ads always above basic Free tier ads",
-        "Ads always above Essential tier ads"
+        "Everything from Essential Tier",
+        "1 Ad listing in all areas across South Africa",
+        "Premium Verified Badge unlocked",
+        "Priority regional search placement",
+        "Premium SLA support response"
       ],
       popular: false
     },
     {
+      id: "enterprise",
       name: "Enterprise Sponsor Tier",
-      price: "R100,000.00",
+      price: "R299,999",
+      badge: "Enterprise Sponsor Premium Verified Badge",
       period: "month",
-      color: "border-purple-500 bg-purple-950/20 text-slate-900",
-      desc: "The ultimate marketing partnership",
+      color: "border-indigo-500 bg-indigo-950 text-indigo-100 ring-2 ring-indigo-500/40",
+      desc: "Full-scale managed marketing powerhouse.",
       features: [
-        "Everything from Essential & Pro Premium",
-        "Sponsor Ad (always on top of all ads)",
-        "Facebook, YouTube, TikTok marketing",
-        "Instagram, X marketing included"
+        "Everything from Essential & Premium tiers",
+        "Unlimited Ads with top priority",
+        "Marketing ads, images, posters, videos",
+        "Facebook marketing campaigns",
+        "TikTok marketing campaigns",
+        "YouTube marketing campaigns",
+        "X marketing campaigns",
+        "Instagram marketing campaigns",
+        "Google search marketing campaigns",
+        "Dedicated marketing account manager",
+        "Enterprise Sponsor Premium Verified Badge"
       ],
       popular: false
     }
@@ -101,7 +127,7 @@ export default function SearchBizServicesPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 pt-24 pb-20 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto space-y-12 mb-10">
+      <div className="max-w-7xl mx-auto space-y-12 mb-10">
         
         {/* Banner Hero Grid Header */}
         <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 shadow-2xl overflow-hidden relative p-8 sm:p-12 md:p-16 text-center text-white animate-fadeIn">
@@ -159,15 +185,20 @@ export default function SearchBizServicesPage() {
                 className={`rounded-[2rem] border-2 p-6 flex flex-col justify-between shadow-sm relative overflow-hidden transition-all duration-300 hover:shadow-xl ${tier.color}`}
               >
                 {tier.popular && (
-                  <div className="absolute top-0 right-0 bg-emerald-600 text-white font-black uppercase text-[8px] tracking-widest px-3 py-1 rounded-bl-xl">
+                  <div className="absolute top-0 right-0 bg-emerald-600 text-white font-black uppercase text-[8px] tracking-widest px-3 py-1 rounded-bl-xl z-10">
                     POPULAR
                   </div>
                 )}
                 
                 <div className="space-y-4">
                   <div>
-                    <h3 className="font-black text-sm uppercase tracking-wide">{tier.name}</h3>
-                    <div className="flex items-baseline gap-1 mt-2">
+                    <div className="flex justify-between items-start gap-2">
+                      <h3 className="font-black text-sm uppercase tracking-wide">{tier.name}</h3>
+                    </div>
+                    <span className="inline-block bg-slate-100 text-slate-800 text-[9px] font-bold px-2 py-0.5 rounded-full mt-1 border border-slate-200 uppercase tracking-wider">
+                      {tier.badge}
+                    </span>
+                    <div className="flex items-baseline gap-1 mt-3">
                       <span className="text-2xl sm:text-3xl font-black">{tier.price}</span>
                       <span className="text-xs font-bold opacity-60">/{tier.period}</span>
                     </div>
@@ -186,16 +217,18 @@ export default function SearchBizServicesPage() {
 
                 <div className="pt-6">
                   <a 
-                    href="/login" 
+                    href={tier.id === "free" ? "/create-ad" : `/premium?plan=${tier.id}`} 
                     className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${
                       tier.popular 
-                        ? "bg-emerald-600 text-white hover:bg-emerald-700" 
-                        : tier.name.includes("Pro") 
-                          ? "bg-white text-slate-950 hover:bg-slate-100" 
-                          : "bg-slate-800 text-white hover:bg-slate-900"
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md" 
+                        : tier.id === "enterprise" 
+                          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                          : tier.id === "premium"
+                            ? "bg-white text-slate-950 hover:bg-slate-100 border border-slate-300"
+                            : "bg-slate-800 text-white hover:bg-slate-900"
                     }`}
                   >
-                    Select Plan
+                    {tier.id === "free" ? "Get Started (Free)" : "Select & Upgrade"}
                   </a>
                 </div>
               </div>

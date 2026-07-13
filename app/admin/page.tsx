@@ -299,7 +299,9 @@ export default function AdminDashboard() {
   };
 
   const handleApprovePremium = async (appId: string) => {
-    if (!confirm("Are you sure you want to approve this premium application? This will verify their documents, active monthly debit billing of R199, and automatically upgrade their credentials to Premium!")) return;
+    const targetApp = premiumApps.find(a => a.id === appId);
+    const planName = (targetApp?.plan || "ESSENTIAL").toUpperCase();
+    if (!confirm(`Are you sure you want to approve this verification application? This will verify their documents, activate their monthly debit billing for the ${planName} tier, and automatically upgrade their credentials!`)) return;
     try {
       const res = await fetch("/api/admin/premium-applications", {
         method: "POST",
@@ -314,7 +316,7 @@ export default function AdminDashboard() {
           const uData = await rUsers.json();
           if (uData.users) setUsers(uData.users);
         }
-        alert("Application approved! User plan upgraded to PREMIUM.");
+        alert(`Application approved! User plan upgraded to ${planName}.`);
       } else {
         alert("Failed to update status.");
       }
@@ -1251,10 +1253,10 @@ export default function AdminDashboard() {
 
             <div className="space-y-4">
               {premiumApps.map((app) => {
-                const planFormatted = app.plan || "PREMIUM";
-                let priceText = "R199.99 / Month";
-                if (planFormatted === "PRO") priceText = "R9,999.90 / Month";
-                else if (planFormatted === "SPONSOR" || planFormatted === "ENTERPRISE") priceText = "R100,000.00 / Month";
+                const planFormatted = (app.plan || "ESSENTIAL").toUpperCase();
+                let priceText = "R199.00 / Month";
+                if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00 / Month";
+                else if (planFormatted === "ENTERPRISE" || planFormatted === "SPONSOR") priceText = "R299,999.00 / Month";
 
                 return (
                   <div key={app.id} className="border border-slate-200 rounded-2xl p-6 bg-slate-50">
