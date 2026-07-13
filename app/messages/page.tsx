@@ -16,7 +16,7 @@ interface ParsedUpgradeRequest {
 
 function parseUpgradeRequest(content: string): ParsedUpgradeRequest {
   const result: ParsedUpgradeRequest = {
-    isUpgradeRequest: content ? content.includes("*** NEW PREMIUM UPGRADE REQUEST ***") : false,
+    isUpgradeRequest: content ? (content.includes("UPGRADE REQUEST") || content.includes("NEW PREMIUM UPGRADE REQUEST")) : false,
     fields: {},
     documents: {},
     consents: [],
@@ -109,6 +109,41 @@ export default function MessagesPage() {
     return [];
   });
 
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+
+  const formatEmailForDisplay = (email: string) => {
+    if (!email) return "";
+    const lower = email.trim().toLowerCase();
+    if (lower === "nicholauscostochetty@gmail.com") {
+      return "SearchBiz Admin";
+    }
+    return email;
+  };
+
+  const downloadSingleMessage = (msg: Message) => {
+    const cleanEmail = (em: string) => em.toLowerCase().trim() === "nicholauscostochetty@gmail.com" ? "SearchBiz Admin" : em;
+    const content = `Sender: ${msg.senderName} (${cleanEmail(msg.senderEmail)})
+Recipient: ${cleanEmail(msg.recipientEmail)}
+Date: ${msg.timestamp}
+Subject/Ad: ${msg.adTitle || "General"}
+
+--------------------------------------------------
+MESSAGE CONTENT:
+${msg.content}
+--------------------------------------------------
+`;
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Message_${msg.id}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/");
@@ -200,6 +235,50 @@ export default function MessagesPage() {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
       window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
     }
+  };
+
+  const handleSendReply = async (msg: Message) => {
+    if (!user || !replyText.trim()) return;
+    
+    const senderEmail = user.email.toLowerCase();
+    const senderName = user.fullName || (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" ? "SearchBiz Admin" : user.email.split('@')[0]);
+
+    const newMsg: Message = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      threadId: msg.threadId || `thread_${Date.now()}`,
+      adId: msg.adId,
+      adTitle: msg.adTitle,
+      senderEmail: senderEmail,
+      senderName: senderName,
+      recipientEmail: msg.senderEmail.toLowerCase(),
+      content: replyText.trim(),
+      timestamp: new Date().toLocaleString(),
+      read: false
+    };
+    
+    const storedStr = localStorage.getItem("searchbiz_messages_v1");
+    let existing: Message[] = [];
+    if (storedStr) {
+      try { existing = JSON.parse(storedStr); } catch (e) {}
+    }
+    existing.push(newMsg);
+    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
+    setMessages(existing);
+    
+    try {
+      await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: existing })
+      });
+      console.log("Reply sent securely to server!");
+    } catch (err) {
+      console.error("Immediate reply sync failed:", err);
+    }
+
+    setReplyingToId(null);
+    setReplyText("");
+    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
   };
 
   const getDeterministicMemberId = (email: string) => {
@@ -644,13 +723,13 @@ export default function MessagesPage() {
                             <span className="break-all">
                               {msg.senderName} <span className="bg-slate-100 text-slate-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded">{getDeterministicMemberId(msg.senderEmail)}</span>
                               {" ➝ "} 
-                              {msg.recipientEmail} <span className="bg-slate-100 text-slate-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded">{getDeterministicMemberId(msg.recipientEmail)}</span>
+                              {formatEmailForDisplay(msg.recipientEmail)} <span className="bg-slate-100 text-slate-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded">{getDeterministicMemberId(msg.recipientEmail)}</span>
                             </span>
                           </span>
                         ) : isReceived && msg.senderEmail.toLowerCase() !== user.email.toLowerCase() ? (
                           <span>From: {msg.senderName} <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded ml-1">{getDeterministicMemberId(msg.senderEmail)}</span></span>
                         ) : (
-                          <span>Sent To: {msg.recipientEmail} <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded ml-1">{getDeterministicMemberId(msg.recipientEmail)}</span></span>
+                          <span>Sent To: {formatEmailForDisplay(msg.recipientEmail)} <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded ml-1">{getDeterministicMemberId(msg.recipientEmail)}</span></span>
                         )}
                       </span>
                       {user.role === "ADMIN" && <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0 self-start mt-0.5" />}
@@ -804,7 +883,62 @@ export default function MessagesPage() {
                   );
                 })()}
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                {/* Inline reply form when this message is being replied to */}
+                {replyingToId === msg.id && (
+                  <div className="mt-4 p-4 bg-slate-50 border border-slate-250 rounded-xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-xs font-black text-slate-500 uppercase tracking-wider">
+                        Reply to {msg.senderName}
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono font-semibold">
+                        Thread: {msg.adTitle || "General"}
+                      </span>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Type your response here..."
+                      className="w-full px-3 py-2 border border-slate-350 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setReplyingToId(null);
+                          setReplyText("");
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 rounded-md transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleSendReply(msg)}
+                        disabled={!replyText.trim()}
+                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition"
+                      >
+                        Send Response
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 flex-wrap">
+                  <button 
+                    onClick={() => {
+                      const parsed = parseUpgradeRequest(msg.content);
+                      if (parsed.isUpgradeRequest) {
+                        downloadMessageProof(msg);
+                      } else {
+                        downloadSingleMessage(msg);
+                      }
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1 shrink-0"
+                    title="Download message separately"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download
+                  </button>
+
                   {isReceived && !msg.read && msg.senderEmail.toLowerCase() !== user.email.toLowerCase() && (
                     <button 
                       onClick={() => handleMarkRead(msg.id)}
@@ -813,49 +947,19 @@ export default function MessagesPage() {
                       Mark as Read
                     </button>
                   )}
-                  {msg.senderEmail.toLowerCase() !== user.email.toLowerCase() && isReceived && user.role !== "ADMIN" && (
+
+                  {msg.senderEmail.toLowerCase() !== user.email.toLowerCase() && (
                     <button
                       onClick={() => {
-                        const reply = window.prompt(`Reply to ${msg.senderName}:`);
-                        if (reply && reply.trim()) {
-                            // reply logic
-                            const newMsg = {
-                              id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                              threadId: msg.threadId,
-                              adId: msg.adId,
-                              adTitle: msg.adTitle,
-                              senderEmail: user.email.toLowerCase(),
-                              senderName: user.email.split('@')[0], 
-                              recipientEmail: msg.senderEmail.toLowerCase(),
-                              content: reply.trim(),
-                              timestamp: new Date().toLocaleString(),
-                              read: false
-                            };
-                            
-                            const storedStr = localStorage.getItem("searchbiz_messages_v1");
-                            let existing: Message[] = [];
-                            if (storedStr) {
-                              try { existing = JSON.parse(storedStr); } catch (e) {}
-                            }
-                            existing.push(newMsg);
-                            localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
-                            
-                            // Immediate server push for responses/replies
-                            fetch('/api/storage', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ messages: existing })
-                            }).catch(err => console.error("Immediate reply sync failed:", err));
-
-                            console.log("Reply sent securely!");
-                            window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
-                        }
+                        setReplyingToId(msg.id);
+                        setReplyText("");
                       }}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition"
+                      className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition shrink-0"
                     >
                       Reply
                     </button>
                   )}
+
                   <button 
                     onClick={() => handleDelete(msg.id, msg.adTitle)}
                     className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
