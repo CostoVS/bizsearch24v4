@@ -329,8 +329,8 @@ ${signature}
           {[
             {
               id: "essential",
-              name: "Essential Verified",
-              badge: "Verified Badge",
+              name: "Essential Verified Tier 2",
+              badge: "Verified badge",
               price: "R199.00",
               period: "month",
               desc: "Complete digital presence for South African businesses.",
@@ -354,23 +354,23 @@ ${signature}
             },
             {
               id: "premium",
-              name: "Premium Tier",
-              badge: "Premium Verified Badge",
+              name: "Premium Tier 3",
+              badge: "premium verified badge",
               price: "R9,999.00",
               period: "month",
               desc: "Regional dominance and broad community reach.",
               features: [
                 "Everything from Essential Tier",
                 "1 Ad listing in all areas across South Africa",
-                "Premium Verified Badge unlocked",
+                "premium verified badge unlocked",
                 "Priority regional search placement",
                 "Premium SLA support response"
               ]
             },
             {
               id: "enterprise",
-              name: "Enterprise Sponsor",
-              badge: "Sponsor Verified Badge",
+              name: "Enterprise Sponsor Tier 4",
+              badge: "Enterprise Sponsor Premium Verified badge",
               price: "R299,999.00",
               period: "month",
               desc: "Full-scale managed marketing powerhouse.",

@@ -1504,11 +1504,10 @@ export default function AdminDashboard() {
                               onChange={(e) => handleUpdateUserPlan(u.id, e.target.value)}
                               className="bg-slate-100 text-slate-800 text-[10px] font-extrabold uppercase tracking-wider rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
                             >
-                              <option value="FREE">FREE</option>
-                              <option value="PREMIUM">PREMIUM</option>
-                              <option value="ESSENTIAL">ESSENTIAL</option>
-                              <option value="PRO">PRO</option>
-                              <option value="SPONSOR">SPONSOR</option>
+                              <option value="FREE">FREE (Free Basic)</option>
+                              <option value="ESSENTIAL">ESSENTIAL (Verified R199)</option>
+                              <option value="PREMIUM">PREMIUM (Premium R9,999)</option>
+                              <option value="ENTERPRISE">ENTERPRISE (Sponsor R299,999)</option>
                             </select>
                           </div>
                           <div className="flex items-center space-x-1">

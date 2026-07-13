@@ -197,11 +197,15 @@ export default function CreateAdPage() {
   useEffect(() => {
     if (user && !isAdmin) {
       setTimeout(() => {
-        const isPrem = user.plan === "PREMIUM";
-        setSelectedAdType(isPrem ? "PREMIUM" : "FREE");
-        setVerified(isPrem);
-        setIsPremium(isPrem);
-        setIsSponsor(false);
+        const uPlan = (user.plan || "").toUpperCase();
+        const hasEssential = uPlan === "ESSENTIAL";
+        const hasPremium = uPlan === "PREMIUM" || uPlan === "PRO";
+        const hasEnterprise = uPlan === "ENTERPRISE" || uPlan === "SPONSOR";
+
+        setVerified(hasEssential || hasPremium || hasEnterprise);
+        setIsPremium(hasPremium || hasEnterprise);
+        setIsSponsor(hasEnterprise);
+        setSelectedAdType(hasEnterprise ? "SPONSOR" : hasPremium ? "PREMIUM" : "FREE");
       }, 0);
     }
   }, [user, isAdmin]);
@@ -219,7 +223,11 @@ export default function CreateAdPage() {
     );
   }
 
-  const isPremiumOrAdmin = isPremium || verified || isSponsor || isAdmin || user?.plan === "PREMIUM";
+  const isPremiumOrAdmin = isPremium || verified || isSponsor || isAdmin || ["ESSENTIAL", "PREMIUM", "PRO", "ENTERPRISE", "SPONSOR"].includes((user?.plan || "").toUpperCase());
+  const userPlanUpper = (user?.plan || "").toUpperCase();
+  const unlockVerified = isAdmin || ["ESSENTIAL", "PREMIUM", "PRO", "ENTERPRISE", "SPONSOR"].includes(userPlanUpper);
+  const unlockPremium = isAdmin || ["PREMIUM", "PRO", "ENTERPRISE", "SPONSOR"].includes(userPlanUpper);
+  const unlockSponsor = isAdmin || ["ENTERPRISE", "SPONSOR"].includes(userPlanUpper);
   const isSponsorSelected = isSponsor;
 
   const handleAutofill = () => {
@@ -462,7 +470,7 @@ export default function CreateAdPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* Verified Ad option */}
-                    {isPremiumOrAdmin ? (
+                    {unlockVerified ? (
                       <label className={`flex items-start gap-3 p-4 bg-white hover:bg-emerald-50/10 rounded-xl border cursor-pointer transition ${verified ? 'border-emerald-300 ring-2 ring-emerald-500/10' : 'border-slate-200'}`}>
                         <input
                           type="checkbox"
@@ -494,7 +502,7 @@ export default function CreateAdPage() {
                     )}
 
                     {/* Premium Ad option */}
-                    {isPremiumOrAdmin ? (
+                    {unlockPremium ? (
                       <label className={`flex items-start gap-3 p-4 bg-white hover:bg-amber-50/10 rounded-xl border cursor-pointer transition ${isPremium ? 'border-amber-300 ring-2 ring-amber-500/10' : 'border-slate-200'}`}>
                         <input
                           type="checkbox"
@@ -526,7 +534,7 @@ export default function CreateAdPage() {
                     )}
 
                     {/* Sponsored Ad option */}
-                    {isPremiumOrAdmin ? (
+                    {unlockSponsor ? (
                       <label className={`flex items-start gap-3 p-4 bg-white hover:bg-indigo-50/10 rounded-xl border cursor-pointer transition ${isSponsor ? 'border-indigo-300 ring-2 ring-indigo-500/10' : 'border-slate-200'}`}>
                         <input
                           type="checkbox"

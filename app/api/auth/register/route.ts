@@ -23,9 +23,9 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
     // 2. Generate new message
     const adminEmail = "nicholauscostochetty@gmail.com";
     const planFormatted = plan.toUpperCase();
-    let priceText = "R199.99/month";
-    if (planFormatted === "PRO") priceText = "R9,999.90/month";
-    if (planFormatted === "SPONSOR") priceText = "R100,000.00/month";
+    let priceText = "R199.00/month";
+    if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00/month";
+    if (planFormatted === "ENTERPRISE" || planFormatted === "SPONSOR") priceText = "R299,999.00/month";
 
     const newMessage = {
       id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(7),

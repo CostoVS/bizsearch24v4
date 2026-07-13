@@ -145,7 +145,7 @@ export default function UserDashboard() {
   }
 
   const myAds = ads.filter(ad => ad && ad.userId === user.id);
-  const canPlaceAd = user.plan === "PREMIUM" || myAds.length === 0;
+  const canPlaceAd = ["PREMIUM", "ENTERPRISE", "PRO", "SPONSOR"].includes((user.plan || "").toUpperCase()) || myAds.length === 0;
 
   const handleDeleteUserAd = (id: string) => {
     if (confirm("Are you sure you want to delete this advertisement? This action cannot be undone.")) {
