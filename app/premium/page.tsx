@@ -117,6 +117,9 @@ export default function PremiumPage() {
     companyName: "",
     cipcNumber: "",
     sarsTaxNumber: "",
+    bankName: "",
+    accountHolder: "",
+    accountType: "",
     bankAccount: "",
     branchCode: "",
     consent: false
@@ -190,6 +193,9 @@ WhatsApp: ${formData.whatsapp}
 Company Name: ${formData.companyName}
 CIPC Number: ${formData.cipcNumber}
 SARS Tax Number: ${formData.sarsTaxNumber}
+Name of Bank: ${formData.bankName}
+Account Holder: ${formData.accountHolder}
+Account Type: ${formData.accountType}
 Business Bank Account: ${formData.bankAccount}
 Branch Code: ${formData.branchCode}
 
@@ -224,7 +230,10 @@ ${signature}
           idDocUrl: idUrl,
           signatureUrl: signature,
           bankAccount: formData.bankAccount,
-          branchCode: formData.branchCode
+          branchCode: formData.branchCode,
+          bankName: formData.bankName,
+          accountHolder: formData.accountHolder,
+          accountType: formData.accountType
         })
       });
 
@@ -375,20 +384,117 @@ ${signature}
                   <label className="block text-xs font-bold text-slate-700 mb-1">SARS Tax Number</label>
                   <input required type="text" value={formData.sarsTaxNumber} onChange={e => setFormData({...formData, sarsTaxNumber: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Business Bank Account Number</label>
-                  <input required type="text" value={formData.bankAccount} onChange={e => setFormData({...formData, bankAccount: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+            </div>
+
+            {/* Debit Order Banking Details */}
+            <div>
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">3. Debit Order Banking Details</h3>
+              <p className="text-xs text-slate-500 mb-4">Please provide the bank details for your South African debit card mandate authorization.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Account Holder's Name */}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Account Holder's Name</label>
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="e.g. John Doe / Company Name"
+                    value={formData.accountHolder} 
+                    onChange={e => setFormData({...formData, accountHolder: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                  />
                 </div>
+
+                {/* Name of Bank */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Name of Bank</label>
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="Type or select your bank below"
+                    value={formData.bankName} 
+                    onChange={e => setFormData({...formData, bankName: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {["Capitec", "FNB", "Standard Bank", "ABSA", "Nedbank"].map(b => (
+                      <button
+                        type="button"
+                        key={b}
+                        onClick={() => setFormData({...formData, bankName: b})}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition ${
+                          formData.bankName === b 
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" 
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Account Type */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Type of Business Account</label>
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="Type or select account type below"
+                    value={formData.accountType} 
+                    onChange={e => setFormData({...formData, accountType: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {["Current/Cheque", "Savings", "Transmission"].map(t => (
+                      <button
+                        type="button"
+                        key={t}
+                        onClick={() => setFormData({...formData, accountType: t})}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition ${
+                          formData.accountType === t 
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" 
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Account Number */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Account Number</label>
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="e.g. 10123456789"
+                    value={formData.bankAccount} 
+                    onChange={e => setFormData({...formData, bankAccount: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                  />
+                </div>
+
+                {/* Branch Code */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Branch Code</label>
-                  <input required type="text" value={formData.branchCode} onChange={e => setFormData({...formData, branchCode: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="e.g. 632005"
+                    value={formData.branchCode} 
+                    onChange={e => setFormData({...formData, branchCode: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                  />
                 </div>
               </div>
             </div>
 
             {/* Document Uploads */}
             <div>
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">3. Required Documents</h3>
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">4. Required Documents</h3>
               <p className="text-xs text-slate-500 mb-4">Please upload clear images (JPG, PNG) of the following documents.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition">
@@ -420,7 +526,7 @@ ${signature}
 
             {/* Consent & Signature */}
             <div>
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">4. Authorization</h3>
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">5. Authorization</h3>
               
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
                 <label className="flex items-start gap-3 cursor-pointer">

@@ -34,7 +34,10 @@ export async function POST(req: NextRequest) {
       idDocUrl,
       signatureUrl,
       bankAccount,
-      branchCode
+      branchCode,
+      bankName,
+      accountHolder,
+      accountType
     } = data;
 
     if (!email || !fullName || !idNumber) {
@@ -61,6 +64,9 @@ export async function POST(req: NextRequest) {
       signatureUrl: signatureUrl || '',
       bankAccount: bankAccount || '',
       branchCode: branchCode || '',
+      bankName: bankName || '',
+      accountHolder: accountHolder || '',
+      accountType: accountType || '',
       status: 'PENDING',
       createdAt: new Date().toISOString()
     };

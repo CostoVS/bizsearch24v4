@@ -1348,6 +1348,32 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
+                    <div className="mt-4 bg-slate-100 border border-slate-200 rounded-xl p-4 text-xs space-y-2">
+                      <p className="font-bold text-slate-500 text-[10px] uppercase">Debit Order Banking Details</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-1.5">
+                        <div>
+                          <span className="text-slate-400 block font-semibold text-[10px]">BANK NAME</span>
+                          <span className="font-bold text-slate-800">{app.bankName || "Not Specified"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold text-[10px]">ACCOUNT HOLDER</span>
+                          <span className="font-bold text-slate-800">{app.accountHolder || "Not Specified"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold text-[10px]">ACCOUNT TYPE</span>
+                          <span className="font-bold text-slate-800">{app.accountType || "Not Specified"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold text-[10px]">ACCOUNT NUMBER</span>
+                          <span className="font-bold text-slate-800">{app.bankAccount || "Not Specified"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold text-[10px]">BRANCH CODE</span>
+                          <span className="font-bold text-slate-800">{app.branchCode || "Not Specified"}</span>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-4 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 flex items-center justify-between">
                       <span className="text-xs font-semibold text-emerald-950">Debit Order mandate amount authorized</span>
                       <span className="text-xs font-bold text-emerald-700">{priceText} / Month (ZAR)</span>
