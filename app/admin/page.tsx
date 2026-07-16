@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
 import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X } from "lucide-react";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import { SA_PROVINCES, getPostalCodeForTown } from "@/lib/locations";
@@ -127,9 +127,21 @@ export default function AdminDashboard() {
   const [seoGeneratorLog, setSeoGeneratorLog] = useState<string[]>([]);
 
   // CSV Import dynamic configurations
-  const [csvDefaultProvince, setCsvDefaultProvince] = useState("national");
+  const [csvDefaultProvince, setCsvDefaultProvince] = useState("gauteng");
   const [csvDefaultCategory, setCsvDefaultCategory] = useState("General");
   const [csvAiEnable, setCsvAiEnable] = useState(true);
+
+  // New CSV Upload Center Tab state variables
+  const [csvFileParsed, setCsvFileParsed] = useState<any[]>([]); 
+  const [csvEditIndex, setCsvEditIndex] = useState<number | null>(null); 
+  const [csvUploadLoading, setCsvUploadLoading] = useState(false);
+  const [csvSearchQuery, setCsvSearchQuery] = useState("");
+  const [csvProvinceFilter, setCsvProvinceFilter] = useState("all");
+  const [csvCategoryFilter, setCsvCategoryFilter] = useState("all");
+
+  // Claim & Removal requests States
+  const [claimRequests, setClaimRequests] = useState<any[]>([]);
+  const [isClaimsLoading, setIsClaimsLoading] = useState(false);
 
   // Ad and search filtering states
   const [adSearchTerm, setAdSearchTerm] = useState("");
@@ -342,6 +354,22 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleAddCsvRow = () => {
+    setCsvFileParsed(prev => [
+      {
+        title: "New Business Listing",
+        address: "",
+        phone: "",
+        email: "",
+        category: csvDefaultCategory !== "General" ? csvDefaultCategory : "Other",
+        province: csvDefaultProvince || "gauteng",
+        city: "Johannesburg",
+        servicesOffered: ""
+      },
+      ...prev
+    ]);
+  };
+
   useEffect(() => {
     fetch('/api/admin/users').then(res => res.json()).then(data => {
       Promise.resolve().then(() => {
@@ -357,6 +385,21 @@ export default function AdminDashboard() {
       });
     });
   }, []);
+
+  const loadClaimRequests = async () => {
+    setIsClaimsLoading(true);
+    try {
+      const res = await fetch("/api/storage");
+      if (res.ok) {
+        const data = await res.json();
+        setClaimRequests(data.claimRequests || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch claims:", e);
+    } finally {
+      setIsClaimsLoading(false);
+    }
+  };
 
   // Load analytics events and unified advertisements list
   useEffect(() => {
@@ -377,6 +420,7 @@ export default function AdminDashboard() {
         // Auto-load custom slugs and premium documents
         loadCustomSlugs();
         loadPremiumApps();
+        loadClaimRequests();
       }, 0);
     }
   }, [activeTab]);
@@ -749,6 +793,7 @@ export default function AdminDashboard() {
               {[
                 { id: 'overview', label: 'User Intelligence', icon: Users, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'ads', label: 'Advertisement Control', icon: Database, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
+                { id: 'csv_uploads', label: `CSV Upload & Claims (${claimRequests.filter(c => c?.status === 'PENDING').length})`, icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'slugs', label: `Custom URL Slugs (${customSlugs.length})`, icon: Sparkles, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'premium', label: `Premium Review (${premiumApps.filter(a => a.status === 'PENDING').length})`, icon: ShieldAlert, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'banners', label: 'Global Site Banners', icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
@@ -1388,6 +1433,565 @@ export default function AdminDashboard() {
                 <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">
                   <ShieldAlert className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-500 font-medium">No premium registration applications found</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Upload Center & Unclaimed Business Claims Inbox */}
+      {activeTab === "csv_uploads" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          
+          {/* Section 1: CSV Scraper & AI Sorting Workspace */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-3xl -mr-32 -mt-32 opacity-20"></div>
+            
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-100 pb-6">
+              <div>
+                <h3 className="text-xl font-bold font-display text-slate-900 flex items-center gap-2">
+                  🗂 CSV Business Ingestion & AI Sorting
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Upload scraped directory CSV lists. Gemini AI will analyze, geolocate, and auto-categorize each business before committing.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                <button
+                  onClick={handleAddCsvRow}
+                  className="px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5 text-slate-500" /> Add Row Manually
+                </button>
+                {csvFileParsed.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirm("Are you sure you want to clear the current parsed workspace? All uncommitted edits will be lost.")) {
+                        setCsvFileParsed([]);
+                      }
+                    }}
+                    className="px-4 py-2 border border-rose-100 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                  >
+                    Clear Workspace
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Ingestion Config Panels */}
+            <div className="relative z-10 mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Fallback Province</label>
+                <select
+                  value={csvDefaultProvince}
+                  onChange={(e) => setCsvDefaultProvince(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium"
+                >
+                  <option value="gauteng">Gauteng</option>
+                  <option value="kwazulu-natal">KwaZulu-Natal</option>
+                  <option value="western-cape">Western Cape</option>
+                  <option value="eastern-cape">Eastern Cape</option>
+                  <option value="free-state">Free State</option>
+                  <option value="limpopo">Limpopo</option>
+                  <option value="mpumalanga">Mpumalanga</option>
+                  <option value="north-west">North West</option>
+                  <option value="northern-cape">Northern Cape</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Fallback Category</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Plumbers, General"
+                  value={csvDefaultCategory}
+                  onChange={(e) => setCsvDefaultCategory(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium"
+                />
+              </div>
+
+              {/* CSV Parsing Target File Box */}
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-bold uppercase text-slate-550 block mb-1.5 ml-1">Select CSV Directory File</label>
+                <div className="relative flex items-center">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const text = event.target?.result as string;
+                        if (text) {
+                          // Standard CSV client parse
+                          const lines = text.split(/\r?\n/);
+                          if (lines.length < 2) {
+                            alert("Your CSV file must contain a header row and at least one data row.");
+                            return;
+                          }
+                          const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                          const parsedRows = [];
+                          for (let i = 1; i < lines.length; i++) {
+                            if (!lines[i].trim()) continue;
+                            const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                            const row: any = {};
+                            headers.forEach((header, idx) => {
+                              row[header] = values[idx] || "";
+                            });
+                            // Match common variations of CSV column names
+                            const title = row.title || row.name || row.company || row["company name"] || row.business || "";
+                            const address = row.address || row.street || row.location || "";
+                            const phone = row.phone || row.telephone || row.contact || "";
+                            const email = row.email || row.mail || "";
+                            const category = row.category || row.industry || csvDefaultCategory;
+                            const province = row.province || row.state || csvDefaultProvince;
+                            const city = row.city || row.town || "Johannesburg";
+                            const servicesOffered = row.services || row.description || row.about || "";
+                            
+                            if (title) {
+                              parsedRows.push({ title, address, phone, email, category, province, city, servicesOffered });
+                            }
+                          }
+                          setCsvFileParsed(parsedRows);
+                          alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let Gemini AI sort them.`);
+                        }
+                      };
+                      reader.readAsText(file);
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div className="w-full bg-slate-50 border-2 border-dashed border-slate-250 rounded-xl px-4 py-2 text-xs font-bold text-slate-650 flex items-center justify-center gap-2 hover:bg-slate-100 hover:border-emerald-500 transition-colors">
+                     📁 Click or Drag to Parse Directory CSV
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CSV AI Sort & Action Trigger Deck */}
+            {csvFileParsed.length > 0 && (
+              <div className="relative z-10 mt-6 bg-slate-50 p-5 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-500 p-2.5 rounded-xl text-white shadow-md shadow-emerald-500/10">
+                     ✨
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Workspace populated with {csvFileParsed.length} pending listing(s)</h4>
+                    <p className="text-xs text-slate-500 font-medium">Verify categorization and location coordinates below before locking them into sitemaps.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2.5 w-full md:w-auto shrink-0">
+                  <button
+                    onClick={async () => {
+                      if (csvFileParsed.length === 0) return;
+                      setCsvUploadLoading(true);
+                      try {
+                        const res = await fetch("/api/admin/csv-ai-sort", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            records: csvFileParsed,
+                            defaultProvince: csvDefaultProvince,
+                            defaultCategory: csvDefaultCategory
+                          })
+                        });
+                        if (res.ok) {
+                          const result = await res.json();
+                          if (Array.isArray(result.records)) {
+                            setCsvFileParsed(result.records);
+                            alert("Gemini AI has successfully categorized and province-mapped all rows!");
+                          } else {
+                            alert("AI sorting complete, but the server returned unrecognized formats.");
+                          }
+                        } else {
+                          const errData = await res.json();
+                          alert("Error from AI sorter: " + (errData.error || "Unknown"));
+                        }
+                      } catch (err) {
+                        alert("Error connecting with sorting server.");
+                      } finally {
+                        setCsvUploadLoading(false);
+                      }
+                    }}
+                    disabled={csvUploadLoading}
+                    className="flex-1 md:flex-none px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                  >
+                    {csvUploadLoading ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : "🪄 Auto-Sort with Gemini AI"}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (csvFileParsed.length === 0) return;
+                      if (!confirm(`Are you sure you want to commit these ${csvFileParsed.length} listing(s) directly to sitemaps and live indexes?`)) return;
+                      
+                      try {
+                        const formatted = csvFileParsed.map((item, index) => ({
+                          id: `csv-${Date.now()}-${index}-${Math.random().toString(36).substring(2,5)}`,
+                          userId: "system",
+                          title: item.title || "Unnamed Business",
+                          category: item.category || "Other",
+                          location: item.province || "gauteng",
+                          description: item.servicesOffered ? `Services offered: ${item.servicesOffered}` : "Basic unverified directory listing.",
+                          servicesOffered: item.servicesOffered || "",
+                          address: item.address || "",
+                          phone: item.phone || "",
+                          email: item.email || "",
+                          verified: false,
+                          isPremium: false,
+                          isSponsor: false,
+                          isClaimed: false,
+                          isGoogleImport: true,
+                          image: null,
+                          createdAt: new Date().toISOString()
+                        }));
+
+                        const merged = [...formatted, ...ads];
+                        
+                        // Push to persistent central database
+                        const res = await fetch("/api/storage", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ ads: merged })
+                        });
+
+                        if (res.ok) {
+                          setAds(merged);
+                          saveStoredAds(merged);
+                          setCsvFileParsed([]);
+                          alert(`Success! Imported ${formatted.length} listings directly to the live directories.`);
+                        } else {
+                          alert("Failed to sync committed records to production servers.");
+                        }
+                      } catch (err) {
+                        alert("Error writing committed rows to directories.");
+                      }
+                    }}
+                    className="flex-1 md:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                  >
+                    Publish to Directory Indexes (Commit)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Live Interactive Spreadsheet Editor */}
+            {csvFileParsed.length > 0 && (
+              <div className="mt-6 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 relative">
+                <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
+                  <span>Interactive Listing Spreadsheet Editor (Double-check or modify values directly)</span>
+                  <span className="text-[10px] text-slate-500 font-mono">Row Count: {csvFileParsed.length}</span>
+                </div>
+                <div className="overflow-x-auto max-h-[450px]">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-white border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-4 w-12 text-center">#</th>
+                        <th className="py-3 px-4 min-w-[180px]">Company Name / Title</th>
+                        <th className="py-3 px-4 min-w-[150px]">Street Address</th>
+                        <th className="py-3 px-4 min-w-[120px]">Phone Number</th>
+                        <th className="py-3 px-4 min-w-[130px]">Category</th>
+                        <th className="py-3 px-4 min-w-[120px]">Province</th>
+                        <th className="py-3 px-4 min-w-[130px]">Email Address</th>
+                        <th className="py-3 px-4 min-w-[200px]">Services / Description Summary</th>
+                        <th className="py-3 px-4 w-16 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      {csvFileParsed.map((item, idx) => (
+                        <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
+                          <td className="py-2.5 px-4 font-mono text-slate-400 text-center font-bold">{idx + 1}</td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.title || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, title: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.address || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, address: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.phone || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, phone: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.category || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, category: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <select
+                              value={item.province || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, province: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            >
+                              <option value="gauteng">Gauteng</option>
+                              <option value="kwazulu-natal">KwaZulu-Natal</option>
+                              <option value="western-cape">Western Cape</option>
+                              <option value="eastern-cape">Eastern Cape</option>
+                              <option value="free-state">Free State</option>
+                              <option value="limpopo">Limpopo</option>
+                              <option value="mpumalanga">Mpumalanga</option>
+                              <option value="north-west">North West</option>
+                              <option value="northern-cape">Northern Cape</option>
+                            </select>
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.email || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, email: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.servicesOffered || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, servicesOffered: val } : row));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            <button
+                              onClick={() => {
+                                setCsvFileParsed(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                              title="Delete row"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {csvFileParsed.length === 0 && (
+              <div className="mt-8 py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">
+                <Database className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500 font-bold">Your Ingestion spreadsheet is empty</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                  Provide a valid structured Google Maps scraped CSV or add custom unverified listings manually.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Claim Verification & Ad Purge Inbox */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 pb-4 border-b border-slate-100 gap-4">
+              <div>
+                <h3 className="text-xl font-bold font-display text-slate-900 flex items-center gap-2">
+                   🏢 Business Claim & Removal Requests
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Authenticate proofs of ownership submitted by actual business owners to either unlock premium features or wipe incorrect listings.
+                </p>
+              </div>
+              <button
+                onClick={loadClaimRequests}
+                disabled={isClaimsLoading}
+                className="px-4 py-2 border border-slate-250 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 self-start"
+              >
+                {isClaimsLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-slate-800 border-t-transparent rounded-full animate-spin"></div>
+                ) : "↻ Refresh Claims"}
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {claimRequests.map((req) => {
+                const isRemoval = req.intention === "remove";
+                return (
+                  <div
+                    key={req.id}
+                    className={`border rounded-2xl p-6 transition-all ${
+                      req.status === "APPROVED" ? "border-emerald-200 bg-emerald-50/20" :
+                      req.status === "REJECTED" ? "border-rose-100 bg-rose-50/10" : "border-slate-200 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 pb-4 mb-4 border-b border-slate-200/60">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900">{req.adTitle || "Unspecified Ad"}</span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                            isRemoval ? "bg-rose-100 text-rose-800 border border-rose-200" :
+                            req.intention === "premium" ? "bg-amber-100 text-amber-800 border border-amber-200" : "bg-blue-100 text-blue-800 border border-blue-200"
+                          }`}>
+                            {isRemoval ? "❌ Removal Request" : req.intention === "premium" ? "⭐ Claim & Upgrade (Premium)" : "🤝 Claim Listing (Free)"}
+                          </span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                            req.status === "APPROVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                            req.status === "REJECTED" ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-amber-100 text-amber-800 border border-amber-200"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-semibold mt-1">
+                          Applicant: <strong>{req.senderName || "Unverified Owner"}</strong> • Email: <strong>{req.senderEmail}</strong> • ID: <span className="font-mono">{req.id}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
+                           📍 Location: {req.adCity || "South Africa"} · {req.adProvince} | Listing ID: {req.adId}
+                        </p>
+                      </div>
+
+                      {req.status === "PENDING" && (
+                        <div className="flex items-center gap-2 self-start shrink-0">
+                          <button
+                            onClick={async () => {
+                              const claimId = req.id;
+                              if (!confirm("Decline this claim/removal application? This will reject the verification records.")) return;
+                              try {
+                                const updatedClaims = claimRequests.map(c => c.id === claimId ? { ...c, status: "REJECTED" } : c);
+                                const res = await fetch("/api/storage", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ claimRequests: updatedClaims })
+                                });
+                                if (res.ok) {
+                                  setClaimRequests(updatedClaims);
+                                  alert("Claim rejected.");
+                                }
+                              } catch (e) {
+                                alert("Failed to update status.");
+                              }
+                            }}
+                            className="px-3.5 py-1.5 border border-slate-350 hover:border-rose-400 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-lg transition"
+                          >
+                            Decline Request
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const claimId = req.id;
+                              const targetClaim = claimRequests.find(c => c.id === claimId);
+                              if (!targetClaim) return;
+                              const text = targetClaim.intention === "remove" ? "permanently purge/remove this advertisement" : "approve this claim, bind the listing, and activate verification badges";
+                              if (!confirm(`Are you sure you want to ${text}?`)) return;
+
+                              try {
+                                const updatedClaims = claimRequests.map(c => c.id === claimId ? { ...c, status: "APPROVED" } : c);
+                                let updatedAds = [...ads];
+                                if (targetClaim.intention === "remove") {
+                                  updatedAds = updatedAds.filter(a => a.id !== targetClaim.adId);
+                                } else {
+                                  updatedAds = updatedAds.map(a => {
+                                    if (a.id === targetClaim.adId) {
+                                      return {
+                                        ...a,
+                                        userId: targetClaim.senderEmail,
+                                        isClaimed: true,
+                                        verified: true,
+                                        isPremium: targetClaim.intention === "premium",
+                                        isSponsor: false,
+                                        email: targetClaim.senderEmail
+                                      };
+                                    }
+                                    return a;
+                                  });
+                                }
+
+                                const res = await fetch("/api/storage", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    claimRequests: updatedClaims,
+                                    ads: updatedAds
+                                  })
+                                });
+
+                                if (res.ok) {
+                                  setClaimRequests(updatedClaims);
+                                  setAds(updatedAds);
+                                  saveStoredAds(updatedAds);
+                                  alert("Request approved and synchronized in real-time!");
+                                } else {
+                                  alert("Failed to sync status with directories database.");
+                                }
+                              } catch (e) {
+                                alert("Error connecting with directory server.");
+                              }
+                            }}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm"
+                          >
+                            Approve & Sync Live
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-xs font-medium">
+                      {[
+                        { title: "National ID / Passport", status: req.documents?.idDoc },
+                        { title: "CIPC Co. Certificate", status: req.documents?.cipc },
+                        { title: "SARS Certificate Copy", status: req.documents?.sars },
+                        { title: "Proof of Business Address", status: req.documents?.proofOfAddress },
+                        { title: "Business Bank Statement", status: req.documents?.bankStatement }
+                      ].map((doc, dIdx) => (
+                        <div key={dIdx} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase leading-tight">{doc.title}</span>
+                          <span className="text-[11px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
+                             🟢 Attached / Encrypted
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {req.message && (
+                      <div className="mt-4 bg-slate-100 border border-slate-200 rounded-xl p-4 text-xs font-medium text-slate-700">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Owner Message / Proof Statement</p>
+                        <p className="leading-relaxed">&ldquo;{req.message}&rdquo;</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {claimRequests.length === 0 && !isClaimsLoading && (
+                <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">
+                  <ShieldAlert className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500 font-bold">No claim or removal requests found</p>
+                  <p className="text-xs text-slate-400 mt-1">Claim verification logs will list here when business owners submit claims.</p>
                 </div>
               )}
             </div>

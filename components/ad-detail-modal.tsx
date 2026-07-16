@@ -1141,7 +1141,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                             />
 
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 if(!claimIdDoc || !claimCipc || !claimSars || !claimProofOfAddress || !claimBankStatement) {
                                   alert("Please attach all 5 required documents to prove ownership.");
                                   return;
@@ -1157,7 +1157,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                   try {
                                     const parsed = JSON.parse(session);
                                     senderEmail = parsed.email;
-                                    senderName = parsed.email.split("@")[0];
+                                    senderName = parsed.fullName || parsed.email.split("@")[0];
                                   } catch (e) {}
                                 }
                                 
@@ -1179,6 +1179,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 };
                                 
                                 if (typeof window !== "undefined") {
+                                  // Local storage message fallback
                                   const storedStr = localStorage.getItem("searchbiz_messages_v1");
                                   let existing = [];
                                   if (storedStr) {
@@ -1191,11 +1192,61 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                   window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
                                 }
 
-                                setTimeout(() => {
-                                  setSubmitting(false);
-                                  setIsClaiming(false);
-                                  setMsgSuccess(true);
-                                }, 1200);
+                                try {
+                                  // Fetch current storage to append to global claimRequests
+                                  const storageRes = await fetch("/api/storage");
+                                  let currentStorage = { claimRequests: [], messages: [] };
+                                  if (storageRes.ok) {
+                                    currentStorage = await storageRes.json();
+                                  }
+
+                                  const claimRequestObj = {
+                                    id: `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                                    adId: ad?.id || "",
+                                    adTitle: ad?.title || "",
+                                    adCity: ad?.address || ad?.location || "Unknown",
+                                    adProvince: ad?.location || "Gauteng",
+                                    adCategory: ad?.category || "Other",
+                                    senderEmail: senderEmail.toLowerCase(),
+                                    senderName: senderName,
+                                    intention: claimIntention, // "premium" | "free" | "remove"
+                                    message: claimMessage,
+                                    documents: {
+                                      idDoc: claimIdDoc ? "Attached" : "Not Provided",
+                                      cipc: claimCipc ? "Attached" : "Not Provided",
+                                      sars: claimSars ? "Attached" : "Not Provided",
+                                      proofOfAddress: claimProofOfAddress ? "Attached" : "Not Provided",
+                                      bankStatement: claimBankStatement ? "Attached" : "Not Provided"
+                                    },
+                                    status: "PENDING",
+                                    createdAt: new Date().toISOString()
+                                  };
+
+                                  const updatedClaimRequests = [
+                                    ...(Array.isArray(currentStorage.claimRequests) ? currentStorage.claimRequests : []),
+                                    claimRequestObj
+                                  ];
+
+                                  const updatedMessages = [
+                                    ...(Array.isArray(currentStorage.messages) ? currentStorage.messages : []),
+                                    claimMessageObj
+                                  ];
+
+                                  await fetch("/api/storage", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      claimRequests: updatedClaimRequests,
+                                      messages: updatedMessages
+                                    })
+                                  });
+                                } catch (err) {
+                                  console.error("Failed to post claim to server storage:", err);
+                                }
+
+                                setSubmitting(false);
+                                setIsClaiming(false);
+                                setMsgSuccess(true);
                               }}
                               disabled={submitting}
                               className="w-full mt-2 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center disabled:opacity-50"

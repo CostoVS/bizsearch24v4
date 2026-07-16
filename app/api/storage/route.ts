@@ -35,6 +35,7 @@ function getLocalData() {
     customPartners: [],
     community_posts: [],
     slugs: [],
+    claimRequests: [],
     updatedAt: 0
   };
 }
@@ -98,6 +99,7 @@ async function getDbData(): Promise<any> {
       customPartners: Array.isArray(localData.customPartners) ? localData.customPartners : [],
       community_posts: Array.isArray(localData.community_posts) ? localData.community_posts : [],
       slugs: Array.isArray(localData.slugs) ? localData.slugs : [],
+      claimRequests: Array.isArray(localData.claimRequests) ? localData.claimRequests : [],
       updatedAt: localData.updatedAt || Date.now()
     };
     await runWithTimeout(
@@ -143,6 +145,7 @@ function mergeData(local: any, db: any) {
     customPartners: [],
     community_posts: [],
     slugs: [],
+    claimRequests: [],
     updatedAt: 0
   };
 
@@ -185,6 +188,7 @@ function mergeData(local: any, db: any) {
   merged.customPartners = mergeArrays(localVal.customPartners, dbVal.customPartners, 'id');
   merged.community_posts = mergeArrays(localVal.community_posts, dbVal.community_posts, 'id');
   merged.slugs = mergeArrays(localVal.slugs, dbVal.slugs, 'slug');
+  merged.claimRequests = mergeArrays(localVal.claimRequests || [], dbVal.claimRequests || [], 'id');
 
   merged.deletedAds = mergeIds(localVal.deletedAds, dbVal.deletedAds);
   merged.deletedMessages = mergeIds(localVal.deletedMessages, dbVal.deletedMessages);
