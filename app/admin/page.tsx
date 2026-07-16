@@ -11,7 +11,7 @@ import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit,
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import { SA_PROVINCES, getPostalCodeForTown } from "@/lib/locations";
-import { CATEGORIES } from "@/lib/categories";
+import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
@@ -128,7 +128,7 @@ export default function AdminDashboard() {
 
   // CSV Import dynamic configurations
   const [csvDefaultProvince, setCsvDefaultProvince] = useState("gauteng");
-  const [csvDefaultCategory, setCsvDefaultCategory] = useState("General");
+  const [csvDefaultCategory, setCsvDefaultCategory] = useState("Other");
   const [csvAiEnable, setCsvAiEnable] = useState(true);
 
   // New CSV Upload Center Tab state variables
@@ -1502,13 +1502,22 @@ export default function AdminDashboard() {
 
               <div>
                 <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Fallback Category</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Plumbers, General"
+                <select
                   value={csvDefaultCategory}
                   onChange={(e) => setCsvDefaultCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium"
-                />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium cursor-pointer"
+                >
+                  {CATEGORIES_STRUCTURED.map((group) => (
+                    <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-white">
+                      {group.subcategories.map((sub) => (
+                        <option key={sub} value={sub} className="font-normal text-slate-700">
+                          {sub}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  <option value="Other" className="font-bold text-emerald-700">Other</option>
+                </select>
               </div>
 
               {/* CSV Parsing Target File Box */}
@@ -1736,15 +1745,25 @@ export default function AdminDashboard() {
                             />
                           </td>
                           <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={item.category || ""}
+                            <select
+                              value={item.category || "Other"}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, category: val } : row));
                               }}
-                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500"
-                            />
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                            >
+                              {CATEGORIES_STRUCTURED.map((group) => (
+                                <optgroup key={group.name} label={group.name} className="font-bold text-slate-950 bg-white">
+                                  {group.subcategories.map((sub) => (
+                                    <option key={sub} value={sub} className="font-normal text-slate-700">
+                                      {sub}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                              <option value="Other" className="font-bold text-emerald-700">Other</option>
+                            </select>
                           </td>
                           <td className="py-2 px-2">
                             <select
