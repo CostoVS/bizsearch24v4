@@ -10381,6 +10381,10 @@ export const GAUTENG_SUBURBS: Record<string, SuburbInfo[]> = {
       "postalCode": "1750"
     },
     {
+      "name": "Blair Atholl",
+      "postalCode": "1739"
+    },
+    {
       "name": "Boltonia",
       "postalCode": "1739"
     },
@@ -30846,6 +30850,10 @@ export const NORTHERN_CAPE_SUBURBS: Record<string, SuburbInfo[]> = {
     {
       "name": "Keidebees",
       "postalCode": "8801"
+    },
+    {
+      "name": "Kotzeshoop",
+      "postalCode": "8246"
     },
     {
       "name": "Louisvale",
