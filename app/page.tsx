@@ -7,17 +7,6 @@ import Image from "next/image";
 import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds } from "@/lib/data";
 import { Search, MapPin, BadgeCheck, Star, Briefcase, Zap, Sparkles, Edit, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { 
-  KZN_SUBURBS, 
-  GAUTENG_SUBURBS, 
-  WESTERN_CAPE_SUBURBS, 
-  EASTERN_CAPE_SUBURBS, 
-  FREE_STATE_SUBURBS, 
-  LIMPOPO_SUBURBS, 
-  MPUMALANGA_SUBURBS, 
-  NORTH_WEST_SUBURBS, 
-  NORTHERN_CAPE_SUBURBS 
-} from "@/lib/locations";
 
 import { SearchBar } from "@/components/search-bar";
 import { VerificationBadge, PremiumBadge } from "@/components/ui-extras";
@@ -67,21 +56,8 @@ export default function HomePage() {
     return score(b) - score(a);
   });
 
-  // Calculate total suburbs altogether across all 9 provinces
-  const allSubMaps = [
-    KZN_SUBURBS,
-    GAUTENG_SUBURBS,
-    WESTERN_CAPE_SUBURBS,
-    EASTERN_CAPE_SUBURBS,
-    FREE_STATE_SUBURBS,
-    LIMPOPO_SUBURBS,
-    MPUMALANGA_SUBURBS,
-    NORTH_WEST_SUBURBS,
-    NORTHERN_CAPE_SUBURBS
-  ];
-  const totalSuburbsAltogether = allSubMaps.reduce((total, subMap) => {
-    return total + Object.values(subMap).reduce((subTotal, subList) => subTotal + subList.length, 0);
-  }, 0);
+  // Precomputed static count of all suburbs altogether across all 9 provinces
+  const totalSuburbsAltogether = 6929;
 
   return (
     <div className="flex flex-col w-full bg-slate-50">

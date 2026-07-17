@@ -10,25 +10,38 @@ export const dynamic = 'force-dynamic';
 const dbPath = path.join(process.cwd(), ".data", "db.json");
 
 async function getCustomSlugs(): Promise<any[]> {
-  try {
-    initDb();
-    if (db) {
-      const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
-      if (record && record.length > 0) {
-        const parsed = JSON.parse(record[0].data);
-        if (parsed && Array.isArray(parsed.slugs)) {
-          return parsed.slugs;
+  const globalRef = global as any;
+  if (globalRef.storageCache && Array.isArray(globalRef.storageCache.slugs)) {
+    return globalRef.storageCache.slugs;
+  }
+
+  const now = Date.now();
+  if (!(globalRef.isDbOffline && (now < globalRef.dbOfflineUntil))) {
+    try {
+      initDb();
+      if (db) {
+        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
+        if (record && record.length > 0) {
+          const parsed = JSON.parse(record[0].data);
+          if (parsed && Array.isArray(parsed.slugs)) {
+            globalRef.storageCache = parsed;
+            globalRef.storageCacheTime = now;
+            return parsed.slugs;
+          }
         }
       }
+    } catch (error) {
+      console.warn("getCustomSlugs db read failed, relying on local db.json:", (error as any).message);
     }
-  } catch (error) {
-    console.warn("getCustomSlugs db read failed, relying on local db.json:", (error as any).message);
   }
 
   try {
     if (fs.existsSync(dbPath)) {
       const data = fs.readFileSync(dbPath, "utf-8");
-      return JSON.parse(data).slugs || [];
+      const parsed = JSON.parse(data);
+      globalRef.storageCache = parsed;
+      globalRef.storageCacheTime = now;
+      return parsed.slugs || [];
     }
   } catch (error) {
     console.error("Failed to read slugs fallback from db.json:", error);
@@ -37,26 +50,35 @@ async function getCustomSlugs(): Promise<any[]> {
 }
 
 async function saveCustomSlugs(slugs: any[]) {
+  const globalRef = global as any;
   let currentData: any = { ads: [], banners: [], customPartners: [], slugs: [], messages: [], deletedMessages: [], deletedAds: [] };
   
-  try {
-    initDb();
-    if (db) {
-      const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
-      if (record && record.length > 0) {
-        currentData = JSON.parse(record[0].data);
-      }
-    }
-  } catch (e) {
+  if (globalRef.storageCache) {
+    currentData = { ...globalRef.storageCache };
+  } else {
     try {
-      if (fs.existsSync(dbPath)) {
-        currentData = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+      initDb();
+      if (db) {
+        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
+        if (record && record.length > 0) {
+          currentData = JSON.parse(record[0].data);
+        }
       }
-    } catch (e2) {}
+    } catch (e) {
+      try {
+        if (fs.existsSync(dbPath)) {
+          currentData = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+        }
+      } catch (e2) {}
+    }
   }
 
   currentData.slugs = slugs;
   currentData.updatedAt = Date.now();
+
+  // update global cache in memory instantly
+  globalRef.storageCache = currentData;
+  globalRef.storageCacheTime = Date.now();
 
   try {
     initDb();

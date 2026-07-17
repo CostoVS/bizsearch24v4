@@ -10,10 +10,22 @@ export const dynamic = 'force-dynamic';
 const DB_KEY = 'main';
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 
-// Memory cache to flag if DB is known to be offline to avoid blocking connection timeouts
-let isDbOffline = false;
+// Global cache object to survive hot reloads and next.js api invocations in the same process
+const globalRef = global as any;
+if (globalRef.storageCache === undefined) {
+  globalRef.storageCache = null;
+}
+if (globalRef.storageCacheTime === undefined) {
+  globalRef.storageCacheTime = 0;
+}
+if (globalRef.isDbOffline === undefined) {
+  globalRef.isDbOffline = false;
+}
+if (globalRef.dbOfflineUntil === undefined) {
+  globalRef.dbOfflineUntil = 0;
+}
 
-function getLocalData() {
+function getLocalDataNoCache() {
   try {
     if (fs.existsSync(JSON_PATH)) {
       const fileContent = fs.readFileSync(JSON_PATH, 'utf-8');
@@ -40,7 +52,7 @@ function getLocalData() {
   };
 }
 
-function saveLocalData(data: any) {
+function saveLocalDataNoCache(data: any) {
   try {
     const dir = path.dirname(JSON_PATH);
     if (!fs.existsSync(dir)) {
@@ -55,7 +67,7 @@ function saveLocalData(data: any) {
   }
 }
 
-async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 1500): Promise<T> {
+async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 1000): Promise<T> {
   let timeoutId: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -71,13 +83,14 @@ async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 1500):
 }
 
 async function getDbData(): Promise<any> {
-  if (isDbOffline) {
+  if (globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil)) {
     throw new Error("DB flagged as offline");
   }
   
   initDb();
   if (dbReadyPromise) {
-    await dbReadyPromise;
+    // fast timeout for db readiness check
+    await runWithTimeout(dbReadyPromise, 1000).catch(() => {});
   }
   if (!db) {
     throw new Error("DB connection not initialized");
@@ -85,11 +98,11 @@ async function getDbData(): Promise<any> {
   
   const record = await runWithTimeout(
     db.select().from(storage).where(eq(storage.key, DB_KEY)).limit(1), 
-    1500
+    1000
   );
   
   if (!record || record.length === 0) {
-    const localData = getLocalData();
+    const localData = getLocalDataNoCache();
     const initial = { 
       ads: Array.isArray(localData.ads) ? localData.ads : [], 
       banners: Array.isArray(localData.banners) ? localData.banners : [],
@@ -104,7 +117,7 @@ async function getDbData(): Promise<any> {
     };
     await runWithTimeout(
       db.insert(storage).values({ key: DB_KEY, data: JSON.stringify(initial, null, 2) }), 
-      1500
+      1000
     );
     return initial;
   }
@@ -117,13 +130,13 @@ async function getDbData(): Promise<any> {
 }
 
 async function saveDbData(data: any): Promise<void> {
-  if (isDbOffline) {
+  if (globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil)) {
     throw new Error("DB flagged as offline");
   }
   
   initDb();
   if (dbReadyPromise) {
-    await dbReadyPromise;
+    await runWithTimeout(dbReadyPromise, 1000).catch(() => {});
   }
   if (!db) {
     throw new Error("DB connection not initialized");
@@ -131,7 +144,7 @@ async function saveDbData(data: any): Promise<void> {
   
   await runWithTimeout(
     db.update(storage).set({ data: JSON.stringify(data, null, 2) }).where(eq(storage.key, DB_KEY)), 
-    1500
+    1000
   );
 }
 
@@ -210,47 +223,90 @@ function mergeData(local: any, db: any) {
   return merged;
 }
 
-export async function GET(req: Request) {
-  try {
-    const localData = getLocalData();
-    let dbData = null;
-    let finalData = localData;
+async function loadAndReconcileData(): Promise<any> {
+  const localData = getLocalDataNoCache();
+  let dbData = null;
+  let finalData = localData;
 
+  const now = Date.now();
+  if (globalRef.isDbOffline && (now < globalRef.dbOfflineUntil)) {
+    // DB offline, skip connection attempt
+  } else {
     try {
       dbData = await getDbData();
-    } catch (e) {
-      console.warn("DB read failed on GET. Fallback to local db.json:", (e as any).message);
-      isDbOffline = true;
-      setTimeout(() => { isDbOffline = false; }, 30000); // Retry DB after 30 seconds
+    } catch (e: any) {
+      console.warn("DB read failed. Fallback to local db.json:", e.message);
+      globalRef.isDbOffline = true;
+      globalRef.dbOfflineUntil = now + 120000; // block DB attempts for 2 minutes
+    }
+  }
+
+  if (dbData) {
+    finalData = mergeData(localData, dbData);
+    saveLocalDataNoCache(finalData);
+    saveDbData(finalData).catch(err => {
+      console.warn("Async DB auto-heal correction failed:", err.message);
+    });
+  } else {
+    if (finalData.ads && Array.isArray(finalData.ads) && finalData.deletedAds && Array.isArray(finalData.deletedAds)) {
+      const deletedSet = new Set(finalData.deletedAds);
+      finalData.ads = finalData.ads.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
+    }
+  }
+
+  return finalData;
+}
+
+async function revalidateCacheBackground(): Promise<void> {
+  try {
+    const data = await loadAndReconcileData();
+    globalRef.storageCache = data;
+    globalRef.storageCacheTime = Date.now();
+  } catch (e) {
+    // Ignore background failures
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const now = Date.now();
+
+    // Serve from cache immediately if warm and young (under 4 seconds)
+    if (globalRef.storageCache && (now - globalRef.storageCacheTime < 4000)) {
+      return NextResponse.json(globalRef.storageCache, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'X-Cache': 'HIT-FAST',
+          'X-Cache-Age': String(now - globalRef.storageCacheTime)
+        }
+      });
     }
 
-    if (dbData) {
-      // Auto self-heal and merge both data sources
-      finalData = mergeData(localData, dbData);
-      
-      // Async save the reconciled state back to local file and DB
-      saveLocalData(finalData);
-      saveDbData(finalData).catch(err => {
-        console.warn("Async DB auto-heal correction failed:", err.message);
+    // If cache is present but older, return stale immediately and revalidate in background!
+    if (globalRef.storageCache) {
+      revalidateCacheBackground(); // trigger non-blocking update
+      return NextResponse.json(globalRef.storageCache, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'X-Cache': 'HIT-STALE'
+        }
       });
-    } else {
-      // Ensure local deleted ads are filtered out in fallback mode
-      if (finalData.ads && Array.isArray(finalData.ads) && finalData.deletedAds && Array.isArray(finalData.deletedAds)) {
-        const deletedSet = new Set(finalData.deletedAds);
-        finalData.ads = finalData.ads.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
-      }
     }
+
+    // First time load - blocking but optimized
+    const finalData = await loadAndReconcileData();
+    globalRef.storageCache = finalData;
+    globalRef.storageCacheTime = Date.now();
 
     return NextResponse.json(finalData, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
+        'X-Cache': 'MISS'
       }
     });
   } catch (error: any) {
     console.error("GET /api/storage failed:", error);
-    return NextResponse.json(getLocalData(), { 
+    return NextResponse.json(getLocalDataNoCache(), { 
       status: 200, 
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
@@ -262,24 +318,27 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const localData = getLocalData();
+    const localData = getLocalDataNoCache();
     let dbData = null;
     let currentData = localData;
 
-    try {
-      dbData = await getDbData();
-    } catch (e) {
-      console.warn("DB read failed on POST. Using local fallback.", (e as any).message);
-      isDbOffline = true;
-      setTimeout(() => { isDbOffline = false; }, 30000);
+    const now = Date.now();
+    if (globalRef.isDbOffline && (now < globalRef.dbOfflineUntil)) {
+      // Use local data immediately
+    } else {
+      try {
+        dbData = await getDbData();
+      } catch (e: any) {
+        console.warn("DB read failed on POST. Using local fallback.", e.message);
+        globalRef.isDbOffline = true;
+        globalRef.dbOfflineUntil = now + 120000;
+      }
     }
 
     if (dbData) {
-      // Merge current local edits and DB records to establish a robust base state first
       currentData = mergeData(localData, dbData);
     }
 
-    // Clone and execute update
     const newData = { ...currentData };
 
     if (body.deleteAdId) {
@@ -293,27 +352,28 @@ export async function POST(req: Request) {
     } else if (body.ads) {
       const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
       const deletedSet = new Set(deletedAds);
-      // Merge body.ads with current ads to prevent accidental wipe if client sends stale array
       const mergedAds = mergeData({ ads: currentData.ads }, { ads: body.ads }).ads;
       newData.ads = mergedAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
     } else {
-      // Merge other properties
       Object.assign(newData, body);
     }
 
-    // Increment sync version
     newData.updatedAt = Date.now();
 
-    // Force absolute immediate save on secure local storage
-    saveLocalData(newData);
+    // Fast persistence
+    saveLocalDataNoCache(newData);
 
-    // Sync database
-    try {
-      await saveDbData(newData);
-    } catch (e) {
-      console.warn("DB write failed on POST. Local sync in db.json complete.", (e as any).message);
-      isDbOffline = true;
-      setTimeout(() => { isDbOffline = false; }, 30000);
+    // Update global cache in memory immediately
+    globalRef.storageCache = newData;
+    globalRef.storageCacheTime = Date.now();
+
+    // Sync database non-blockingly
+    if (!(globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil))) {
+      saveDbData(newData).catch(err => {
+        console.warn("Background DB sync failed on POST:", err.message);
+        globalRef.isDbOffline = true;
+        globalRef.dbOfflineUntil = Date.now() + 120000;
+      });
     }
 
     return NextResponse.json({ success: true, data: newData }, {
@@ -333,3 +393,4 @@ export async function POST(req: Request) {
     });
   }
 }
+

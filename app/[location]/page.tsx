@@ -31,9 +31,19 @@ function slugify(text: string): string {
 // Memory cache for extreme performance
 let cachedDbData: { slugs: any[], ads: any[] } | null = null;
 let lastDbCacheTime = 0;
-const DB_CACHE_TTL = 30000; // 30 seconds caching
+const DB_CACHE_TTL = 15000; // 15 seconds caching
 
 async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
+  const globalRef = global as any;
+  
+  // If the global memory cache is populated (reconciled by /api/storage), use it instantly!
+  if (globalRef.storageCache) {
+    return {
+      slugs: Array.isArray(globalRef.storageCache.slugs) ? globalRef.storageCache.slugs : [],
+      ads: Array.isArray(globalRef.storageCache.ads) ? globalRef.storageCache.ads : []
+    };
+  }
+
   const now = Date.now();
   if (cachedDbData && (now - lastDbCacheTime < DB_CACHE_TTL)) {
     return cachedDbData;
@@ -42,20 +52,27 @@ async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
   let slugs: any[] = [];
   let ads: any[] = [];
 
-  try {
-    initDb();
-    if (db) {
-      const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
-      if (record && record.length > 0) {
-        const parsed = JSON.parse(record[0].data);
-        if (parsed) {
-          if (Array.isArray(parsed.slugs)) slugs = parsed.slugs;
-          if (Array.isArray(parsed.ads)) ads = parsed.ads;
+  // Check if DB is known to be offline before attempting
+  if (!(globalRef.isDbOffline && (now < globalRef.dbOfflineUntil))) {
+    try {
+      initDb();
+      if (db) {
+        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
+        if (record && record.length > 0) {
+          const parsed = JSON.parse(record[0].data);
+          if (parsed) {
+            if (Array.isArray(parsed.slugs)) slugs = parsed.slugs;
+            if (Array.isArray(parsed.ads)) ads = parsed.ads;
+            
+            // Warm the global storage cache
+            globalRef.storageCache = parsed;
+            globalRef.storageCacheTime = now;
+          }
         }
       }
+    } catch (dbErr) {
+      console.warn("DB fetch failed in location, relying on file-backed cache:", (dbErr as any).message);
     }
-  } catch (dbErr) {
-    console.warn("DB fetch failed in location, relying on file-backed cache:", (dbErr as any).message);
   }
 
   if (slugs.length === 0 && ads.length === 0) {
@@ -65,6 +82,10 @@ async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
         const dbFile = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
         slugs = dbFile.slugs || [];
         ads = dbFile.ads || [];
+        
+        // Warm the global storage cache
+        globalRef.storageCache = dbFile;
+        globalRef.storageCacheTime = now;
       }
     } catch (e) {
       console.error("Failed to load custom slugs fallback in location page:", e);
