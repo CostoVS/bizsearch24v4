@@ -62,35 +62,35 @@ const SEED_PARTNERS: PremiumPartner[] = [
     email: "nicholauscostochetty@gmail.com",
     role: "ADMIN",
     plan: "PREMIUM",
-    businessName: "Nicholas Costo Chetty Holdings (Pty) Ltd",
+    businessName: "SearchBiz Admin Holdings (Pty) Ltd",
     logoUrl: "https://picsum.photos/seed/security/200/200",
     location: "KZN & Sandton, South Africa",
     profile: {
       userId: "seed_1",
-      fullName: "Nicholas",
-      surname: "Chetty",
+      fullName: "SearchBiz",
+      surname: "Admin",
       address: "15 Sandton Drive, Sandown, Johannesburg, 2196",
-      businessName: "Nicholas Costo Chetty Holdings (Pty) Ltd",
+      businessName: "SearchBiz Admin Holdings (Pty) Ltd",
       cipcNumber: "2024/485912/07",
       sarsNumber: "9586112349 SA",
       phoneNumber: "+27 82 445 6132",
       whatsappNumber: "+27824456132",
-      email: "nicholauscostochetty@gmail.com",
-      displayName: "Tech Executive Principal",
+      email: "admin",
+      displayName: "SearchBiz Admin",
       tiktok: "",
       instagram: "",
-      facebook: "https://facebook.com/nicholaschetty",
-      x: "https://x.com/nicholaschetty",
+      facebook: "",
+      x: "",
       youtube: "",
-      aboutThem: "Founding engineering principal and executive lead. Architect of secure digital structures, networks, and advanced server scaling integrations.",
-      aboutBusiness: "Our holding conglomerate specializes in providing military-grade B2B directory infrastructure, enterprise application management, and priority listing index audits.",
+      aboutThem: "SearchBiz Security Administrator and Lead Systems Engineer.",
+      aboutBusiness: "Our holding conglomerate specializes in providing B2B directory infrastructure, enterprise application management, and priority listing index audits.",
       servicesOffered: "Enterprise Cloud Hosting, Search Priority Indexing Architecture, Next.js Development Operations Consultancy, Security Audit Management",
       avatarUrl: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200&h=200",
       logoUrl: "https://picsum.photos/seed/security/200/200",
       isProfilePublic: true,
-      isPersonalInfoPublic: true,
+      isPersonalInfoPublic: false,
       isBusinessInfoPublic: true,
-      isSocialLinksPublic: true,
+      isSocialLinksPublic: false,
       isAboutMePublic: true,
       isServicesPublic: true,
       hideEmail: false
@@ -213,7 +213,7 @@ const SEED_PARTNERS: PremiumPartner[] = [
 ];
 
 function getFallbackBusinessName(email: string) {
-  if (email.includes("nicholaus")) return "Nicholas Costo Chetty Holdings";
+  if (email.includes("nicholaus")) return "SearchBiz Admin Holdings";
   if (email.includes("sarah")) return "Apex Design & Print Agency";
   return "Consolidated Trade Services";
 }

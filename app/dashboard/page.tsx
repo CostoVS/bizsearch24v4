@@ -622,7 +622,7 @@ export default function UserDashboard() {
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Nicholas"
+                      placeholder="e.g. John"
                       value={profile.fullName}
                       onChange={(e) => setProfile(prev => prev ? { ...prev, fullName: e.target.value } : null)}
                       className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"
@@ -633,7 +633,7 @@ export default function UserDashboard() {
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Chetty"
+                      placeholder="e.g. Smith"
                       value={profile.surname}
                       onChange={(e) => setProfile(prev => prev ? { ...prev, surname: e.target.value } : null)}
                       className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"
@@ -728,7 +728,7 @@ export default function UserDashboard() {
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Registered Business / Trading Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Chetty Enterprises (Pty) Ltd"
+                      placeholder="e.g. Smith & Sons (Pty) Ltd"
                       value={profile.businessName}
                       onChange={(e) => setProfile(prev => prev ? { ...prev, businessName: e.target.value } : null)}
                       className="w-full bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-3 px-4 rounded-xl text-xs font-medium text-slate-800 transition"

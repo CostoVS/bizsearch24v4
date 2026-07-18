@@ -77,7 +77,7 @@ interface AdDetailModalProps {
 export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   const { user } = useAuth();
   console.log("DEBUG: user in AdDetailModal", user);
-  const isAdmin = user?.role === "ADMIN" || user?.email?.toLowerCase() === "nicholauscostochetty@gmail.com";
+  const isAdmin = user?.role === "ADMIN" || user?.email?.toLowerCase() === "nicholauscostochetty@gmail.com" || user?.email?.toLowerCase() === "admin";
 
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
@@ -91,7 +91,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   // Helper to get real recipient email from ad data
   const getRecipientEmail = () => {
     if (ad?.email) return ad.email.toLowerCase().trim();
-    if (ad?.userId === "u1") return "nicholauscostochetty@gmail.com";
+    if (ad?.userId === "u1") return "admin";
     if (ad?.userId === "u2") return "petrusjvr@mweb.co.za";
     if (ad?.userId === "u3") return "sarah.jones@example.co.za";
     if (ad?.userId && ad?.userId.includes("@")) return ad.userId.toLowerCase().trim();
@@ -1165,14 +1165,14 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                   id: `msg_${Date.now()}_claim`,
                                   threadId: [
                                     senderEmail.toLowerCase(),
-                                    "nicholauscostochetty@gmail.com",
+                                    "admin",
                                     ad?.id,
                                   ].sort().join("_"),
                                   adId: ad?.id || "",
                                   adTitle: ad?.title || "",
                                   senderEmail: senderEmail.toLowerCase(),
                                   senderName: senderName,
-                                  recipientEmail: "nicholauscostochetty@gmail.com",
+                                  recipientEmail: "admin",
                                   content: content,
                                   timestamp: new Date().toLocaleString(),
                                   read: false,

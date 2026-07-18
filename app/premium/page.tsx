@@ -273,7 +273,7 @@ ${signature}
         adTitle: `${selectedPlan.toUpperCase()} Upgrade: ${formData.companyName}`,
         senderEmail: user.email,
         senderName: formData.fullName || user.fullName || "User",
-        recipientEmail: "nicholauscostochetty@gmail.com",
+        recipientEmail: "admin",
         content: messageContent,
         timestamp: new Date().toLocaleString()
       };

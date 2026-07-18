@@ -115,15 +115,25 @@ export default function MessagesPage() {
   const formatEmailForDisplay = (email: string) => {
     if (!email) return "";
     const lower = email.trim().toLowerCase();
-    if (lower === "nicholauscostochetty@gmail.com") {
-      return "SearchBiz Admin";
+    if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") {
+      return "admin";
     }
     return email;
   };
 
   const downloadSingleMessage = (msg: Message) => {
-    const cleanEmail = (em: string) => em.toLowerCase().trim() === "nicholauscostochetty@gmail.com" ? "SearchBiz Admin" : em;
-    const content = `Sender: ${msg.senderName} (${cleanEmail(msg.senderEmail)})
+    const cleanEmail = (em: string) => {
+      const lower = em.toLowerCase().trim();
+      return (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") ? "admin" : em;
+    };
+    const cleanName = (name: string, email: string) => {
+      const lower = email.toLowerCase().trim();
+      if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin" || name.toLowerCase().includes("nicholaus") || name.toLowerCase().includes("nicholas")) {
+        return "SearchBiz Admin";
+      }
+      return name;
+    };
+    const content = `Sender: ${cleanName(msg.senderName, msg.senderEmail)} (${cleanEmail(msg.senderEmail)})
 Recipient: ${cleanEmail(msg.recipientEmail)}
 Date: ${msg.timestamp}
 Subject/Ad: ${msg.adTitle || "General"}
@@ -240,8 +250,13 @@ ${msg.content}
   const handleSendReply = async (msg: Message) => {
     if (!user || !replyText.trim()) return;
     
-    const senderEmail = user.email.toLowerCase();
-    const senderName = user.fullName || (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" ? "SearchBiz Admin" : user.email.split('@')[0]);
+    const senderEmail = (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" || user.email.toLowerCase() === "admin") ? "admin" : user.email.toLowerCase();
+    const senderName = (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" || user.email.toLowerCase() === "admin") ? "SearchBiz Admin" : (user.fullName || user.email.split('@')[0]);
+
+    let rawRecipient = msg.senderEmail.toLowerCase();
+    if (rawRecipient === "nicholauscostochetty@gmail.com" || rawRecipient === "admin@searchbiz.co.za") {
+      rawRecipient = "admin";
+    }
 
     const newMsg: Message = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -250,7 +265,7 @@ ${msg.content}
       adTitle: msg.adTitle,
       senderEmail: senderEmail,
       senderName: senderName,
-      recipientEmail: msg.senderEmail.toLowerCase(),
+      recipientEmail: rawRecipient,
       content: replyText.trim(),
       timestamp: new Date().toLocaleString(),
       read: false
@@ -283,8 +298,11 @@ ${msg.content}
 
   const getDeterministicMemberId = (email: string) => {
     if (!email) return "";
-    let hash = 0;
     const clean = email.trim().toLowerCase();
+    if (clean === "nicholauscostochetty@gmail.com" || clean === "admin@searchbiz.co.za" || clean === "admin") {
+      return "SB-ADMIN";
+    }
+    let hash = 0;
     for (let i = 0; i < clean.length; i++) {
       hash = (hash << 5) - hash + clean.charCodeAt(i);
       hash |= 0;

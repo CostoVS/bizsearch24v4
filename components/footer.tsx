@@ -120,6 +120,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
                 <Link href="/cipc-registration-guide" className="hover:text-emerald-400 transition-colors font-semibold text-indigo-400">CIPC & SARS Guide</Link>
                <button onClick={onShowLegal} className="text-left hover:text-emerald-400 transition-colors">Privacy Policy</button>
                <button onClick={onShowLegal} className="text-left hover:text-emerald-400 transition-colors col-span-2">Disclaimer & POPIA</button>
+               <Link href="/support" className="text-left hover:text-emerald-400 transition-colors font-bold text-emerald-400 col-span-2">Support / Help</Link>
             </div>
           </div>
         </div>

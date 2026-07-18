@@ -108,6 +108,25 @@ export function getLocalProfile(userId: string, defaultEmail: string = "", extra
     }
   }
 
+  // Anonymization override for administrative account
+  const isTargetAdmin = userId === "seed_1" || 
+                        userId === "admin-1" || 
+                        (profile.email && (profile.email.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || profile.email.toLowerCase().trim() === "admin")) || 
+                        (defaultEmail && (defaultEmail.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || defaultEmail.toLowerCase().trim() === "admin"));
+
+  if (isTargetAdmin) {
+    profile.fullName = "SearchBiz";
+    profile.surname = "Admin";
+    profile.displayName = "SearchBiz Admin";
+    profile.businessName = "SearchBiz Admin Holdings";
+    profile.email = "admin";
+    profile.facebook = "";
+    profile.x = "";
+    profile.tiktok = "";
+    profile.instagram = "";
+    profile.youtube = "";
+  }
+
   return profile;
 }
 

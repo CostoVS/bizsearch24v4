@@ -172,8 +172,11 @@ export default function LoginPage() {
           setSecretKey(data.user.secretKey || "");
           setHasSetup2FA(data.user.hasSetup2FA || false);
           
-          // Go to 2FA screen (Always required, never bypassed!)
-          setStep("2FA");
+          if (data.requiresEmailVerify) {
+            setStep("EMAIL_VERIFY");
+          } else {
+            setStep("2FA");
+          }
         } else {
           setErrorMsg(data.error || "Incorrect password or unregistered user.");
         }
@@ -717,7 +720,7 @@ export default function LoginPage() {
                             {/* Info Box */}
                             <div className="pt-2">
                               <div className="text-[10px] text-slate-600 leading-normal bg-slate-100 p-3 rounded-xl border border-slate-200">
-                                <strong>Admin Communication & Payment Setup:</strong> Upon submitting your application, you will instantly get a direct chat thread with Nicholaus, the SearchBiz Administrator. Your account is held as PENDING verification until payment is processed and business legitimacy documents are verified.
+                                <strong>Admin Communication & Payment Setup:</strong> Upon submitting your application, you will instantly get a direct chat thread with the SearchBiz Administrator. Your account is held as PENDING verification until payment is processed and business legitimacy documents are verified.
                               </div>
                             </div>
                           </div>
@@ -840,8 +843,23 @@ export default function LoginPage() {
                     onClick={() => setStep("LOGIN")} 
                     className="block w-full text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors"
                   >
-                    Back to Registration
+                    {isRegister ? "Back to Registration" : "Back to Sign In"}
                   </button>
+                </div>
+
+                {/* Secure Anti-Hack Reminder */}
+                <div className="mt-6 bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 text-left space-y-3 shadow-md relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <ShieldCheck className="w-5 h-5 shrink-0" />
+                    <h4 className="font-bold text-[11px] uppercase tracking-wider">Account Safety & Protection</h4>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                    This step is to keep your account safe so to prevent malicious hacks. Multi-factor verification ensures that only authorized enterprise owners gain dashboard access.
+                  </p>
+                  <p className="text-[11px] text-emerald-400 font-bold leading-relaxed">
+                    IMPORTANT reminder: Users must keep their passwords, user names, emails, Google Authenticator codes, and secret keys fully safe and secure. Prevention is better than cure!
+                  </p>
                 </div>
               </form>
             </>
@@ -947,6 +965,21 @@ export default function LoginPage() {
                 
                 <div className="text-center">
                   <button type="button" onClick={() => setStep("LOGIN")} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                </div>
+
+                {/* Secure Anti-Hack Reminder */}
+                <div className="mt-6 bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 text-left space-y-3 shadow-md relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <ShieldCheck className="w-5 h-5 shrink-0" />
+                    <h4 className="font-bold text-[11px] uppercase tracking-wider">Account Safety & Protection</h4>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                    This step is to keep your account safe so to prevent malicious hacks. Multi-factor verification ensures that only authorized enterprise owners gain dashboard access.
+                  </p>
+                  <p className="text-[11px] text-emerald-400 font-bold leading-relaxed">
+                    IMPORTANT reminder: Users must keep their passwords, user names, emails, Google Authenticator codes, and secret keys fully safe and secure. Prevention is better than cure!
+                  </p>
                 </div>
               </form>
             </>

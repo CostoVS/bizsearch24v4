@@ -21,7 +21,7 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
     if (!storageData.messages) storageData.messages = [];
     
     // 2. Generate new message
-    const adminEmail = "nicholauscostochetty@gmail.com";
+    const adminEmail = "admin";
     const planFormatted = plan.toUpperCase();
     let priceText = "R199.00/month";
     if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00/month";
@@ -33,9 +33,9 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
       adId: "system",
       adTitle: "SearchBiz Account Verification",
       senderEmail: adminEmail,
-      senderName: "SearchBiz Admin (Nicholaus)",
+      senderName: "SearchBiz Admin",
       recipientEmail: normalizedEmail,
-      content: `Hi ${fullName || 'there'},\n\nThank you for choosing the **${planFormatted} Tier**! I have received your registration details for your business **${companyName}**.\n\nTo approve your account and launch your premium benefits, please provide proof of your business: **CIPC registration, SARS tax certificate, Business Bank account proof, and your ID Number (${idNumber || 'Not specified'})**.\n\nPlease reply here or WhatsApp me at **075 161 3007** once payments of **${priceText}** are settled so we can finalize verification!\n\nBest regards,\nNicholaus\nSearchBiz Admin`,
+      content: `Hi ${fullName || 'there'},\n\nThank you for choosing the **${planFormatted} Tier**! I have received your registration details for your business **${companyName}**.\n\nTo approve your account and launch your premium benefits, please provide proof of your business: **CIPC registration, SARS tax certificate, Business Bank account proof, and your ID Number (${idNumber || 'Not specified'})**.\n\nPlease reply here or WhatsApp me at **075 161 3007** once payments of **${priceText}** are settled so we can finalize verification!\n\nBest regards,\nSearchBiz Admin`,
       timestamp: new Date().toISOString(),
       read: false
     };

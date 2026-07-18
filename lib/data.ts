@@ -141,7 +141,7 @@ export const safeLocalStorage = {
 export const MOCK_USERS = [
   {
     id: 'u1',
-    email: 'nicholauscostochetty@gmail.com',
+    email: 'admin',
     role: 'ADMIN',
     plan: 'PREMIUM',
     joined: '2026-01-01',

@@ -142,6 +142,12 @@ export function Navbar() {
                   </span>
                 )}
               </Link>
+              <Link
+                href="/support"
+                className="flex items-center text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors"
+              >
+                Support / Help
+              </Link>
               {!isLoading && !user && (
                 <>
                   <Link
@@ -332,6 +338,13 @@ export function Navbar() {
                 className="px-4 py-4 text-lg font-medium text-slate-800 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 Visual Sitemap
+              </Link>
+              <Link
+                onClick={() => setMobileMenuOpen(false)}
+                href="/support"
+                className="px-4 py-4 text-lg font-bold text-emerald-700 hover:bg-emerald-50 rounded-2xl transition-colors flex items-center"
+              >
+                <MessageCircle className="w-5 h-5 mr-3 text-emerald-600" /> Support / Help
               </Link>
 
               <div className="h-px bg-slate-100 my-4" />

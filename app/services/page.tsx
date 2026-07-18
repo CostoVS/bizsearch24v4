@@ -258,7 +258,7 @@ export default function SearchBizServicesPage() {
                 <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> How do I communicate with the Admin?
               </h3>
               <p className="text-slate-500 text-xs leading-relaxed pl-6 font-medium">
-                Immediately upon registration, a direct chat thread is opened in your dashboard with Nicholaus, the SearchBiz Administrator. You can discuss document validation, settle subscription payments, and coordinate active listings.
+                Immediately upon registration, a direct chat thread is opened in your dashboard with the SearchBiz Administrator. You can discuss document validation, settle subscription payments, and coordinate active listings.
               </p>
             </div>
 

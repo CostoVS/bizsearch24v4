@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, saveUser } from '@/lib/auth-service';
+import { generateOtp, saveOtp } from '@/lib/otp-service';
+import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
   try {
@@ -47,9 +49,66 @@ export async function POST(req: Request) {
     user.isLocked = false;
     await saveUser(user);
 
+    // Generate secure email verification OTP
+    const otpCode = generateOtp(normalizedEmail);
+    saveOtp(normalizedEmail, otpCode);
+    console.log(`[LOGIN EMAIL OTP] Generated code ${otpCode} for ${normalizedEmail}`);
+
+    // Send email with verification code
+    try {
+      const smtpHost = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+      const smtpPort = Number(process.env.SMTP_PORT) || 465;
+      const smtpUser = (process.env.SMTP_USER || "mailsearchbiz@gmail.com").trim();
+      const rawSmtpPass = process.env.SMTP_PASS || "ygrv hhqi hdhi bxwt";
+      const cleanSmtpPass = rawSmtpPass.replace(/\s+/g, "");
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: cleanSmtpPass,
+        }
+      });
+
+      const mailOptions = {
+        from: `"SearchBiz Security" <${smtpUser}>`,
+        to: normalizedEmail,
+        replyTo: smtpUser,
+        subject: `🔒 [SearchBiz] Login Security Verification Code: ${otpCode}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; color: #1e293b; margin: 0 auto;">
+            <h2 style="color: #052e22; font-size: 20px; border-bottom: 2px solid #10b981; padding-bottom: 12px; margin-top: 0;">Multi-Factor Account Verification</h2>
+            <p>Hello,</p>
+            <p>To keep your account safe and prevent unauthorized hacks, please enter the following email verification code along with your Google Authenticator code in the secure login screen.</p>
+            
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
+              <p style="margin: 0; font-size: 14px; color: #15803d; font-weight: bold;">YOUR LOGIN SECURITY CODE</p>
+              <h1 style="margin: 10px 0 0 0; font-size: 36px; letter-spacing: 6px; color: #047857; font-family: monospace;">${otpCode}</h1>
+            </div>
+            
+            <p style="font-size: 12px; color: #64748b; line-height: 1.5; font-weight: bold;">
+              Security reminder: Users must keep their passwords, user names, emails, Google authenticator codes, and keys fully safe to prevent account hacks. Prevention is better than cure!
+            </p>
+            <p style="font-size: 11px; color: #94a3b8; line-height: 1.5;">
+              This code is valid for 10 minutes. If you did not attempt this login, please change your password immediately.
+            </p>
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+            <p style="font-size: 11px; text-align: center; color: #94a3b8; margin: 0;">&copy; 2026 SearchBiz.co.za. All rights reserved.</p>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+    } catch (mailErr) {
+      console.warn("Login SMTP transport failed, code fallback logged to terminal:", mailErr);
+    }
+
     // Success: Return user details and 2FA status (Never expose secretKey if hasSetup2FA is true for security)
     return NextResponse.json({
       success: true,
+      requiresEmailVerify: true,
       user: {
         id: user.id,
         email: user.email,

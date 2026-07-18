@@ -85,7 +85,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     idNumber?: string,
     memberId?: string
   ) => {
-    const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com";
+    const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com" || email.trim().toLowerCase() === "admin" || email.trim().toLowerCase() === "admin@searchbiz.co.za";
     const resolvedRole = isOwnerAdmin ? "ADMIN" : role;
     const resolvedPlan = isOwnerAdmin ? "PREMIUM" : plan;
 
@@ -127,6 +127,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  const isAdmin = context.user?.role === "ADMIN" || context.user?.email?.toLowerCase() === "nicholauscostochetty@gmail.com";
+  const isAdmin = context.user?.role === "ADMIN" || 
+                  context.user?.email?.toLowerCase() === "nicholauscostochetty@gmail.com" || 
+                  context.user?.email?.toLowerCase() === "admin" ||
+                  context.user?.email?.toLowerCase() === "admin@searchbiz.co.za";
   return { ...context, isAdmin };
 };

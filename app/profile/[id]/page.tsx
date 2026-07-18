@@ -339,7 +339,7 @@ export default function PublicProfilePage() {
   };
 
   const hasSeedMatch = profileId.includes("seed");
-  const baseCount = (profileId === "seed_1" || profile?.email === "nicholauscostochetty@gmail.com") 
+  const baseCount = (profileId === "seed_1" || profile?.email === "nicholauscostochetty@gmail.com" || profile?.email === "admin") 
     ? 342 
     : (profileId === "seed_2" ? 189 : (profileId === "seed_3" ? 94 : (hasSeedMatch ? 124 : 15)));
 
@@ -376,7 +376,7 @@ export default function PublicProfilePage() {
           <div className="h-44 sm:h-52 bg-gradient-to-tr from-slate-950 to-emerald-950 px-8 py-6 relative flex items-end">
             <div className="absolute inset-0 bg-gradient-to-r from-emerald-600/10 to-transparent pointer-events-none" />
             <div className="absolute top-4 right-4 z-20">
-              {(profile?.isPremiumVerified || profile?.userId === "seed_1" || profile?.email === "nicholauscostochetty@gmail.com") ? (
+              {(profile?.isPremiumVerified || profile?.userId === "seed_1" || profile?.email === "nicholauscostochetty@gmail.com" || profile?.email === "admin") ? (
                 <div className="inline-flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-emerald-400 text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/10 animate-pulse">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
