@@ -491,7 +491,7 @@ export default function LoginPage() {
                               <span className="flex items-center gap-1.5">
                                 Enterprise Sponsor Tier ★★★
                               </span>
-                              <span className="text-emerald-600 shrink-0">R100,000.00/mo</span>
+                              <span className="text-emerald-600 shrink-0">R299,999.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Everything from Essential & Pro Premium Tiers included</div>

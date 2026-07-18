@@ -191,7 +191,6 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
 
       <main className="flex-grow pt-24 pb-16 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto space-y-8">
@@ -526,8 +525,6 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
 
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }
