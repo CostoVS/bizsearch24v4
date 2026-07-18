@@ -397,6 +397,7 @@ export default function LoginPage() {
                       </label>
                       <div className="space-y-3">
                         {/* Basic Free Tier */}
+                        {/* Free Basic Tier */}
                         <div 
                           onClick={() => {
                             setSelectedPlan("FREE");
@@ -410,7 +411,7 @@ export default function LoginPage() {
                         >
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
-                              <span>Basic Free Tier</span>
+                              <span>Level 1: Free Basic Tier</span>
                               <span className="text-emerald-600 shrink-0">R0</span>
                             </div>
                             <p className="text-xs text-slate-500 leading-normal">
@@ -434,9 +435,9 @@ export default function LoginPage() {
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
-                                Essential Tier ★
+                                Level 2: Essential Verified Tier ★
                               </span>
-                              <span className="text-emerald-600 shrink-0">R199.99/mo</span>
+                              <span className="text-emerald-600 shrink-0">R199.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Unlimited Hosting, Unlimited Email Accounts, Smart Static Website</div>
@@ -462,9 +463,9 @@ export default function LoginPage() {
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
-                                Pro Premium Tier ★★
+                                Level 3: Premium Tier ★★
                               </span>
-                              <span className="text-emerald-600 shrink-0">R9,999.90/mo</span>
+                              <span className="text-emerald-600 shrink-0">R9,999.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Everything in Essential Tier included</div>
@@ -489,12 +490,12 @@ export default function LoginPage() {
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
-                                Enterprise Sponsor Tier ★★★
+                                Level 4: Enterprise Sponsor Tier ★★★
                               </span>
                               <span className="text-emerald-600 shrink-0">R299,999.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
-                              <div>• Everything from Essential & Pro Premium Tiers included</div>
+                              <div>• Everything from Essential & Premium Tiers included</div>
                               <div>• A dedicated Sponsor Ad, pinned always on top of all other ads</div>
                               <div>• Included in future company marketing: Facebook, YouTube, TikTok, Instagram, X marketing</div>
                             </div>

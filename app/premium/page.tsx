@@ -335,7 +335,7 @@ ${signature}
           {[
             {
               id: "essential",
-              name: "Essential Verified Tier 2",
+              name: "Level 2: Essential Verified Tier",
               badge: "Verified badge",
               price: "R199.00",
               period: "month",
@@ -360,7 +360,7 @@ ${signature}
             },
             {
               id: "premium",
-              name: "Premium Tier 3",
+              name: "Level 3: Premium Tier",
               badge: "premium verified badge",
               price: "R9,999.00",
               period: "month",
@@ -375,7 +375,7 @@ ${signature}
             },
             {
               id: "enterprise",
-              name: "Enterprise Sponsor Tier 4",
+              name: "Level 4: Enterprise Sponsor Tier",
               badge: "Enterprise Sponsor Premium Verified badge",
               price: "R299,999.00",
               period: "month",

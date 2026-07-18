@@ -40,7 +40,7 @@ export default function SearchBizServicesPage() {
   const pricingTiers = [
     {
       id: "free",
-      name: "Free Basic Tier",
+      name: "Level 1: Free Basic Tier",
       price: "R0",
       badge: "Not Verified Badge",
       period: "forever",
@@ -58,7 +58,7 @@ export default function SearchBizServicesPage() {
     },
     {
       id: "essential",
-      name: "Essential Verified Tier",
+      name: "Level 2: Essential Verified Tier",
       price: "R199",
       badge: "Verified Badge",
       period: "month",
@@ -85,7 +85,7 @@ export default function SearchBizServicesPage() {
     },
     {
       id: "premium",
-      name: "Premium Tier",
+      name: "Level 3: Premium Tier",
       price: "R9,999",
       badge: "Premium Verified Badge",
       period: "month",
@@ -102,7 +102,7 @@ export default function SearchBizServicesPage() {
     },
     {
       id: "enterprise",
-      name: "Enterprise Sponsor Tier",
+      name: "Level 4: Enterprise Sponsor Tier",
       price: "R299,999",
       badge: "Enterprise Sponsor Premium Verified Badge",
       period: "month",
