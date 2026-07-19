@@ -94,75 +94,75 @@ export function Navbar() {
             </div>
 
             {/* Desktop Nav */}
-            <div className="hidden xl:flex items-center space-x-6">
+            <div className="hidden lg:flex items-center space-x-2 xl:space-x-3.5 2xl:space-x-4">
               <LanguageSelector />
               <Link
                 href="/services"
-                className="flex items-center text-sm font-medium text-emerald-700 hover:text-emerald-800 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-4 h-4 mr-1.5" />
-                SearchBiz.co.za Services
+                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                Services
               </Link>
               <Link
                 href="/news"
-                className="flex items-center text-sm font-medium text-slate-600 hover:text-emerald-600 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
               >
-                <Newspaper className="w-4 h-4 mr-1.5" />
+                <Newspaper className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
                 News
               </Link>
               <Link
                 href="/tools"
-                className="flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors whitespace-nowrap shrink-0"
               >
-                SearchBiz.co.za Tools
+                Tools
               </Link>
               <Link
                 href="/premium-partners"
-                className="flex items-center text-sm font-bold text-amber-600 hover:text-amber-700 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-bold text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-4 h-4 mr-1.5 fill-amber-500 text-amber-500" />
-                Premium Partners
+                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1 fill-amber-500 text-amber-500" />
+                Partners
               </Link>
               <Link
                 href="/llama3-chat"
-                className="flex items-center text-sm font-bold text-purple-600 hover:text-purple-700 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-bold text-purple-600 hover:text-purple-700 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-4 h-4 mr-1.5 fill-purple-400 text-purple-400" />
+                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1 fill-purple-400 text-purple-400" />
                 AI Search
               </Link>
               <Link
                 href={user ? "/messages" : "/login"}
-                className="flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors relative"
+                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors relative whitespace-nowrap shrink-0"
               >
-                <MessageCircle className="w-4 h-4 mr-1.5" />
-                <span>Direct Chat</span>
+                <MessageCircle className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                <span>Chat</span>
                 {unreadCount > 0 && (
-                  <span className="absolute -top-2 -right-3 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white ring-2 ring-white shadow-md animate-in zoom-in duration-300">
+                  <span className="absolute -top-1.5 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white ring-2 ring-white shadow-md animate-in zoom-in duration-300">
                     {unreadCount}
                   </span>
                 )}
               </Link>
               <Link
                 href="/support"
-                className="flex items-center text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors"
+                className="flex items-center text-xs xl:text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap shrink-0"
               >
-                Support / Help
+                Support
               </Link>
               {!isLoading && !user && (
                 <>
                   <Link
                     href="/premium"
-                    className="flex items-center text-sm font-medium text-slate-600 hover:text-emerald-600 transition-colors"
+                    className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <Sparkles className="w-4 h-4 mr-1.5" />
+                    <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
                     Premium
                   </Link>
                   <Link
                     href="/login"
-                    className="flex items-center space-x-2 text-sm font-medium text-slate-700 hover:text-emerald-600 transition-colors"
+                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LogIn className="w-4 h-4" />
-                    <span>Login / Register</span>
+                    <LogIn className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
+                    <span>Login</span>
                   </Link>
                 </>
               )}
@@ -170,17 +170,17 @@ export function Navbar() {
                 <>
                   <Link
                     href="/dashboard"
-                    className="flex items-center space-x-1.5 text-sm font-medium text-slate-600 hover:text-emerald-600 transition-colors"
+                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LayoutDashboard className="w-4 h-4" />
+                    <LayoutDashboard className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
                     <span>Dashboard</span>
                   </Link>
                   {isAdmin && (
                     <Link
                       href="/admin"
-                      className="flex items-center space-x-1.5 text-sm font-medium text-rose-600 hover:text-rose-700 transition-colors"
+                      className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-rose-600 hover:text-rose-700 transition-colors whitespace-nowrap shrink-0"
                     >
-                      <ShieldAlert className="w-4 h-4" />
+                      <ShieldAlert className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
                       <span>Admin</span>
                     </Link>
                   )}
@@ -189,9 +189,9 @@ export function Navbar() {
                       logout();
                       window.location.href = "/";
                     }}
-                    className="flex items-center space-x-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
                     <span>Logout</span>
                   </button>
                 </>
@@ -199,7 +199,7 @@ export function Navbar() {
               {!isLoading && (
                 <Link
                   href="/create-ad"
-                  className="flex bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors shadow-sm"
+                  className="flex bg-emerald-600 hover:bg-emerald-700 text-white text-xs xl:text-sm font-semibold px-3 py-2 xl:px-4 xl:py-2.5 rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
                 >
                   Create Ad
                 </Link>
@@ -207,7 +207,7 @@ export function Navbar() {
             </div>
 
             {/* Mobile menu button */}
-            <div className="xl:hidden flex items-center">
+            <div className="lg:hidden flex items-center">
               <button
                 onClick={() => setMobileMenuOpen(true)}
                 className="text-slate-600 hover:text-emerald-600 focus:outline-none p-2"

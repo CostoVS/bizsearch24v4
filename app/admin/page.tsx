@@ -1730,12 +1730,12 @@ export default function AdminDashboard() {
 
             {/* Live Interactive Spreadsheet Editor */}
             {csvFileParsed.length > 0 && (
-              <div className="mt-6 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 relative">
+              <div className="mt-6 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 relative w-full max-w-full">
                 <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
                   <span>Interactive Listing Spreadsheet Editor (Double-check or modify values directly)</span>
                   <span className="text-[10px] text-slate-500 font-mono">Row Count: {csvFileParsed.length}</span>
                 </div>
-                <div className="overflow-x-auto max-h-[450px]">
+                <div className="overflow-x-auto w-full max-w-full block max-h-[450px]">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-white border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
@@ -2105,7 +2105,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative w-full max-w-full">
             <div className="px-8 py-6 border-b border-slate-100 bg-white flex flex-col md:flex-row md:items-center justify-between relative z-10 gap-4">
               <div>
                 <h2 className="font-bold text-xl text-slate-900 font-display">User Intelligence Registry</h2>
@@ -2125,7 +2125,7 @@ export default function AdminDashboard() {
                 <button className="bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-800 transition">Add User</button>
               </div>
             </div>
-            <div className="overflow-x-auto relative z-0">
+            <div className="overflow-x-auto w-full max-w-full block relative z-0">
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0">
                   <tr>
@@ -2464,7 +2464,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Section 2: Ad Placement Lifecycle Table */}
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative w-full max-w-full">
             <div className="px-8 py-6 border-b border-slate-100 bg-white flex flex-col md:flex-row md:items-center justify-between relative z-10 gap-4">
                <div>
                  <h2 className="font-bold text-xl text-slate-900 font-display">Ad Placement Lifecycle</h2>
@@ -2629,7 +2629,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="overflow-x-auto relative z-0">
+            <div className="overflow-x-auto w-full max-w-full block relative z-0">
               <table className="min-w-full divide-y divide-slate-100">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
