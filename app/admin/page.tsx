@@ -10,7 +10,7 @@ import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, getStoredB
 import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
-import { SA_PROVINCES, getPostalCodeForTown } from "@/lib/locations";
+import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
@@ -1679,25 +1679,33 @@ export default function AdminDashboard() {
                       if (!confirm(`Are you sure you want to commit these ${csvFileParsed.length} listing(s) directly to sitemaps and live indexes?`)) return;
                       
                       try {
-                        const formatted = csvFileParsed.map((item, index) => ({
-                          id: `csv-${Date.now()}-${index}-${Math.random().toString(36).substring(2,5)}`,
-                          userId: "system",
-                          title: item.title || "Unnamed Business",
-                          category: item.category || "Other",
-                          location: item.province || "gauteng",
-                          description: item.servicesOffered ? `Services offered: ${item.servicesOffered}` : "Basic unverified directory listing.",
-                          servicesOffered: item.servicesOffered || "",
-                          address: item.address || "",
-                          phone: item.phone || "",
-                          email: item.email || "",
-                          verified: false,
-                          isPremium: false,
-                          isSponsor: false,
-                          isClaimed: false,
-                          isGoogleImport: true,
-                          image: null,
-                          createdAt: new Date().toISOString()
-                        }));
+                        const formatted = csvFileParsed.map((item, index) => {
+                          const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
+                          const addr = item.address || "";
+                          const defaultCity = item.city || item.town || "Johannesburg";
+                          const parsedLoc = findSuburbAndTown(prov, addr, defaultCity);
+                          return {
+                            id: `csv-${Date.now()}-${index}-${Math.random().toString(36).substring(2,5)}`,
+                            userId: "system",
+                            title: item.title || "Unnamed Business",
+                            category: item.category || "Other",
+                            province: prov,
+                            location: parsedLoc.town,
+                            suburb: parsedLoc.suburb,
+                            description: item.servicesOffered ? `Services offered: ${item.servicesOffered}` : "Basic unverified directory listing.",
+                            servicesOffered: item.servicesOffered || "",
+                            address: item.address || "",
+                            phone: item.phone || "",
+                            email: item.email || "",
+                            verified: false,
+                            isPremium: false,
+                            isSponsor: false,
+                            isClaimed: false,
+                            isGoogleImport: true,
+                            image: null,
+                            createdAt: new Date().toISOString()
+                          };
+                        });
 
                         const merged = [...formatted, ...ads];
                         
@@ -2427,12 +2435,16 @@ export default function AdminDashboard() {
                           }
                         }
 
+                        const parsedLoc = findSuburbAndTown(location, address, "Johannesburg");
+
                         newAds.push({
                           id: `csv-${Date.now()}-${i}`,
                           userId: "system",
                           title: title || "Unknown Business",
                           category: category,
-                          location: location,
+                          province: location,
+                          location: parsedLoc.town,
+                          suburb: parsedLoc.suburb,
                           description: services ? `Services offered: ${services}` : "Basic listing",
                           servicesOffered: services || "",
                           address: address || "",

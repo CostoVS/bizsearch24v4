@@ -203,23 +203,54 @@ export default async function LocationPage({ params }: Props) {
 
   const baseAds = [...MOCK_ADS, ...allStoredAds].filter(ad => {
     const adLoc = ad.location?.toLowerCase().trim() || "";
-    const adProv = ((ad as any).province || "").toLowerCase().trim();
-    const isGlobalLocation = adLoc === "all locations" || adLoc === "all-locations" || adProv === "national";
+    
+    // 1. Determine Province
+    let adProvinceSlug = ((ad as any).province || "").toLowerCase().trim();
+    if (!adProvinceSlug && ad.location) {
+      const locLower = ad.location.toLowerCase().trim();
+      const matchedProvBySlug = PROVINCES.find(p => p.slug === locLower);
+      if (matchedProvBySlug) {
+        adProvinceSlug = matchedProvBySlug.slug;
+      } else {
+        const foundProv = PROVINCES.find(p => p.towns.some(t => t.toLowerCase() === locLower));
+        if (foundProv) {
+          adProvinceSlug = foundProv.slug;
+        }
+      }
+    }
+
+    // 2. Determine if it is province-wide
+    const isAdProvinceWide = !ad.location || PROVINCES.some(p => p.slug === ad.location.toLowerCase().trim());
+    const adTown = isAdProvinceWide ? "" : ad.location.toLowerCase().trim();
+    const isGlobalLocation = adLoc === "all locations" || adLoc === "all-locations" || adProvinceSlug === "national";
 
     if (isGlobalLocation) return true;
 
     if (customSlugMatch) {
       const matchCity = customSlugMatch.city.toLowerCase().trim();
       const matchProv = customSlugMatch.province.toLowerCase().trim();
-      return adLoc === matchCity || adProv === matchProv || adLoc === targetSlug;
+      const matchesCity = adTown === matchCity || (!isAdProvinceWide && adLoc === matchCity);
+      const matchesProvince = adProvinceSlug === matchProv;
+      return matchesCity || matchesProvince || adLoc === targetSlug;
     }
     
     const adSub = (ad.suburb || "").toLowerCase().trim();
     const adDesc = (ad.description || "").toLowerCase().trim();
+    const adAddr = (ad.address || "").toLowerCase().trim();
     
     if (type === 'Suburb') {
       let specificSubName = "";
-      const allSuburbsMaps = [KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS];
+      const allSuburbsMaps = [
+        KZN_SUBURBS, 
+        GAUTENG_SUBURBS, 
+        WESTERN_CAPE_SUBURBS, 
+        EASTERN_CAPE_SUBURBS, 
+        FREE_STATE_SUBURBS, 
+        LIMPOPO_SUBURBS, 
+        MPUMALANGA_SUBURBS,
+        NORTH_WEST_SUBURBS,
+        NORTHERN_CAPE_SUBURBS
+      ];
       for (const subMap of allSuburbsMaps) {
         for (const [townName, subList] of Object.entries(subMap)) {
           const found = subList.find(sub => slugify(sub.name) === targetSlug);
@@ -233,15 +264,24 @@ export default async function LocationPage({ params }: Props) {
       return (
         adSub === targetSlug || 
         slugify(adSub) === targetSlug ||
-        (specificSubName && (adSub === specificSubName || adLoc.includes(specificSubName) || adDesc.includes(specificSubName)))
+        (specificSubName && (adSub === specificSubName || adLoc.includes(specificSubName) || adDesc.includes(specificSubName) || adAddr.includes(specificSubName)))
       );
     }
 
-    return (
-      slugify(ad.location) === targetSlug || 
-      ad.location.toLowerCase() === properName.toLowerCase() || 
-      ad.location.toLowerCase() === location.toLowerCase()
-    );
+    if (type === 'Province') {
+      return adProvinceSlug === targetSlug || adProvinceSlug === properName.toLowerCase();
+    }
+
+    // Town-level matching
+    const matchesTown = slugify(ad.location) === targetSlug || 
+                        ad.location.toLowerCase() === properName.toLowerCase() || 
+                        ad.location.toLowerCase() === location.toLowerCase();
+
+    // If ad is province-wide, and the target is a town within that province, show it!
+    const isTargetTownInProvince = PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => slugify(t) === targetSlug);
+    const matchesProvinceWide = isAdProvinceWide && isTargetTownInProvince;
+
+    return matchesTown || matchesProvinceWide;
   });
   
   const adsForLocation = [...baseAds].filter(a => a.isActive !== false).sort((a, b) => {

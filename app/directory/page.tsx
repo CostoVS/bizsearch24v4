@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from 'next/navigation';
-import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED } from '@/lib/data';
+import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
 import { BadgeCheck, MapPin, Star, Edit, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'motion/react';
@@ -72,8 +72,26 @@ function DirectoryContent() {
     // We only have strict location at the moment mapped to 'ad.location' which maps to town or full string.
     // Admin Override: "All Locations" and "national" province ads should show in any town/location search
     const adLoc = ad.location?.toLowerCase().trim() || "";
-    const adProv = (ad.province || "").toLowerCase().trim();
-    const isGlobalLocation = adLoc === "all locations" || adLoc === "all-locations" || adProv === "national";
+    
+    // 1. Determine Province
+    let adProvinceSlug = (ad.province || "").toLowerCase().trim();
+    if (!adProvinceSlug && ad.location) {
+      const locLower = ad.location.toLowerCase().trim();
+      const matchedProvBySlug = PROVINCES.find(p => p.slug === locLower);
+      if (matchedProvBySlug) {
+        adProvinceSlug = matchedProvBySlug.slug;
+      } else {
+        const foundProv = PROVINCES.find(p => p.towns.some(t => t.toLowerCase() === locLower));
+        if (foundProv) {
+          adProvinceSlug = foundProv.slug;
+        }
+      }
+    }
+
+    // 2. Determine if it is province-wide
+    const isAdProvinceWide = !ad.location || PROVINCES.some(p => p.slug === ad.location.toLowerCase().trim());
+    const adTown = isAdProvinceWide ? "" : ad.location.toLowerCase().trim();
+    const isGlobalLocation = adLoc === "all locations" || adLoc === "all-locations" || adProvinceSlug === "national";
 
     if (q) {
       const lowerQ = q.toLowerCase().trim();
@@ -84,8 +102,10 @@ function DirectoryContent() {
       const catMatch = ad.category?.toLowerCase().includes(lowerQ) || 
                        isSubcategoryOf(ad.category, lowerQ) ||
                        CATEGORIES_STRUCTURED.some(g => g.name.toLowerCase().includes(lowerQ) && isSubcategoryOf(ad.category, g.name));
-      const townMatch = adLoc.includes(lowerQ) || ad.serviceAreas?.some((sa: any) => sa.town?.toLowerCase().trim().includes(lowerQ));
-      const provMatch = adProv.includes(lowerQ) || ad.serviceAreas?.some((sa: any) => sa.province?.toLowerCase().trim().includes(lowerQ));
+      const townMatch = adTown.includes(lowerQ) || 
+                        (isAdProvinceWide && PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => t.toLowerCase().includes(lowerQ))) ||
+                        ad.serviceAreas?.some((sa: any) => sa.town?.toLowerCase().trim().includes(lowerQ));
+      const provMatch = adProvinceSlug.includes(lowerQ) || ad.serviceAreas?.some((sa: any) => sa.province?.toLowerCase().trim().includes(lowerQ));
       const subMatch = (ad.suburb || "").toLowerCase().trim().includes(lowerQ) || ad.serviceAreas?.some((sa: any) => sa.suburb?.toLowerCase().trim().includes(lowerQ));
 
       // If q matches a known South African location name:
@@ -106,24 +126,36 @@ function DirectoryContent() {
     }
     
     // Admin Override: "All Categories" ads should show in any category search
-    if (category && ad.category.toLowerCase() !== "all categories" && !isSubcategoryOf(ad.category, category)) match = false;
+    if (category && ad.category.toLowerCase() !== "all categories") {
+      const isCatMatch = isSubcategoryOf(ad.category, category) || 
+                         ad.category.toLowerCase().includes(category) || 
+                         category.includes(ad.category.toLowerCase());
+      if (!isCatMatch) match = false;
+    }
 
-    if (province && ad.province?.toLowerCase() !== province && !isGlobalLocation) {
+    if (province && adProvinceSlug !== province && !isGlobalLocation) {
       const hasProvService = ad.serviceAreas?.some((sa: any) => sa.province?.toLowerCase() === province);
       if (!hasProvService) match = false;
     }
 
-    if (town && ad.location.toLowerCase() !== town.toLowerCase() && !isGlobalLocation) {
+    if (town && !isGlobalLocation) {
+      const isTownInAdProvince = PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => t.toLowerCase() === town.toLowerCase());
+      const matchesProvinceWide = isAdProvinceWide && isTownInAdProvince;
+      const matchesSpecificTown = adTown === town.toLowerCase();
       const hasTownService = ad.serviceAreas?.some((sa: any) => sa.town?.toLowerCase() === town.toLowerCase());
-      if (!hasTownService) match = false;
+      
+      if (!matchesProvinceWide && !matchesSpecificTown && !hasTownService) {
+        match = false;
+      }
     }
     
     if (suburb) {
       const adSuburb = (ad.suburb || '').toLowerCase().trim();
       const adDesc = (ad.description || '').toLowerCase().trim();
+      const adAddr = (ad.address || '').toLowerCase().trim();
       const targetSub = suburb.toLowerCase().trim();
       const hasSubService = ad.serviceAreas?.some((sa: any) => (sa.suburb || '').toLowerCase().trim() === targetSub);
-      if (!isGlobalLocation && adSuburb !== targetSub && !adLoc.includes(targetSub) && !adDesc.includes(targetSub) && !hasSubService) {
+      if (!isGlobalLocation && adSuburb !== targetSub && !adLoc.includes(targetSub) && !adDesc.includes(targetSub) && !adAddr.includes(targetSub) && !hasSubService) {
         match = false;
       }
     }

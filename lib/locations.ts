@@ -30997,3 +30997,66 @@ export const NORTHERN_CAPE_SUBURBS: Record<string, SuburbInfo[]> = {
     }
   ]
 };
+
+export function getProvinceSuburbs(provinceSlug: string): Record<string, SuburbInfo[]> | null {
+  switch (provinceSlug?.toLowerCase().trim()) {
+    case 'kwazulu-natal':
+      return KZN_SUBURBS;
+    case 'gauteng':
+      return GAUTENG_SUBURBS;
+    case 'western-cape':
+      return WESTERN_CAPE_SUBURBS;
+    case 'eastern-cape':
+      return EASTERN_CAPE_SUBURBS;
+    case 'free-state':
+      return FREE_STATE_SUBURBS;
+    case 'limpopo':
+      return LIMPOPO_SUBURBS;
+    case 'mpumalanga':
+      return MPUMALANGA_SUBURBS;
+    case 'north-west':
+      return NORTH_WEST_SUBURBS;
+    case 'northern-cape':
+      return NORTHERN_CAPE_SUBURBS;
+    default:
+      return null;
+  }
+}
+
+export function findSuburbAndTown(provinceSlug: string, address: string, defaultTown: string = "Johannesburg"): { town: string; suburb: string } {
+  const addrLower = (address || "").toLowerCase().trim();
+  if (!addrLower) {
+    return { town: defaultTown, suburb: "" };
+  }
+
+  // 1. Find town in SA_PROVINCES
+  let matchedTown = "";
+  const provObj = SA_PROVINCES.find(p => p.slug === provinceSlug);
+  if (provObj) {
+    // Sort towns by length descending to match longer town names first
+    const sortedTowns = [...provObj.towns].sort((a, b) => b.length - a.length);
+    const foundTown = sortedTowns.find(t => t.toLowerCase() !== "all locations" && addrLower.includes(t.toLowerCase()));
+    if (foundTown) {
+      matchedTown = foundTown;
+    } else {
+      matchedTown = provObj.towns[0] === 'All Locations' ? (provObj.towns[1] || defaultTown) : (provObj.towns[0] || defaultTown);
+    }
+  } else {
+    matchedTown = defaultTown;
+  }
+
+  // 2. Find suburb in matched town
+  let matchedSuburb = "";
+  const subMap = getProvinceSuburbs(provinceSlug);
+  if (subMap && subMap[matchedTown]) {
+    // Sort suburbs by length descending to match longer suburb names first
+    const sortedSuburbs = [...subMap[matchedTown]].sort((a, b) => b.name.length - a.name.length);
+    const foundSub = sortedSuburbs.find(s => addrLower.includes(s.name.toLowerCase()));
+    if (foundSub) {
+      matchedSuburb = foundSub.name;
+    }
+  }
+
+  return { town: matchedTown, suburb: matchedSuburb };
+}
+
