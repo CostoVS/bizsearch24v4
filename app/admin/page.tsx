@@ -829,7 +829,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tab contents right-hand column */}
-        <div className="lg:col-span-4 space-y-8 min-w-0">
+        <div className="lg:col-span-4 space-y-8 min-w-0 w-full overflow-hidden">
 
       {activeTab === 'banners' && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

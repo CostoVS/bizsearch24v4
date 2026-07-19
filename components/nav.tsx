@@ -94,7 +94,7 @@ export function Navbar() {
             </div>
 
             {/* Desktop Nav */}
-            <div className="hidden md:flex items-center space-x-6">
+            <div className="hidden xl:flex items-center space-x-6">
               <LanguageSelector />
               <Link
                 href="/services"
@@ -207,7 +207,7 @@ export function Navbar() {
             </div>
 
             {/* Mobile menu button */}
-            <div className="md:hidden flex items-center">
+            <div className="xl:hidden flex items-center">
               <button
                 onClick={() => setMobileMenuOpen(true)}
                 className="text-slate-600 hover:text-emerald-600 focus:outline-none p-2"
