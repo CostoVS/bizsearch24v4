@@ -32,16 +32,13 @@ export const VerificationBadge = ({ verified, isGoogleImport }: { verified: bool
       <motion.div 
         animate={{ scale: [1, 1.02, 1] }}
         transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
-        className="flex items-center text-white bg-red-600 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-red-700 shadow-sm shrink-0"
-        title="Unverified SearchBiz.co.za - Sourced from Google search"
+        className="flex items-center text-red-600 bg-red-500/10 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-red-500/25 shadow-sm shrink-0"
+        title="Unverified SearchBiz.co.za Listing"
       >
-        <div className="relative mr-1.5 flex items-center justify-center text-white">
+        <div className="relative mr-1.5 flex items-center justify-center text-red-500">
           <AlertCircle className="w-3.5 h-3.5 z-10" />
         </div>
-        <span>
-          <span className="inline sm:hidden">Google Sourced</span>
-          <span className="hidden sm:inline">Unverified - Sourced from Google</span>
-        </span>
+        <span>Not Verified</span>
       </motion.div>
     );
   }
