@@ -754,7 +754,7 @@ export default function AdminDashboard() {
   if (isLoading || !user || user.role !== "ADMIN") return <div className="p-20 text-center text-slate-500 text-sm">Authenticating Secure Session...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto py-12 px-2 sm:px-6 w-full min-w-0 overflow-x-hidden sm:overflow-x-visible">
+    <div className="max-w-7xl mx-auto py-12 px-2 sm:px-6 w-full min-w-0 overflow-x-hidden">
       {selectedAd && (
         <AdDetailModal ad={selectedAd} onClose={() => setSelectedAd(null)} />
       )}

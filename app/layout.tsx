@@ -27,7 +27,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
       </head>
-      <body className="antialiased min-h-screen flex flex-col bg-[#f8f9fa]">
+      <body className="antialiased min-h-screen flex flex-col bg-[#f8f9fa] overflow-x-hidden w-full">
         <ScrollToTop />
         <AuthProvider>
           <LayoutWrapper>{children}</LayoutWrapper>

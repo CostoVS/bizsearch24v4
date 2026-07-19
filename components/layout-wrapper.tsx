@@ -116,7 +116,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
       )}
 
       <DataSyncer />
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen w-full overflow-x-hidden">
         <GlobalAdBanner position="top" />
         <Navbar />
         <main className="flex-grow flex flex-col overflow-x-hidden w-full max-w-full">
