@@ -16,7 +16,7 @@ import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
 export default function AdminDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('overview');
   
@@ -466,11 +466,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!isLoading) {
-      if (!user || user.role !== "ADMIN") {
+      if (!user || !isAdmin) {
         router.push("/");
       }
     }
-  }, [user, isLoading, router]);
+  }, [user, isLoading, isAdmin, router]);
 
   const removeUser = async (id: string) => {
     const targetUser = users.find(u => u.id === id);
@@ -751,7 +751,7 @@ export default function AdminDashboard() {
   const todayStr = new Date().toISOString().split('T')[0];
   const usersTodayCount = mappedUsers.filter(u => u.joined === todayStr).length;
 
-  if (isLoading || !user || user.role !== "ADMIN") return <div className="p-20 text-center text-slate-500 text-sm">Authenticating Secure Session...</div>;
+  if (isLoading || !user || !isAdmin) return <div className="p-20 text-center text-slate-500 text-sm">Authenticating Secure Session...</div>;
 
   return (
     <div className="max-w-7xl mx-auto py-12 px-2 sm:px-6 w-full min-w-0 overflow-x-hidden">

@@ -35,7 +35,7 @@ import {
 } from "@/lib/analytics-utils";
 
 export default function MatomoDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
   const router = useRouter();
   const [events, setEvents] = useState<AnalyticsEvent[]>([]);
   const [properties, setProperties] = useState<{id: string, domain: string, added: string}[]>([]);
@@ -67,11 +67,11 @@ export default function MatomoDashboard() {
 
   useEffect(() => {
     if (!isLoading) {
-      if (!user || user.role !== "ADMIN") {
+      if (!user || !isAdmin) {
         router.push("/");
       }
     }
-  }, [user, isLoading, router]);
+  }, [user, isLoading, isAdmin, router]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -121,25 +121,29 @@ export default function MatomoDashboard() {
     }
   };
 
-  if (isLoading || !user || user.role !== "ADMIN") return null;
+  if (isLoading || !user || !isAdmin) return null;
 
   // Helper function to segment/filter database based on property & timeframe parameters
   const applyPropertyFilter = (rawEvents: AnalyticsEvent[]) => {
+    if (!Array.isArray(rawEvents)) return [];
     if (activeProperty === "internal") {
-      return rawEvents.filter(e => e.type !== "external_site");
+      return rawEvents.filter(e => e && e.type !== "external_site");
     } else {
       const propDomain = properties.find(p => p.id === activeProperty)?.domain;
       if (propDomain) {
-        return rawEvents.filter(e => e.type === "external_site" && (e as ExternalSiteEvent).targetUrl.toLowerCase().includes(propDomain.toLowerCase()));
+        return rawEvents.filter(e => e && e.type === "external_site" && e.targetUrl && typeof e.targetUrl === 'string' && e.targetUrl.toLowerCase().includes(propDomain.toLowerCase()));
       }
       return [];
     }
   };
 
   const applyTimeframeFilter = (rawEvents: AnalyticsEvent[], timeframe: string) => {
+    if (!Array.isArray(rawEvents)) return [];
     const now = new Date();
     return rawEvents.filter(e => {
+      if (!e || !e.timestamp) return false;
       const evDate = new Date(e.timestamp);
+      if (isNaN(evDate.getTime())) return false;
       const diffMs = now.getTime() - evDate.getTime();
       if (timeframe === 'today') {
         return diffMs <= 24 * 60 * 60 * 1000;
@@ -161,12 +165,13 @@ export default function MatomoDashboard() {
 
   // Apply search query filter inside the Live Visitor stream if necessary
   const finalStreamEvents = streamFilteredEvents.filter(ev => {
+    if (!ev) return false;
     if (!streamQuery) return true;
     const q = streamQuery.toLowerCase();
-    const matchesPath = ev.type === 'pageview' ? ev.pathname.toLowerCase().includes(q) : false;
-    const matchesQuery = ev.type === 'search' ? ev.query.toLowerCase().includes(q) : false;
-    const matchesAd = ev.type === 'adclick' ? ev.adTitle.toLowerCase().includes(q) : false;
-    const matchesExternal = ev.type === 'external_site' ? ev.targetUrl.toLowerCase().includes(q) : false;
+    const matchesPath = (ev.type === 'pageview' && ev.pathname) ? ev.pathname.toLowerCase().includes(q) : false;
+    const matchesQuery = (ev.type === 'search' && ev.query) ? ev.query.toLowerCase().includes(q) : false;
+    const matchesAd = (ev.type === 'adclick' && ev.adTitle) ? ev.adTitle.toLowerCase().includes(q) : false;
+    const matchesExternal = (ev.type === 'external_site' && ev.targetUrl) ? ev.targetUrl.toLowerCase().includes(q) : false;
     const matchesIp = ev.ip ? ev.ip.includes(q) : false;
     const matchesCity = ev.city ? ev.city.toLowerCase().includes(q) : false;
     return matchesPath || matchesQuery || matchesAd || matchesExternal || matchesIp || matchesCity;
@@ -174,14 +179,18 @@ export default function MatomoDashboard() {
 
   // KPI calculations (Metric scope)
   const totalVisits = metricsFilteredEvents.length;
-  const uniqueIps = new Set(metricsFilteredEvents.map(e => e.ip)).size;
+  const uniqueIps = new Set(metricsFilteredEvents.map(e => e && e.ip).filter(Boolean)).size;
   
   // Custom smart estimates for Matomo equivalency
   const getBounceRateEstimate = () => {
     if (totalVisits === 0) return "0.0%";
     // Estimate based on ratio of users with minor sequential hits
     const ipCounts: Record<string, number> = {};
-    metricsFilteredEvents.forEach(e => { ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1; });
+    metricsFilteredEvents.forEach(e => {
+      if (e && e.ip) {
+        ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
+      }
+    });
     const singles = Object.values(ipCounts).filter(c => c === 1).length;
     const totalIps = Object.keys(ipCounts).length;
     const rate = totalIps > 0 ? (singles / totalIps) * 100 : 42.5;
@@ -191,7 +200,11 @@ export default function MatomoDashboard() {
   const getAvgSessionLength = () => {
     if (totalVisits === 0) return "0s";
     const ipCounts: Record<string, number> = {};
-    metricsFilteredEvents.forEach(e => { ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1; });
+    metricsFilteredEvents.forEach(e => {
+      if (e && e.ip) {
+        ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
+      }
+    });
     const avgHits = Object.values(ipCounts).reduce((acc, v) => acc + v, 0) / (Object.keys(ipCounts).length || 1);
     const durationSeconds = Math.round(avgHits * 45); // estimate 45s interaction duration per hit
     const mins = Math.floor(durationSeconds / 60);
@@ -205,11 +218,13 @@ export default function MatomoDashboard() {
   // Gather distribution data for lists (Metric scope)
   // 1. Pages Visited
   const pageVisits = Object.entries(metricsFilteredEvents.reduce((acc, e) => {
-    if (e.type === 'pageview') {
-      acc[e.pathname] = (acc[e.pathname] || 0) + 1;
-    } else if (e.type === 'external_site') {
-      const u = e.targetUrl || '/';
-      acc[u] = (acc[u] || 0) + 1;
+    if (e) {
+      if (e.type === 'pageview' && e.pathname) {
+        acc[e.pathname] = (acc[e.pathname] || 0) + 1;
+      } else if (e.type === 'external_site') {
+        const u = e.targetUrl || '/';
+        acc[u] = (acc[u] || 0) + 1;
+      }
     }
     return acc;
   }, {} as Record<string, number>))
@@ -218,7 +233,7 @@ export default function MatomoDashboard() {
 
   // 2. Search queries
   const topQueries = Object.entries(metricsFilteredEvents.reduce((acc, e) => {
-    if (e.type === 'search' && e.query) {
+    if (e && e.type === 'search' && e.query) {
       acc[e.query] = (acc[e.query] || 0) + 1;
     }
     return acc;
@@ -228,7 +243,7 @@ export default function MatomoDashboard() {
 
   // 3. Ad Sponsor Clicks
   const adClicks = Object.entries(metricsFilteredEvents.reduce((acc, e) => {
-    if (e.type === 'adclick' && e.adTitle) {
+    if (e && e.type === 'adclick' && e.adTitle) {
       acc[e.adTitle] = (acc[e.adTitle] || 0) + 1;
     }
     return acc;
@@ -238,8 +253,10 @@ export default function MatomoDashboard() {
 
   // 4. City Hotspot Locations
   const cityHotspots = Object.entries(metricsFilteredEvents.reduce((acc, e) => {
-    const loc = e.city ? `${e.city}, ${e.region || 'SA'}` : 'Unknown';
-    acc[loc] = (acc[loc] || 0) + 1;
+    if (e) {
+      const loc = e.city ? `${e.city}, ${e.region || 'SA'}` : 'Unknown';
+      acc[loc] = (acc[loc] || 0) + 1;
+    }
     return acc;
   }, {} as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
@@ -247,8 +264,10 @@ export default function MatomoDashboard() {
 
   // 5. Operating Platform & Browser details
   const browserBreakdown = Object.entries(metricsFilteredEvents.reduce((acc, e) => {
-    const client = `${e.browser || 'Chrome'} (${e.device || 'Mobile'})`;
-    acc[client] = (acc[client] || 0) + 1;
+    if (e) {
+      const client = `${e.browser || 'Chrome'} (${e.device || 'Mobile'})`;
+      acc[client] = (acc[client] || 0) + 1;
+    }
     return acc;
   }, {} as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
@@ -499,7 +518,7 @@ export default function MatomoDashboard() {
             {activeProperty !== "internal" && (
               <div className="bg-slate-900 text-slate-300 rounded-3xl p-6 border border-indigo-950 shadow-xl shadow-cyan-950/10 animate-in fade-in slide-in-from-top-4 duration-500">
                 <div className="flex items-center gap-3 border-b border-slate-800 pb-3 mb-3">
-                  <div className="bg-indigo-505/10 p-2 rounded-xl text-indigo-400 border border-indigo-500/20">
+                  <div className="bg-indigo-500/10 p-2 rounded-xl text-indigo-400 border border-indigo-500/20">
                     <Hash className="w-5 h-5" />
                   </div>
                   <div>
