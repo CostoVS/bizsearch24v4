@@ -179,6 +179,16 @@ function saveEventToStorage(event: AnalyticsEvent) {
     }
     
     localStorage.setItem("searchbiz_analytics_v1", JSON.stringify(existing));
+
+    // Also fire off the event asynchronously to `/api/analytics` to centralize it
+    fetch("/api/analytics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event)
+    }).catch(err => {
+      console.warn("Could not dispatch event to server telemetry backend:", err);
+    });
+
   } catch (e) {
     console.error("Analytics writing error:", e);
   }

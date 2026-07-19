@@ -37,6 +37,7 @@ import {
 export default function MatomoDashboard() {
   const { user, isLoading, isAdmin } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [events, setEvents] = useState<AnalyticsEvent[]>([]);
   const [properties, setProperties] = useState<{id: string, domain: string, added: string}[]>([]);
   const [newDomain, setNewDomain] = useState("");
@@ -61,9 +62,28 @@ export default function MatomoDashboard() {
   // Search filter inside streams
   const [streamQuery, setStreamQuery] = useState("");
 
-  const refreshData = () => {
+  const refreshData = async () => {
     if (typeof window !== "undefined") {
       setEvents(getAnalyticsEvents());
+      
+      // Fetch centralized events from server
+      try {
+        const response = await fetch("/api/analytics", {
+          headers: {
+            "X-Admin-Email": user?.email || ""
+          }
+        });
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson && resJson.success && Array.isArray(resJson.events)) {
+            setEvents(resJson.events);
+            localStorage.setItem("searchbiz_analytics_v1", JSON.stringify(resJson.events));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load live server analytics:", err);
+      }
+
       const savedProps = localStorage.getItem("bs24_matomo_props");
       if (savedProps) {
         try {
@@ -92,10 +112,17 @@ export default function MatomoDashboard() {
   }, [user, isLoading, isAdmin, router]);
 
   useEffect(() => {
+    setMounted(true);
     setTimeout(() => {
       refreshData();
     }, 0);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading && user && isAdmin) {
+      refreshData();
+    }
+  }, [user, isLoading, isAdmin]);
 
   // Sync pagination pages on filter updates
   useEffect(() => {
@@ -139,7 +166,16 @@ export default function MatomoDashboard() {
     }
   };
 
-  if (isLoading || !user || !isAdmin) return null;
+  if (!mounted || isLoading || !user || !isAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
+          <p className="text-slate-500 text-sm font-semibold">Initializing Matomo Analytics Proxy...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Helper function to segment/filter database based on property & timeframe parameters
   const applyPropertyFilter = (rawEvents: AnalyticsEvent[]) => {
@@ -203,7 +239,7 @@ export default function MatomoDashboard() {
   const getBounceRateEstimate = () => {
     if (totalVisits === 0) return "0.0%";
     // Estimate based on ratio of users with minor sequential hits
-    const ipCounts: Record<string, number> = Object.create(null);
+    const ipCounts: Record<string, number> = {};
     metricsFilteredEvents.forEach(e => {
       if (e && e.ip) {
         ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
@@ -217,7 +253,7 @@ export default function MatomoDashboard() {
 
   const getAvgSessionLength = () => {
     if (totalVisits === 0) return "0s";
-    const ipCounts: Record<string, number> = Object.create(null);
+    const ipCounts: Record<string, number> = {};
     metricsFilteredEvents.forEach(e => {
       if (e && e.ip) {
         ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
@@ -245,7 +281,7 @@ export default function MatomoDashboard() {
       }
     }
     return acc;
-  }, Object.create(null) as Record<string, number>))
+  }, {} as Record<string, number>))
     .map(([path, count]) => ({ path, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -255,7 +291,7 @@ export default function MatomoDashboard() {
       acc[e.query] = (acc[e.query] || 0) + 1;
     }
     return acc;
-  }, Object.create(null) as Record<string, number>))
+  }, {} as Record<string, number>))
     .map(([query, count]) => ({ name: query, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -265,7 +301,7 @@ export default function MatomoDashboard() {
       acc[e.adTitle] = (acc[e.adTitle] || 0) + 1;
     }
     return acc;
-  }, Object.create(null) as Record<string, number>))
+  }, {} as Record<string, number>))
     .map(([title, count]) => ({ name: title, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -276,7 +312,7 @@ export default function MatomoDashboard() {
       acc[loc] = (acc[loc] || 0) + 1;
     }
     return acc;
-  }, Object.create(null) as Record<string, number>))
+  }, {} as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -287,7 +323,7 @@ export default function MatomoDashboard() {
       acc[client] = (acc[client] || 0) + 1;
     }
     return acc;
-  }, Object.create(null) as Record<string, number>))
+  }, {} as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
     .sort((a,b) => b.count - a.count);
 
