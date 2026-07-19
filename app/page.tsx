@@ -73,13 +73,13 @@ export default function HomePage() {
               </div>
               
               <h1 className="text-3xl sm:text-5xl lg:text-7xl font-display font-bold tracking-tight leading-tight sm:leading-[1.05] mb-6">
-                Find Verified Local <br className="hidden sm:block" />
+                Find Local <br className="hidden sm:block" />
                 Businesses <span className="text-emerald-400">in</span> <br />
                 <span className="text-emerald-400">South Africa</span>
               </h1>
               
               <p className="text-sm sm:text-lg text-slate-300 mb-8 sm:mb-12 max-w-lg mx-auto md:mx-0 font-light leading-relaxed">
-                Easily search for verified local services, shops, and professionals near you.
+                Easily search for local services, shops, and professionals near you.
               </p>
               
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-8 sm:gap-12 mb-10 border-b border-emerald-900/60 pb-10">
