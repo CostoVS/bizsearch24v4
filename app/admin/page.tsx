@@ -1044,10 +1044,10 @@ export default function AdminDashboard() {
                 <div className="md:col-span-4 bg-indigo-50/50 p-6 rounded-2xl border border-indigo-150 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-400 rounded-full blur-3xl -mr-16 -mt-16 opacity-10"></div>
                   <div className="space-y-1 max-w-xl">
-                    <span className="bg-indigo-100 text-indigo-700 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded border border-indigo-200 inline-block">SearchBiz.co.za Llama3 Core</span>
-                    <h4 className="text-sm font-bold text-slate-905">Local Llama3 NLP SEO Suite</h4>
+                    <span className="bg-indigo-100 text-indigo-700 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded border border-indigo-200 inline-block">SearchBiz.co.za AI Core</span>
+                    <h4 className="text-sm font-bold text-slate-905">Local AI NLP SEO Suite</h4>
                     <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                      Formulate meta tags (keywords, description, regional codes, titles, headings, content intro) specifically targeted for {slugCity || "your city"} using our integrated local Llama3 Core NLP engine.
+                      Formulate meta tags (keywords, description, regional codes, titles, headings, content intro) specifically targeted for {slugCity || "your city"} using our integrated local AI Core NLP engine.
                     </p>
                   </div>
                   <button
@@ -1534,33 +1534,76 @@ export default function AdminDashboard() {
                       reader.onload = (event) => {
                         const text = event.target?.result as string;
                         if (text) {
-                          // Standard CSV client parse
-                          const lines = text.split(/\r?\n/);
+                          // Robust CSV client parse
+                          const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
                           if (lines.length < 2) {
                             alert("Your CSV file must contain a header row and at least one data row.");
                             return;
                           }
-                          const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+                          const parseCsvRow = (line: string) => {
+                            const result = [];
+                            let current = '';
+                            let inQuotes = false;
+                            for (let i = 0; i < line.length; i++) {
+                              const char = line[i];
+                              if (char === '"') {
+                                if (inQuotes && line[i + 1] === '"') {
+                                  current += '"';
+                                  i++;
+                                } else {
+                                  inQuotes = !inQuotes;
+                                }
+                              } else if (char === ',' && !inQuotes) {
+                                result.push(current.trim());
+                                current = '';
+                              } else {
+                                current += char;
+                              }
+                            }
+                            result.push(current.trim());
+                            return result;
+                          };
+
+                          const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                           const parsedRows = [];
                           for (let i = 1; i < lines.length; i++) {
-                            if (!lines[i].trim()) continue;
-                            const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                            const values = parseCsvRow(lines[i]);
+                            if (values.length === 0) continue;
                             const row: any = {};
                             headers.forEach((header, idx) => {
                               row[header] = values[idx] || "";
                             });
-                            // Match common variations of CSV column names
-                            const title = row.title || row.name || row.company || row["company name"] || row.business || "";
-                            const address = row.address || row.street || row.location || "";
-                            const phone = row.phone || row.telephone || row.contact || "";
-                            const email = row.email || row.mail || "";
-                            const category = row.category || row.industry || csvDefaultCategory;
-                            const province = row.province || row.state || csvDefaultProvince;
-                            const city = row.city || row.town || "Johannesburg";
-                            const servicesOffered = row.services || row.description || row.about || "";
                             
+                            // Match common variations of CSV column names or fallback to position for scraped Google Maps files
+                            let title = row.title || row.name || row.company || row["company name"] || row.business || "";
+                            let address = row.address || row.street || row.location || row["full address"] || "";
+                            let phone = row.phone || row.telephone || row.contact || row["phone number"] || "";
+                            let email = row.email || row.mail || "";
+                            let category = row.category || row.industry || row.type || "";
+                            let servicesOffered = row.services || row.description || row.about || row.website || "";
+
+                            // Heuristics for DataMiner / Apify generic exports if columns aren't standard
+                            if (!title && values.length > 1) {
+                              // If it looks like a Maps scrape, the second col is usually the title, or the first.
+                              title = values[1] && !values[1].startsWith("http") ? values[1] : values[0];
+                              if (!address && values.length > 6) address = values[6];
+                              if (!phone && values.length > 10) phone = values[10];
+                              if (!category && values.length > 4) category = values[4];
+                              if (!servicesOffered && values.length > 12) servicesOffered = values[12] || values[13];
+                            }
+
                             if (title) {
-                              parsedRows.push({ title, address, phone, email, category, province, city, servicesOffered });
+                              parsedRows.push({ 
+                                title: title.substring(0, 100), 
+                                address: address.substring(0, 200), 
+                                phone: phone.substring(0, 50), 
+                                email: email.substring(0, 100), 
+                                category: category || csvDefaultCategory, 
+                                province: row.province || row.state || csvDefaultProvince, 
+                                city: row.city || row.town || "Johannesburg", 
+                                servicesOffered: servicesOffered.substring(0, 500) 
+                              });
                             }
                           }
                           setCsvFileParsed(parsedRows);
@@ -2193,7 +2236,7 @@ export default function AdminDashboard() {
 
       {activeTab === 'ads' && (
         <div className="space-y-6">
-          {/* Section 1: Separated Bulk CSV Upload & Llama3 NLP Sorting Suite */}
+          {/* Section 1: Separated Bulk CSV Upload & AI NLP Sorting Suite */}
           <div className="bg-gradient-to-br from-slate-950 to-indigo-950 text-white rounded-3xl p-8 border border-indigo-900/40 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
               <Database className="w-40 h-40" />
@@ -2205,12 +2248,12 @@ export default function AdminDashboard() {
                   SearchBiz.co.za Core NLP
                 </span>
                 <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-md border border-emerald-500/30">
-                  Llama3 NLP Active
+                  AI NLP Active
                 </span>
               </div>
-              <h2 className="font-bold text-2xl font-display text-white">Llama3 Local AI CSV Parser</h2>
+              <h2 className="font-bold text-2xl font-display text-white">AI NLP CSV Parser</h2>
               <p className="text-slate-300 text-sm mt-1 max-w-xl">
-                Upload business listings via CSV and utilize our sub-millisecond Llama3 Core NLP model to auto-classify categories and sort them into their respected SA provincial directories.
+                Upload business listings via CSV and utilize our sub-millisecond AI NLP model to auto-classify categories and sort them into their respected SA provincial directories.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6 pb-6 border-b border-indigo-900/30">
@@ -2245,7 +2288,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">Llama3 Local NLP Routing</label>
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">AI Local NLP Routing</label>
                   <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-2.5 h-[46px] justify-between">
                     <span className="text-xs text-slate-200 font-bold">Auto-sort by Content & Info</span>
                     <button
@@ -2273,16 +2316,54 @@ export default function AdminDashboard() {
                     reader.onload = (event) => {
                       const content = event.target?.result as string;
                       if (!content) return;
-                      const lines = content.split('\n');
+                      const lines = content.split(/\r?\n/).filter(l => l.trim() !== "");
                       if (lines.length < 2) {
                         alert("CSV must have headers and at least one entry row.");
                         return;
                       }
+
+                      const parseCsvRow = (line: string) => {
+                        const result = [];
+                        let current = '';
+                        let inQuotes = false;
+                        for (let i = 0; i < line.length; i++) {
+                          const char = line[i];
+                          if (char === '"') {
+                            if (inQuotes && line[i + 1] === '"') {
+                              current += '"';
+                              i++;
+                            } else {
+                              inQuotes = !inQuotes;
+                            }
+                          } else if (char === ',' && !inQuotes) {
+                            result.push(current.trim());
+                            current = '';
+                          } else {
+                            current += char;
+                          }
+                        }
+                        result.push(current.trim());
+                        return result;
+                      };
+
                       const newAds = [];
                       for (let i = 1; i < lines.length; i++) {
-                        const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                        const cols = parseCsvRow(lines[i]);
                         if (cols.length < 1 || !cols[0]) continue;
-                        const [title, address, phone, services] = cols;
+                        
+                        // Default column mapping
+                        let title = cols[0];
+                        let address = cols[1] || "";
+                        let phone = cols[2] || "";
+                        let services = cols[3] || "";
+
+                        // Heuristic for Maps scrape format (Title usually 2nd column, not a URL)
+                        if (cols.length > 4 && cols[0].startsWith("http")) {
+                          title = cols[1];
+                          address = cols[6] || "";
+                          phone = cols[10] || "";
+                          services = cols[4] || cols[13] || "";
+                        }
 
                         let category = csvDefaultCategory;
                         let location = csvDefaultProvince;
@@ -2290,7 +2371,7 @@ export default function AdminDashboard() {
                         if (csvAiEnable) {
                           const combinedString = `${title} ${address || ""} ${services || ""}`.toLowerCase();
                           
-                          // 1. Local Llama3 NLP category sorting logic
+                          // 1. Local AI NLP category sorting logic
                           let detectedCategory = "";
                           if (combinedString.includes("solar") || combinedString.includes("inverter") || combinedString.includes("battery") || combinedString.includes("panels") || combinedString.includes("backup power")) {
                             detectedCategory = "Solar Power Installers";
@@ -2319,7 +2400,7 @@ export default function AdminDashboard() {
                             category = detectedCategory;
                           }
 
-                          // 2. Local Llama3 NLP provincial routing logic
+                          // 2. Local AI NLP provincial routing logic
                           let detectedProvince = "";
                           if (combinedString.includes("kzn") || combinedString.includes("natal") || combinedString.includes("durban") || combinedString.includes("pietermaritzburg") || combinedString.includes("ballito") || combinedString.includes("pmb") || combinedString.includes("margate") || combinedString.includes("umhlanga") || combinedString.includes("stanger")) {
                             detectedProvince = "kwazulu-natal";
@@ -2369,7 +2450,7 @@ export default function AdminDashboard() {
                         const updated = [...newAds, ...ads];
                         setAds(updated);
                         saveStoredAds(updated);
-                        alert(`Llama3 Core NLP Successfully indexed and sorted ${newAds.length} business listings!`);
+                        alert(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!`);
                       } else {
                         alert("No valid entries detected in CSV.");
                       }

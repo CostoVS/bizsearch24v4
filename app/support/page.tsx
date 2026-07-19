@@ -35,7 +35,7 @@ export default function SupportPage() {
     {
       id: "welcome",
       sender: "bot",
-      text: "Goeie dag! Welcome to SearchBiz Support. I am your LLaMA 3 local AI assistant running directly on our VPS. I can guide you through our base premium plans (R199.00/month), direct messaging, account safety, or local business listings. If I cannot solve your issue, you can instantly escalate and send a direct chat message to our administrator!",
+      text: "Welcome to SearchBiz Support. I am your AI assistant. I can guide you through our plans, direct messaging, account safety, or local business listings. If I cannot solve your issue, you can instantly escalate and send a direct chat message to our administrator!",
       timestamp: new Date()
     }
   ]);
@@ -104,7 +104,7 @@ export default function SupportPage() {
       const botMsg: Message = {
         id: `msg-${Date.now()}-bot`,
         sender: "bot",
-        text: "I am having trouble communicating with my LLaMA 3 host at the moment. Please feel free to use the button below to escalate this inquiry and send a direct chat message to our admin!",
+        text: "I am having trouble communicating with my AI host at the moment. Please feel free to use the button below to escalate this inquiry and send a direct chat message to our admin!",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, botMsg]);
@@ -200,20 +200,20 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
             <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-transparent pointer-events-none" />
             <div className="relative z-10 space-y-4">
               <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 rounded-full text-emerald-400 text-xs font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Local VPS LLaMA 3 Host
+                <Sparkles className="w-3.5 h-3.5 animate-pulse" /> AI Support Assistant
               </span>
               <h1 className="text-3xl sm:text-4xl font-display font-black tracking-tight leading-tight">
                 SearchBiz Support & Help Desk
               </h1>
               <p className="text-slate-300 text-sm sm:text-base max-w-2xl leading-relaxed">
-                Need help with listings, pricing plans, or system security? Talk to our local AI assistant or instantly dispatch an encrypted message straight to our direct chat inbox.
+                Need help with listings, pricing plans, or system security? Talk to our AI assistant or instantly dispatch an encrypted message straight to our direct chat inbox.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
-            {/* LLaMA 3 Chat Pane */}
+            {/* AI Chat Pane */}
             <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden h-[600px]">
               {/* Header */}
               <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800">
@@ -222,10 +222,10 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                     <Bot className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h2 className="font-bold text-sm">LLaMA 3 AI</h2>
+                    <h2 className="font-bold text-sm">AI Assistant</h2>
                     <p className="text-[10px] text-emerald-400 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      Active Local VPS
+                      Online
                     </p>
                   </div>
                 </div>
@@ -269,7 +269,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
-                        LLaMA 3 is formulating a guide...
+                        AI is formulating a guide...
                       </div>
                     </motion.div>
                   )}
@@ -282,7 +282,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask LLaMA 3 anything..."
+                  placeholder="Ask AI anything..."
                   className="flex-grow bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none py-2.5 px-4 rounded-xl text-xs sm:text-sm font-medium text-slate-800 transition"
                 />
                 <button
