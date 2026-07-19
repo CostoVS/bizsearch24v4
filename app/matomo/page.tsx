@@ -42,6 +42,12 @@ export default function MatomoDashboard() {
   const [newDomain, setNewDomain] = useState("");
   const [activeProperty, setActiveProperty] = useState<string>("internal"); // internal or external domain prop id
 
+  const getActivePropertyDomain = () => {
+    if (!activeProperty || activeProperty === "internal") return "";
+    const found = properties.find(p => p && p.id === activeProperty);
+    return found?.domain || "";
+  };
+
   // Dual timeframe dropdown selections
   const [metricsTimeframe, setMetricsTimeframe] = useState<string>("all"); // 'all' | 'today' | 'week' | 'month' | 'year'
   const [streamTimeframe, setStreamTimeframe] = useState<string>("all"); // 'all' | 'today' | 'week' | 'month' | 'year'
@@ -141,7 +147,7 @@ export default function MatomoDashboard() {
     if (activeProperty === "internal") {
       return rawEvents.filter(e => e && e.type !== "external_site");
     } else {
-      const propDomain = properties.find(p => p.id === activeProperty)?.domain;
+      const propDomain = getActivePropertyDomain();
       if (propDomain) {
         return rawEvents.filter(e => e && e.type === "external_site" && e.targetUrl && typeof e.targetUrl === 'string' && e.targetUrl.toLowerCase().includes(propDomain.toLowerCase()));
       }
@@ -197,7 +203,7 @@ export default function MatomoDashboard() {
   const getBounceRateEstimate = () => {
     if (totalVisits === 0) return "0.0%";
     // Estimate based on ratio of users with minor sequential hits
-    const ipCounts: Record<string, number> = {};
+    const ipCounts: Record<string, number> = Object.create(null);
     metricsFilteredEvents.forEach(e => {
       if (e && e.ip) {
         ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
@@ -211,7 +217,7 @@ export default function MatomoDashboard() {
 
   const getAvgSessionLength = () => {
     if (totalVisits === 0) return "0s";
-    const ipCounts: Record<string, number> = {};
+    const ipCounts: Record<string, number> = Object.create(null);
     metricsFilteredEvents.forEach(e => {
       if (e && e.ip) {
         ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1;
@@ -239,7 +245,7 @@ export default function MatomoDashboard() {
       }
     }
     return acc;
-  }, {} as Record<string, number>))
+  }, Object.create(null) as Record<string, number>))
     .map(([path, count]) => ({ path, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -249,7 +255,7 @@ export default function MatomoDashboard() {
       acc[e.query] = (acc[e.query] || 0) + 1;
     }
     return acc;
-  }, {} as Record<string, number>))
+  }, Object.create(null) as Record<string, number>))
     .map(([query, count]) => ({ name: query, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -259,7 +265,7 @@ export default function MatomoDashboard() {
       acc[e.adTitle] = (acc[e.adTitle] || 0) + 1;
     }
     return acc;
-  }, {} as Record<string, number>))
+  }, Object.create(null) as Record<string, number>))
     .map(([title, count]) => ({ name: title, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -270,7 +276,7 @@ export default function MatomoDashboard() {
       acc[loc] = (acc[loc] || 0) + 1;
     }
     return acc;
-  }, {} as Record<string, number>))
+  }, Object.create(null) as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -281,7 +287,7 @@ export default function MatomoDashboard() {
       acc[client] = (acc[client] || 0) + 1;
     }
     return acc;
-  }, {} as Record<string, number>))
+  }, Object.create(null) as Record<string, number>))
     .map(([name, count]) => ({ name, count }))
     .sort((a,b) => b.count - a.count);
 
@@ -545,7 +551,7 @@ export default function MatomoDashboard() {
   (function() {
     var trackerUrl = "${typeof window !== 'undefined' ? window.location.origin : 'https://searchbiz.co.za'}/api/track/ping";
     var img = new Image();
-    img.src = trackerUrl + "?domain=${properties.find(p => p.id === activeProperty)?.domain || ''}&path=" + encodeURIComponent(window.location.pathname);
+    img.src = trackerUrl + "?domain=${getActivePropertyDomain()}&path=" + encodeURIComponent(window.location.pathname);
   })();
 </script>
 <!-- End Telemetry Tracker Code -->`}
