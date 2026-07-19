@@ -203,20 +203,8 @@ Please answer the user's inquiry based on this verified dataset.
       normalizedQuery.includes("pay")
     ) {
       return NextResponse.json({
-        text: `The verified pricing structure for SearchBiz directory subscriptions and services is as follows:
+        text: `The verified pricing structure for SearchBiz directory subscriptions and services is as follows:\n• **Base Premium Plan:** **R199.00 / month** (Billed via South African debit card mandate)\n  * Unlimited hosting for static websites\n  * Unlimited domain-branded email accounts\n  * Custom host/design assistance for a smart static website\n  * Elite Premium SearchBiz account features\n  * 1 custom directory listing in the SearchBiz index\n• **Extras & Add-Ons:**\n  * **+R49.00 / month** for each additional listed ad\n  * **.co.za domain registration:** **R99.00 / year**\nLet me know if you would like me to find a specific registered business or search listings!`
 
-• **Base Premium Plan:** **R199.00 / month** (Billed via South African debit card mandate)
-  * Unlimited hosting for static websites
-  * Unlimited domain-branded email accounts
-  * Custom host/design assistance for a smart static website
-  * Elite Premium SearchBiz account features
-  * 1 custom directory listing in the SearchBiz index
-
-• **Extras & Add-Ons:**
-  * **+R49.00 / month** for each additional listed ad
-  * **.co.za domain registration:** **R99.00 / year**
-
-Let me know if you would like me to find a specific registered business or search listings!`
       });
     }
 
@@ -230,12 +218,9 @@ Let me know if you would like me to find a specific registered business or searc
       normalizedQuery.includes("how to") && normalizedQuery.includes("listing")
     ) {
       return NextResponse.json({
-        text: `Our verification badge is awarded to businesses on SearchBiz that satisfy rigorous directory checks.
-
-• **How verification works:** Our system validates physical business addresses, telephone numbers, and ownership credentials to ensure consumers are connecting with authentic trade experts.
-• **Claiming a listing:** You can search for your business in the directory, click "Claim Business", and follow the secure verification prompt to claim ownership of your business.
-• **Premium features:** Premium listings are prioritized in client search results and receive a dedicated verified badge.`
+        text: `Our verification badge is awarded to businesses on SearchBiz that satisfy rigorous directory checks.\n• **How verification works:** Our system validates physical business addresses, telephone numbers, and ownership credentials to ensure consumers are connecting with authentic trade experts.\n• **Claiming a listing:** You can search for your business in the directory, click "Claim Business", and follow the secure verification prompt to claim ownership of your business.\n• **Premium features:** Premium listings are prioritized in client search results and receive a dedicated verified badge.`
       });
+
     }
 
     // Basic Welcome Greeting
@@ -249,14 +234,8 @@ Let me know if you would like me to find a specific registered business or searc
       normalizedQuery.includes("how are you")
     ) {
       return NextResponse.json({
-        text: `Goeie dag! Dumelang! Hello! I am your AI Directory Assistant for SearchBiz. 
+        text: `Hello! I am your AI Directory Assistant for SearchBiz. How can I assist you with your business search today?`
 
-I am connected to our live, real-time database of South African businesses. I can help you:
-1. Search for registered tradesmen and services (e.g. Plumbers, Web Design, Markets).
-2. Retrieve specific business addresses and direct WhatsApp/telephone details.
-3. Understand our Premium Membership plans and pricing.
-
-What can I assist you with today?`
       });
     }
 
@@ -305,18 +284,7 @@ What can I assist you with today?`
       responseText += `Feel free to ask for contact details or search for other services!`;
       return NextResponse.json({ text: responseText });
     }
-
-    return NextResponse.json({
-      text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:
-
-• **Services & Trades:** Search for active plumbers, Cape Town digital agencies, or Durban markets.
-• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).
-• **Verification process:** Learn how to verify your business listing.
-
-Currently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Plumbers, Web Design, Food Services"}**.
-
-Please refine your search or ask about a specific category!`
-    });
+    return NextResponse.json({ text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:\n• **Services & Trades:** Search for active plumbers, Cape Town digital agencies, or Durban markets.\n• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).\n• **Verification process:** Learn how to verify your business listing.\nCurrently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Plumbers, Web Design, Food Services"}**.\nPlease refine your search or ask about a specific category!` });
 
   } catch (error: any) {
     console.error("AI Chat API General Error:", error);

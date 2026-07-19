@@ -32,10 +32,10 @@ export const VerificationBadge = ({ verified, isGoogleImport }: { verified: bool
       <motion.div 
         animate={{ scale: [1, 1.02, 1] }}
         transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
-        className="flex items-center text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-slate-200 shadow-sm shrink-0"
+        className="flex items-center text-white bg-red-600 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-red-700 shadow-sm shrink-0"
         title="Unverified SearchBiz.co.za - Sourced from Google search"
       >
-        <div className="relative mr-1.5 flex items-center justify-center text-slate-500">
+        <div className="relative mr-1.5 flex items-center justify-center text-white">
           <AlertCircle className="w-3.5 h-3.5 z-10" />
         </div>
         <span>

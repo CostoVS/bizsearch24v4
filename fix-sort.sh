@@ -1,3 +1,4 @@
+cat << 'INNER_EOF' > app/api/admin/csv-ai-sort/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { SA_PROVINCES } from "@/lib/locations";
@@ -112,3 +113,4 @@ ${JSON.stringify(batch, null, 2)}`;
     return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
   }
 }
+INNER_EOF

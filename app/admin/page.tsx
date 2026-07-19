@@ -1454,7 +1454,7 @@ export default function AdminDashboard() {
                   🗂 CSV Business Ingestion & AI Sorting
                 </h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  Upload scraped directory CSV lists. Gemini AI will analyze, geolocate, and auto-categorize each business before committing.
+                  Upload scraped directory CSV lists. AI will analyze, geolocate, and auto-categorize each business before committing.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -1607,7 +1607,7 @@ export default function AdminDashboard() {
                             }
                           }
                           setCsvFileParsed(parsedRows);
-                          alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let Gemini AI sort them.`);
+                          alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let AI sort them.`);
                         }
                       };
                       reader.readAsText(file);
@@ -1643,16 +1643,16 @@ export default function AdminDashboard() {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
-                            records: csvFileParsed,
-                            defaultProvince: csvDefaultProvince,
-                            defaultCategory: csvDefaultCategory
+                            businesses: csvFileParsed,
+                            overrideProvince: csvDefaultProvince,
+                            overrideCategory: csvDefaultCategory
                           })
                         });
                         if (res.ok) {
                           const result = await res.json();
-                          if (Array.isArray(result.records)) {
-                            setCsvFileParsed(result.records);
-                            alert("Gemini AI has successfully categorized and province-mapped all rows!");
+                          if (Array.isArray(result.businesses)) {
+                            setCsvFileParsed(result.businesses);
+                            alert("AI has successfully categorized and province-mapped all rows!");
                           } else {
                             alert("AI sorting complete, but the server returned unrecognized formats.");
                           }
@@ -1671,7 +1671,7 @@ export default function AdminDashboard() {
                   >
                     {csvUploadLoading ? (
                       <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : "🪄 Auto-Sort with Gemini AI"}
+                    ) : "🪄 Auto-Sort with AI"}
                   </button>
                   <button
                     onClick={async () => {
@@ -2594,7 +2594,7 @@ export default function AdminDashboard() {
                       className="w-full bg-slate-50 text-slate-800 rounded-xl px-3 py-2.5 text-xs border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold"
                     >
                       <option value="all">All Service Categories</option>
-                      {CATEGORIES.map((cat) => (
+                      {Array.from(new Set([...CATEGORIES, ...ads.map(a => a.category).filter(Boolean)])).sort().map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>
