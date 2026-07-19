@@ -60,7 +60,19 @@ export default function MatomoDashboard() {
       setEvents(getAnalyticsEvents());
       const savedProps = localStorage.getItem("bs24_matomo_props");
       if (savedProps) {
-        try { setProperties(JSON.parse(savedProps)); } catch(e){}
+        try {
+          const parsed = JSON.parse(savedProps);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter(p => p && typeof p === 'object' && typeof p.domain === 'string');
+            setProperties(filtered);
+          } else {
+            setProperties([]);
+          }
+        } catch(e) {
+          setProperties([]);
+        }
+      } else {
+        setProperties([]);
       }
     }
   };
@@ -95,7 +107,7 @@ export default function MatomoDashboard() {
   const addProperty = () => {
     if(!newDomain.trim() || !newDomain.includes(".")) return;
     const clean = newDomain.trim().toLowerCase().replace(/^https?:\/\//, "");
-    if(properties.find(p => p.domain === clean)) return;
+    if(properties.find(p => p && p.domain === clean)) return;
     
     const next = [...properties, { id: "prop_" + Date.now(), domain: clean, added: new Date().toISOString() }];
     setProperties(next);
@@ -439,12 +451,13 @@ export default function MatomoDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto no-scrollbar">
-                    {properties.map(p => {
+                     {properties.map(p => {
+                      if (!p || !p.domain) return null;
                       const counts = events.filter(e => e && e.type === "external_site" && e.targetUrl && typeof e.targetUrl === 'string' && e.targetUrl.toLowerCase().includes(p.domain.toLowerCase())).length;
                       return (
                         <div 
-                          key={p.id}
-                          className={`w-full p-3 rounded-2xl border text-sm font-bold flex items-center justify-between transition-all ${activeProperty === p.id ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-700'}`}
+                           key={p.id}
+                           className={`w-full p-3 rounded-2xl border text-sm font-bold flex items-center justify-between transition-all ${activeProperty === p.id ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-700'}`}
                         >
                           <button 
                             onClick={() => setActiveProperty(p.id)}
@@ -531,9 +544,8 @@ export default function MatomoDashboard() {
 <script>
   (function() {
     var trackerUrl = "${typeof window !== 'undefined' ? window.location.origin : 'https://searchbiz.co.za'}/api/track/ping";
-    var d = document, g = d.createElement('script'), s = d.getElementsByTagName('script')[0];
-    g.async = true; g.src = trackerUrl + "?domain=${properties.find(p => p.id === activeProperty)?.domain}&path=" + encodeURIComponent(window.location.pathname);
-    s.parentNode.insertBefore(g, s);
+    var img = new Image();
+    img.src = trackerUrl + "?domain=${properties.find(p => p.id === activeProperty)?.domain || ''}&path=" + encodeURIComponent(window.location.pathname);
   })();
 </script>
 <!-- End Telemetry Tracker Code -->`}
