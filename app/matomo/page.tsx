@@ -440,7 +440,7 @@ export default function MatomoDashboard() {
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto no-scrollbar">
                     {properties.map(p => {
-                      const counts = events.filter(e => e.type === "external_site" && (e as ExternalSiteEvent).targetUrl.toLowerCase().includes(p.domain.toLowerCase())).length;
+                      const counts = events.filter(e => e && e.type === "external_site" && e.targetUrl && typeof e.targetUrl === 'string' && e.targetUrl.toLowerCase().includes(p.domain.toLowerCase())).length;
                       return (
                         <div 
                           key={p.id}

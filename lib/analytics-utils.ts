@@ -347,7 +347,12 @@ export function getAnalyticsEvents(): AnalyticsEvent[] {
       const parsed = JSON.parse(dataStr);
       if (Array.isArray(parsed)) {
         // Exclude and scrub any historical events associated with IP 41.135.215.56
-        const filtered = parsed.filter((e: any) => e.ip !== "41.135.215.56" && !e.ip?.includes("41.135.215.56"));
+        const filtered = parsed.filter((e: any) => {
+          if (!e || typeof e !== 'object') return false;
+          const ip = e.ip;
+          if (typeof ip !== 'string') return true; // keep if IP is missing or not a string, or you could return false
+          return ip !== "41.135.215.56" && !ip.includes("41.135.215.56");
+        });
         if (filtered.length !== parsed.length) {
           localStorage.setItem("searchbiz_analytics_v1", JSON.stringify(filtered));
         }
