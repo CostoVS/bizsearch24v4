@@ -10,6 +10,17 @@ import {
 export default function SearchBizServicesPage() {
   const whatsAppLink = "https://wa.me/27751613007?text=Hi%20SearchBiz.co.za%2C%20I'm%20interested%20in%20subscribing%20to%20your%20Premium%20Services%20and%20registering%20a%20domain!";
 
+  // Interactive Level 2 Add-ons State
+  const [l2Extra, setL2Extra] = React.useState(false);
+  const [l2Domain, setL2Domain] = React.useState(false);
+  const [l2Listings, setL2Listings] = React.useState(false);
+
+  // Calculate dynamic Level 2 price
+  let l2PriceNum = 199.99;
+  if (l2Extra) l2PriceNum += 199.00;
+  if (l2Listings) l2PriceNum += 199.00;
+  const l2PriceStr = `R${l2PriceNum.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+
   const features = [
     {
       icon: <HardDrive className="w-6 h-6 text-emerald-600" />,
@@ -42,84 +53,178 @@ export default function SearchBizServicesPage() {
       id: "free",
       name: "Level 1: Free Basic Tier",
       price: "R0",
-      badge: "Not Verified Badge",
+      badge: "Not Verified",
       period: "forever",
       color: "border-slate-200 bg-white text-slate-800",
       desc: "Ideal for starting out with a basic local listing.",
       features: [
         "1 Listing only",
-        "Business Name shown",
+        "Business Name",
         "Business Address",
         "Phone Number",
         "Services Offered",
-        "Not Verified Badge"
+        "Not Verified badge"
       ],
       popular: false
     },
     {
       id: "essential",
       name: "Level 2: Essential Verified Tier",
-      price: "R199",
+      price: l2PriceStr,
       badge: "Verified Badge",
       period: "month",
       color: "border-emerald-500 bg-emerald-50/40 text-emerald-950 ring-2 ring-emerald-500/20",
       desc: "Complete digital presence for South African businesses.",
       features: [
         "1 Listing only",
-        "Business Name shown",
-        "Business Description included",
-        "Services Offered listed",
+        "Business Name",
+        "Business Description",
+        "Services Offered",
         "Business Address",
         "Phone Number",
-        "WhatsApp Number enabled",
-        "Business Email shown",
+        "WhatsApp Number",
+        "Business Email",
         "Social media platform links",
-        "Unlimited hosting account",
-        "Unlimited email accounts",
-        "Smart static website design",
-        "Add-on: .co.za domain R99/yr",
-        "Add-on: Extra listings R199/area each/mo",
-        "Verified Badge unlocked"
+        "Website link",
+        "Verified Badge",
+        l2Extra ? "✓ Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo) [SELECTED]" : "Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo)",
+        l2Domain ? "✓ Add-on: .co.za domain (+R99/yr) [SELECTED]" : "Add-on: .co.za domain (+R99/yr)",
+        l2Listings ? "✓ Add-on: Extra listings (+R199/area each/mo) [SELECTED]" : "Add-on: Extra listings (+R199/area each/mo)"
       ],
+      interactive: true,
       popular: true
     },
     {
       id: "premium",
       name: "Level 3: Premium Tier",
-      price: "R9,999",
+      price: "R9,999.00",
       badge: "Premium Verified Badge",
       period: "month",
       color: "border-slate-800 bg-slate-900 text-white",
-      desc: "Regional dominance and broad community reach.",
+      desc: "Regional dominance and broad South African coverage.",
       features: [
         "Everything from Essential Tier",
         "1 Ad listing in all areas across South Africa",
-        "Premium Verified Badge unlocked",
-        "Priority regional search placement",
-        "Premium SLA support response"
+        "Premium Verified Badge"
       ],
       popular: false
     },
     {
       id: "enterprise",
-      name: "Level 4: Enterprise Sponsor Tier",
-      price: "R299,999",
-      badge: "Enterprise Sponsor Premium Verified Badge",
+      name: "Level 4: Enterprise Basic Grade Tier",
+      price: "R499,999.00",
+      badge: "Enterprise Verified Badge",
       period: "month",
       color: "border-indigo-500 bg-indigo-950 text-indigo-100 ring-2 ring-indigo-500/40",
       desc: "Full-scale managed marketing powerhouse.",
       features: [
-        "Everything from Essential & Premium tiers",
-        "Unlimited Ads with top priority",
+        "Everything from Essential & Premium Tiers",
+        "Unlimited Ads in SearchBiz (1 per Area)",
         "Marketing ads, images, posters, videos",
-        "Facebook marketing campaigns",
-        "TikTok marketing campaigns",
-        "YouTube marketing campaigns",
-        "X marketing campaigns",
-        "Instagram marketing campaigns",
-        "Google search marketing campaigns",
-        "Dedicated marketing account manager",
-        "Enterprise Sponsor Premium Verified Badge"
+        "Facebook Marketing",
+        "TikTok Marketing",
+        "YouTube Marketing",
+        "X Marketing",
+        "Instagram Marketing",
+        "Google Search Marketing",
+        "Enterprise Verified Badge"
+      ],
+      popular: false
+    },
+    {
+      id: "enterprise_premium",
+      name: "Level 5: Enterprise Premium Grade Tier",
+      price: "R999,999.00",
+      badge: "Enterprise Verified Badge",
+      period: "month",
+      color: "border-rose-500 bg-rose-950 text-rose-50 ring-2 ring-rose-500/40",
+      desc: "Absolute business domination and aggressive marketing.",
+      features: [
+        "Everything from Essential & Premium Tiers",
+        "Unlimited Ads in SearchBiz (1 per Area)",
+        "Aggressive Marketing strategy",
+        "Marketing ads, images, posters, videos",
+        "Facebook Marketing",
+        "TikTok Marketing",
+        "YouTube Marketing",
+        "X Marketing",
+        "Instagram Marketing",
+        "Google Search Marketing",
+        "Enterprise Verified Badge"
+      ],
+      popular: false
+    },
+    {
+      id: "elite_basic",
+      name: "Level 6: Elite Basic Tier",
+      price: "R25,000,000.00",
+      badge: "Elite Verified Badge",
+      subText: "20 Million Rands Per Month",
+      period: "month",
+      color: "border-cyan-500 bg-cyan-950 text-cyan-50 ring-2 ring-cyan-500/40",
+      desc: "Elite level dominance with custom basic Television commercials.",
+      features: [
+        "Everything from Essential & Premium Tiers",
+        "Unlimited Ads in SearchBiz (1 per Area)",
+        "Marketing ads, images, posters, videos",
+        "Facebook Marketing",
+        "TikTok Marketing",
+        "YouTube Marketing",
+        "X Marketing",
+        "Instagram Marketing",
+        "Google Search Marketing",
+        "Tv Commercials (basics)",
+        "Elite Verified Badge"
+      ],
+      popular: false
+    },
+    {
+      id: "elite_premium",
+      name: "Level 7: Elite Premium Tier",
+      price: "R50,000,000.00",
+      badge: "Elite Premium Verified Badge",
+      subText: "50 Million Rands Per Month",
+      period: "month",
+      color: "border-purple-500 bg-purple-950 text-purple-100 ring-2 ring-purple-500/40",
+      desc: "Elite level dominance with aggressive television commercials campaigns.",
+      features: [
+        "Everything from Essential & Premium Tiers",
+        "Unlimited Ads in SearchBiz (1 per Area)",
+        "Aggressive Ads",
+        "Marketing ads, images, posters, videos",
+        "Facebook Marketing",
+        "TikTok Marketing",
+        "YouTube Marketing",
+        "X Marketing",
+        "Instagram Marketing",
+        "Google Search Marketing",
+        "Tv Commercials (premium)",
+        "Elite Premium Verified Badge"
+      ],
+      popular: false
+    },
+    {
+      id: "elite_enterprise",
+      name: "Level 8: Elite Enterprise Grade Tier",
+      price: "R100,000,000.00",
+      badge: "Elite Enterprise Verified Badge",
+      subText: "100 Million Rands Per Month",
+      period: "month",
+      color: "border-amber-500 bg-slate-900 text-amber-100 ring-2 ring-amber-500/40",
+      desc: "The absolute pinnacle of market monopolization and global media campaign coverage.",
+      features: [
+        "Everything from Essential & Premium Tiers",
+        "Unlimited Ads in SearchBiz (1 per Area)",
+        "Aggressive Ads",
+        "Marketing ads, images, posters, videos",
+        "Facebook Marketing",
+        "TikTok Marketing",
+        "YouTube Marketing",
+        "X Marketing",
+        "Instagram Marketing",
+        "Google Search Marketing",
+        "Tv Commercials (elites)",
+        "Elite Enterprise Verified Badge"
       ],
       popular: false
     }
@@ -175,10 +280,10 @@ export default function SearchBizServicesPage() {
         <div className="space-y-6 pt-6">
           <div className="text-center max-w-xl mx-auto">
             <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Uniform Service Tiers</h2>
-            <p className="text-slate-500 text-sm font-semibold mt-1">Select from our 4 verified directory plans</p>
+            <p className="text-slate-500 text-sm font-semibold mt-1">Select from our 8 verified directory plans</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-stretch">
             {pricingTiers.map((tier, idx) => (
               <div 
                 key={idx} 
@@ -202,8 +307,48 @@ export default function SearchBizServicesPage() {
                       <span className="text-2xl sm:text-3xl font-black">{tier.price}</span>
                       <span className="text-xs font-bold opacity-60">/{tier.period}</span>
                     </div>
+                    {tier.subText && (
+                      <div className="text-amber-500 font-black text-[11px] uppercase tracking-wide mt-1">
+                        {tier.subText}
+                      </div>
+                    )}
                     <p className="text-[11px] leading-relaxed opacity-75 mt-1 font-medium">{tier.desc}</p>
                   </div>
+
+                  {tier.interactive && (
+                    <div className="bg-slate-900/5 dark:bg-white/5 border border-emerald-500/20 rounded-2xl p-4 space-y-3 mt-4 text-xs">
+                      <div className="font-extrabold uppercase text-[9px] tracking-wider text-emerald-800">
+                        Customize Level 2 Options:
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={l2Extra}
+                          onChange={(e) => setL2Extra(e.target.checked)}
+                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span>Smart Static Site + Hosting (+R199/mo)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={l2Domain}
+                          onChange={(e) => setL2Domain(e.target.checked)}
+                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span>.co.za Domain Setup (+R99/yr)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={l2Listings}
+                          onChange={(e) => setL2Listings(e.target.checked)}
+                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span>Extra Area Listing (+R199/mo)</span>
+                      </label>
+                    </div>
+                  )}
 
                   <ul className="space-y-2 border-t border-slate-200/40 pt-4 text-xs font-semibold">
                     {tier.features.map((feature, fIdx) => (
@@ -217,15 +362,25 @@ export default function SearchBizServicesPage() {
 
                 <div className="pt-6">
                   <a 
-                    href={tier.id === "free" ? "/create-ad" : `/premium?plan=${tier.id}`} 
+                    href={
+                      tier.id === "free"
+                        ? "/create-ad"
+                        : tier.id === "essential"
+                          ? `/premium?plan=essential&extra=${l2Extra}&domain=${l2Domain}&listings=${l2Listings}`
+                          : `/premium?plan=${tier.id}`
+                    }
                     className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${
                       tier.popular 
                         ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md" 
-                        : tier.id === "enterprise" 
-                          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
-                          : tier.id === "premium"
-                            ? "bg-white text-slate-950 hover:bg-slate-100 border border-slate-300"
-                            : "bg-slate-800 text-white hover:bg-slate-900"
+                        : tier.id.startsWith("elite")
+                          ? "bg-amber-500 text-slate-900 hover:bg-amber-600 font-extrabold shadow-md"
+                          : tier.id === "enterprise" 
+                            ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                            : tier.id === "enterprise_premium"
+                              ? "bg-rose-600 text-white hover:bg-rose-700 shadow-md"
+                              : tier.id === "premium"
+                                ? "bg-white text-slate-950 hover:bg-slate-100 border border-slate-300"
+                                : "bg-slate-800 text-white hover:bg-slate-900"
                     }`}
                   >
                     {tier.id === "free" ? "Get Started (Free)" : "Select & Upgrade"}

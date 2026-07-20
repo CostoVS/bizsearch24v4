@@ -104,7 +104,11 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
 
   // Claiming State
   const [isClaiming, setIsClaiming] = useState(false);
-  const [claimIntention, setClaimIntention] = useState("premium"); // "premium", "free", "remove"
+  const [claimStep, setClaimStep] = useState(1);
+  const [claimSenderName, setClaimSenderName] = useState("");
+  const [claimSenderPhone, setClaimSenderPhone] = useState("");
+  const [claimSenderEmail, setClaimSenderEmail] = useState("");
+  const [claimIntention, setClaimIntention] = useState("premium_base"); // "premium_base", "premium_extra_ad", "premium_custom_domain"
   const [claimMessage, setClaimMessage] = useState("");
   const [claimIdDoc, setClaimIdDoc] = useState("");
   const [claimCipc, setClaimCipc] = useState("");
@@ -114,6 +118,21 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   
   const [isScanningDocs, setIsScanningDocs] = useState(false);
   const [scanResultDocs, setScanResultDocs] = useState<"clean" | "malware" | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && isClaiming) {
+      const session = localStorage.getItem("searchbiz_session");
+      if (session) {
+        try {
+          const parsed = JSON.parse(session);
+          if (parsed.email) {
+            setClaimSenderEmail(parsed.email);
+            setClaimSenderName(parsed.fullName || parsed.email.split("@")[0]);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [isClaiming]);
 
   // Admin Override Editing States
   const [isAdminEditing, setIsAdminEditing] = useState(false);
@@ -173,7 +192,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
     }
   }, [ad]);
 
-  const handleSecureDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSecureDocUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: string) => void) => {
     const file = e.target.files?.[0];
     if (file) {
       setIsScanningDocs(true);
@@ -186,6 +205,17 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
         });
         setIsScanningDocs(false);
         setScanResultDocs(result);
+        if (result === "clean") {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              setter(event.target.result as string);
+            }
+          };
+          reader.readAsDataURL(file);
+        } else {
+          setter("");
+        }
       });
     }
   };
@@ -1052,14 +1082,17 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                             <AlertCircle className="w-8 h-8 text-amber-500 mx-auto mb-3" />
                             <h5 className="text-sm font-bold text-slate-900 mb-1">Is this your business?</h5>
                             <p className="text-xs text-slate-600 mb-4 px-2 leading-relaxed">
-                              This listing was generated via CSV and is currently unclaimed. Claim it now to verify ownership, or **join Premium (R199/month)** to get unlimited static site hosting, unlimited custom email accounts, a smart static website, and premium visibility!
+                              This listing is currently unclaimed. Claim and verify your business ownership now to activate exclusive Premium benefits, get premium search visibility, and take full control of your brand's presence.
                             </p>
                             <button
-                              onClick={() => setIsClaiming(true)}
+                              onClick={() => {
+                                setIsClaiming(true);
+                                setClaimStep(1);
+                              }}
                               className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-amber-200 transition-all border border-amber-400"
                             >
                               <ShieldAlert className="w-5 h-5" />
-                              Claim This Listing
+                              Claim & Verify This Listing
                             </button>
                           </div>
                         ) : isClaiming && !msgSuccess ? (
@@ -1068,197 +1101,370 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                             animate={{ opacity: 1, height: "auto", scale: 1 }}
                             className="text-left space-y-4 origin-top"
                           >
-                            <div className="border-b border-amber-200 pb-3 mb-2 flex items-center justify-between">
-                              <h5 className="text-sm font-bold text-amber-900">Proof of Ownership Required</h5>
-                              <button onClick={() => setIsClaiming(false)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Cancel</button>
-                            </div>
-                            <p className="text-[11px] text-amber-800 leading-tight">
-                              Please upload the required verification documents directly to administration to prove ownership of this business.
-                            </p>
-                            
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">ID Document</label>
-                                <input type="file" onChange={(e) => { setClaimIdDoc(e.target.value); handleSecureDocUpload(e); }} className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200" required />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">CIPC Registration</label>
-                                <input type="file" onChange={(e) => { setClaimCipc(e.target.value); handleSecureDocUpload(e); }} className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200" required />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">SARS Document</label>
-                                <input type="file" onChange={(e) => { setClaimSars(e.target.value); handleSecureDocUpload(e); }} className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200" required />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">Proof of Address</label>
-                                <input type="file" onChange={(e) => { setClaimProofOfAddress(e.target.value); handleSecureDocUpload(e); }} className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200" required />
-                              </div>
-                              <div className="sm:col-span-2">
-                                <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">Business Bank Statement</label>
-                                <input type="file" onChange={(e) => { setClaimBankStatement(e.target.value); handleSecureDocUpload(e); }} className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200" required />
-                              </div>
-                            </div>
-                            
-                            {isScanningDocs && (
-                              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-center gap-2">
-                                <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                                <span className="text-xs font-bold text-slate-600">Running Deep Security & Malware Scan...</span>
-                              </div>
-                            )}
+                            {claimStep === 1 ? (
+                              <div className="space-y-4">
+                                <div className="border-b border-amber-200 pb-3 flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <Sparkles className="w-4 h-4 text-amber-600" />
+                                    <h5 className="text-sm font-bold text-amber-900">Step 1 of 2: Select Subscription Plan</h5>
+                                  </div>
+                                  <button onClick={() => setIsClaiming(false)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Cancel</button>
+                                </div>
+                                <p className="text-[11px] text-amber-800 leading-tight mb-2">
+                                  Verification is a paid-only service. Please choose one of our verified subscription packages below to proceed with verification and activation of badges:
+                                </p>
 
-                            {scanResultDocs === "clean" && (
-                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-emerald-600" />
-                                <span className="text-xs font-bold text-emerald-700">Documents scanned and verified clean</span>
+                                <div className="space-y-3">
+                                  {/* Base Premium Plan Card */}
+                                  <div
+                                    onClick={() => setClaimIntention("premium_base")}
+                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                      claimIntention === "premium_base"
+                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
+                                        : "bg-white border-slate-200 hover:border-amber-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="p-1 bg-amber-200 text-amber-800 rounded">
+                                          <Star className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                          <h6 className="text-xs font-bold text-slate-900">Level 2: Essential Verified Tier</h6>
+                                          <span className="text-[10px] text-slate-500 font-semibold">1 Directory Listing Included</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-xs font-black text-amber-900">R199.99</span>
+                                        <span className="text-[9px] text-slate-500 block">/ month</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
+                                      Unlock the verified badge, business description, WhatsApp, email, links, and dedicated index optimization.
+                                    </p>
+                                  </div>
+
+                                  {/* Premium Plan + Extra Ad Card */}
+                                  <div
+                                    onClick={() => setClaimIntention("premium_extra_ad")}
+                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                      claimIntention === "premium_extra_ad"
+                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
+                                        : "bg-white border-slate-200 hover:border-amber-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="p-1 bg-indigo-100 text-indigo-800 rounded">
+                                          <Sparkles className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                          <h6 className="text-xs font-bold text-slate-900">Essential + Web Hosting Suite</h6>
+                                          <span className="text-[10px] text-slate-500 font-semibold">Smart Static Website & Hosting</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-xs font-black text-amber-900">R398.99</span>
+                                        <span className="text-[9px] text-slate-500 block">/ month</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
+                                      Includes the core R199.99 Essential plan plus unlimited hosting, unlimited email accounts, and customized smart static website (+R199.00/month).
+                                    </p>
+                                  </div>
+
+                                  {/* Premium Plan + Custom .co.za Domain Card */}
+                                  <div
+                                    onClick={() => setClaimIntention("premium_custom_domain")}
+                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                      claimIntention === "premium_custom_domain"
+                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
+                                        : "bg-white border-slate-200 hover:border-amber-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="p-1 bg-emerald-100 text-emerald-800 rounded">
+                                          <BadgeCheck className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                          <h6 className="text-xs font-bold text-slate-900">Essential + Brand Domain</h6>
+                                          <span className="text-[10px] text-slate-500 font-semibold">Register .co.za Brand Domain</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-xs font-black text-amber-900 font-bold">R199.99<span className="text-[8px] font-medium text-slate-500"> /mo</span></span>
+                                        <span className="text-[9px] text-slate-500 block">+ R99.00 / year domain</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
+                                      Includes the core R199.99 Essential plan plus professional registration and management of your .co.za brand domain.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => setClaimStep(2)}
+                                  className="w-full mt-3 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center"
+                                >
+                                  Continue to Verification Form
+                                </button>
                               </div>
-                            )}
-                            
-                            {scanResultDocs === "malware" && (
-                              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center gap-2">
-                                <AlertCircle className="w-4 h-4 text-rose-600" />
-                                <span className="text-xs font-bold text-rose-700">Malware signature detected. Upload blocked.</span>
-                              </div>
-                            )}
+                            ) : (
+                              <div className="space-y-4">
+                                <div className="border-b border-amber-200 pb-3 flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                                    <h5 className="text-sm font-bold text-amber-900">Step 2 of 2: Upload Documents</h5>
+                                  </div>
+                                  <button onClick={() => setClaimStep(1)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Back to Plans</button>
+                                </div>
+                                
+                                <p className="text-[11px] text-amber-800 leading-tight">
+                                  Please fill out your verified representative contact details and upload the required proof documents. These records go securely and directly to your Admin Direct Chat.
+                                </p>
 
-                            <div>
-                              <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-2 mt-2">What would you like to do?</label>
-                              <select 
-                                value={claimIntention}
-                                onChange={(e) => setClaimIntention(e.target.value)}
-                                className="w-full bg-white border border-amber-200 text-slate-800 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
-                              >
-                                <option value="premium">★ Claim & Join Premium Membership — R199 / month</option>
-                                <option value="free">Claim & Keep as Free Listing</option>
-                                <option value="remove">Prove Ownership & Request Removal</option>
-                              </select>
-                            </div>
+                                <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Authorized Contact Name</label>
+                                    <input 
+                                      type="text" 
+                                      value={claimSenderName}
+                                      onChange={(e) => setClaimSenderName(e.target.value)}
+                                      placeholder="Full Name"
+                                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                                      required 
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Contact Phone</label>
+                                      <input 
+                                        type="tel" 
+                                        value={claimSenderPhone}
+                                        onChange={(e) => setClaimSenderPhone(e.target.value)}
+                                        placeholder="e.g. +27 82 123 4567"
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                                        required 
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Contact Email Address</label>
+                                      <input 
+                                        type="email" 
+                                        value={claimSenderEmail}
+                                        onChange={(e) => setClaimSenderEmail(e.target.value)}
+                                        placeholder="email@example.co.za"
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                                        required 
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
 
-                            <textarea
-                              value={claimMessage}
-                              onChange={(e) => setClaimMessage(e.target.value)}
-                              placeholder="Any additional messages for the admin..."
-                              className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none resize-none text-slate-800 min-h-[60px]"
-                            />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">ID Document</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimIdDoc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    {claimIdDoc && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
+                                  </div>
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">CIPC Registration</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimCipc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    {claimCipc && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
+                                  </div>
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">SARS Document</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimSars)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    {claimSars && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
+                                  </div>
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Proof of Address</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimProofOfAddress)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    {claimProofOfAddress && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
+                                  </div>
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 sm:col-span-2">
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Business Bank Statement</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimBankStatement)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    {claimBankStatement && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
+                                  </div>
+                                </div>
+                                
+                                {isScanningDocs && (
+                                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-center gap-2">
+                                    <div className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="text-xs font-bold text-slate-600">Running Deep Security & Malware Scan...</span>
+                                  </div>
+                                )}
 
-                            <button
-                              onClick={async () => {
-                                if(!claimIdDoc || !claimCipc || !claimSars || !claimProofOfAddress || !claimBankStatement) {
-                                  alert("Please attach all 5 required documents to prove ownership.");
-                                  return;
-                                }
-                                setSubmitting(true);
+                                {scanResultDocs === "clean" && (
+                                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                    <span className="text-xs font-bold text-emerald-700">Documents scanned and verified clean</span>
+                                  </div>
+                                )}
                                 
-                                const content = `[CLAIM INQUIRY]\nPreference: ${claimIntention}\nMessage: ${claimMessage || "No additional message"}\n\n[ATTACHED DOCUMENTS FOR VERIFICATION]\n- ID Document (Uploaded)\n- CIPC Registration (Uploaded)\n- SARS Document (Uploaded)\n- Proof of Address (Uploaded)\n- Business Bank Statement (Uploaded)`;
-                                
-                                let senderEmail = "business_owner@guest.searchbiz.co.za";
-                                let senderName = "Unverified Business Owner";
-                                const session = typeof window !== "undefined" ? localStorage.getItem("searchbiz_session") : null;
-                                if (session) {
-                                  try {
-                                    const parsed = JSON.parse(session);
-                                    senderEmail = parsed.email;
-                                    senderName = parsed.fullName || parsed.email.split("@")[0];
-                                  } catch (e) {}
-                                }
-                                
-                                const claimMessageObj = {
-                                  id: `msg_${Date.now()}_claim`,
-                                  threadId: [
-                                    senderEmail.toLowerCase(),
-                                    "admin",
-                                    ad?.id,
-                                  ].sort().join("_"),
-                                  adId: ad?.id || "",
-                                  adTitle: ad?.title || "",
-                                  senderEmail: senderEmail.toLowerCase(),
-                                  senderName: senderName,
-                                  recipientEmail: "admin",
-                                  content: content,
-                                  timestamp: new Date().toLocaleString(),
-                                  read: false,
-                                };
-                                
-                                if (typeof window !== "undefined") {
-                                  // Local storage message fallback
-                                  const storedStr = localStorage.getItem("searchbiz_messages_v1");
-                                  let existing = [];
-                                  if (storedStr) {
+                                {scanResultDocs === "malware" && (
+                                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                                    <span className="text-xs font-bold text-rose-700">Malware signature detected. Upload blocked.</span>
+                                  </div>
+                                )}
+
+                                <textarea
+                                  value={claimMessage}
+                                  onChange={(e) => setClaimMessage(e.target.value)}
+                                  placeholder="Any additional messages or instructions for the administrator..."
+                                  className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 outline-none resize-none text-slate-800 min-h-[60px]"
+                                />
+
+                                <button
+                                  onClick={async () => {
+                                    if (!claimSenderName || !claimSenderPhone || !claimSenderEmail) {
+                                      alert("Please fill in your authorized representative contact details.");
+                                      return;
+                                    }
+                                    if (!claimIdDoc || !claimCipc || !claimSars || !claimProofOfAddress || !claimBankStatement) {
+                                      alert("Please select and load all 5 required documents to prove ownership.");
+                                      return;
+                                    }
+                                    setSubmitting(true);
+                                    
+                                    const selectedPlanLabel = 
+                                      claimIntention === "premium_base" ? "Level 2: Essential Verified Tier" :
+                                      claimIntention === "premium_extra_ad" ? "Essential Verified + Web Hosting Suite" : "Essential Verified + Brand Domain Package";
+                                    const selectedPlanPrice = 
+                                      claimIntention === "premium_base" ? "R199.99 / month" :
+                                      claimIntention === "premium_extra_ad" ? "R398.99 / month" : "R199.99 / month (+ R99.00 / year)";
+
+                                    const content = `[NEW PREMIUM UPGRADE REQUEST]
+Company Name: ${ad?.title}
+Full Name: ${claimSenderName}
+Phone Number: ${claimSenderPhone}
+Email Address: ${claimSenderEmail}
+Selected Subscription Plan: ${selectedPlanLabel}
+Price Tier: ${selectedPlanPrice}
+Message: ${claimMessage || "No additional notes"}
+
+DOCUMENTS:
+ID Document:${claimIdDoc}
+CIPC Registration:${claimCipc}
+SARS Document:${claimSars}
+Proof of Address:${claimProofOfAddress}
+Business Bank Statement:${claimBankStatement}
+
+SIGNATURE:
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=
+`;
+                                    
+                                    const finalSenderEmail = claimSenderEmail.toLowerCase();
+                                    const claimMessageObj = {
+                                      id: `msg_${Date.now()}_claim`,
+                                      threadId: [
+                                        finalSenderEmail,
+                                        "admin",
+                                        ad?.id,
+                                      ].sort().join("_"),
+                                      adId: ad?.id || "",
+                                      adTitle: ad?.title || "",
+                                      senderEmail: finalSenderEmail,
+                                      senderName: claimSenderName,
+                                      recipientEmail: "admin",
+                                      content: content,
+                                      timestamp: new Date().toLocaleString(),
+                                      read: false,
+                                    };
+                                    
+                                    if (typeof window !== "undefined") {
+                                      const storedStr = localStorage.getItem("searchbiz_messages_v1");
+                                      let existing = [];
+                                      if (storedStr) {
+                                        try {
+                                          existing = JSON.parse(storedStr);
+                                        } catch (e) {}
+                                      }
+                                      existing.push(claimMessageObj);
+                                      localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
+                                      window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+                                    }
+
                                     try {
-                                      existing = JSON.parse(storedStr);
-                                    } catch (e) {}
-                                  }
-                                  existing.push(claimMessageObj);
-                                  localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
-                                  window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
-                                }
+                                      const storageRes = await fetch("/api/storage");
+                                      let currentStorage = { claimRequests: [], messages: [] };
+                                      if (storageRes.ok) {
+                                        currentStorage = await storageRes.json();
+                                      }
 
-                                try {
-                                  // Fetch current storage to append to global claimRequests
-                                  const storageRes = await fetch("/api/storage");
-                                  let currentStorage = { claimRequests: [], messages: [] };
-                                  if (storageRes.ok) {
-                                    currentStorage = await storageRes.json();
-                                  }
+                                      const claimRequestObj = {
+                                        id: `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                                        adId: ad?.id || "",
+                                        adTitle: ad?.title || "",
+                                        adCity: ad?.address || ad?.location || "Unknown",
+                                        adProvince: ad?.location || "Gauteng",
+                                        adCategory: ad?.category || "Other",
+                                        senderEmail: finalSenderEmail,
+                                        senderName: claimSenderName,
+                                        intention: "premium",
+                                        message: `Chosen Plan: ${selectedPlanLabel} | ${claimMessage || "No additional message"}`,
+                                        documents: {
+                                          idDoc: "Attached",
+                                          cipc: "Attached",
+                                          sars: "Attached",
+                                          proofOfAddress: "Attached",
+                                          bankStatement: "Attached"
+                                        },
+                                        status: "PENDING",
+                                        createdAt: new Date().toISOString()
+                                      };
 
-                                  const claimRequestObj = {
-                                    id: `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                                    adId: ad?.id || "",
-                                    adTitle: ad?.title || "",
-                                    adCity: ad?.address || ad?.location || "Unknown",
-                                    adProvince: ad?.location || "Gauteng",
-                                    adCategory: ad?.category || "Other",
-                                    senderEmail: senderEmail.toLowerCase(),
-                                    senderName: senderName,
-                                    intention: claimIntention, // "premium" | "free" | "remove"
-                                    message: claimMessage,
-                                    documents: {
-                                      idDoc: claimIdDoc ? "Attached" : "Not Provided",
-                                      cipc: claimCipc ? "Attached" : "Not Provided",
-                                      sars: claimSars ? "Attached" : "Not Provided",
-                                      proofOfAddress: claimProofOfAddress ? "Attached" : "Not Provided",
-                                      bankStatement: claimBankStatement ? "Attached" : "Not Provided"
-                                    },
-                                    status: "PENDING",
-                                    createdAt: new Date().toISOString()
-                                  };
+                                      const updatedClaimRequests = [
+                                        ...(Array.isArray(currentStorage.claimRequests) ? currentStorage.claimRequests : []),
+                                        claimRequestObj
+                                      ];
 
-                                  const updatedClaimRequests = [
-                                    ...(Array.isArray(currentStorage.claimRequests) ? currentStorage.claimRequests : []),
-                                    claimRequestObj
-                                  ];
+                                      const updatedMessages = [
+                                        ...(Array.isArray(currentStorage.messages) ? currentStorage.messages : []),
+                                        claimMessageObj
+                                      ];
 
-                                  const updatedMessages = [
-                                    ...(Array.isArray(currentStorage.messages) ? currentStorage.messages : []),
-                                    claimMessageObj
-                                  ];
+                                      await fetch("/api/storage", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                          claimRequests: updatedClaimRequests,
+                                          messages: updatedMessages
+                                        })
+                                      });
+                                    } catch (err) {
+                                      console.error("Failed to post claim to server storage:", err);
+                                    }
 
-                                  await fetch("/api/storage", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({
-                                      claimRequests: updatedClaimRequests,
-                                      messages: updatedMessages
-                                    })
-                                  });
-                                } catch (err) {
-                                  console.error("Failed to post claim to server storage:", err);
-                                }
-
-                                setSubmitting(false);
-                                setIsClaiming(false);
-                                setMsgSuccess(true);
-                              }}
-                              disabled={submitting}
-                              className="w-full mt-2 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center disabled:opacity-50"
-                            >
-                              {submitting ? "Sending Documents..." : "Submit Documents Securely"}
-                            </button>
+                                    setSubmitting(false);
+                                    setIsClaiming(false);
+                                    setMsgSuccess(true);
+                                  }}
+                                  disabled={submitting}
+                                  className="w-full mt-2 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center disabled:opacity-50"
+                                >
+                                  {submitting ? "Sending Verification Files..." : "Submit Documents Securely"}
+                                </button>
+                              </div>
+                            )}
                           </motion.div>
                         ) : (
                           <div className="text-center py-4">
                             <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                            <h5 className="text-sm font-bold text-slate-900">Documents Submitted</h5>
-                            <p className="text-xs text-slate-600 mt-1">Admin will verify your proof of ownership shortly. You will be contacted regarding your listing.</p>
+                            <h5 className="text-sm font-bold text-slate-900">Documents Submitted Successfully</h5>
+                            <p className="text-xs text-slate-600 mt-1 mb-4 leading-relaxed">
+                              Your ownership proof has been submitted securely and dispatched directly to Admin Direct Chat. Our team will verify your business shortly and update your listing badges!
+                            </p>
+                            <Link
+                              href="/messages"
+                              className="inline-flex items-center gap-2 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                              Open Admin Direct Chat
+                            </Link>
                           </div>
                         )}
                       </div>

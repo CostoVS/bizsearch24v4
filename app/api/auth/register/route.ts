@@ -23,9 +23,13 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
     // 2. Generate new message
     const adminEmail = "admin";
     const planFormatted = plan.toUpperCase();
-    let priceText = "R199.00/month";
+    let priceText = "R199.99/month";
     if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00/month";
-    if (planFormatted === "ENTERPRISE" || planFormatted === "SPONSOR") priceText = "R299,999.00/month";
+    else if (planFormatted === "ENTERPRISE_BASIC") priceText = "R499,999.00/month";
+    else if (planFormatted === "ENTERPRISE_PREMIUM") priceText = "R999,999.00/month";
+    else if (planFormatted === "ELITE_BASIC") priceText = "R25,000,000.00/month";
+    else if (planFormatted === "ELITE_PREMIUM") priceText = "R50,000,000.00/month";
+    else if (planFormatted === "ELITE_ENTERPRISE") priceText = "R100,000,000.00/month";
 
     const newMessage = {
       id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(7),
@@ -91,7 +95,10 @@ export async function POST(req: Request) {
       sarsDoc, 
       bankDoc, 
       idDoc, 
-      debitMandate 
+      debitMandate,
+      l2Extra,
+      l2Domain,
+      l2Listings
     } = await req.json();
 
     if (!email || !password) {
@@ -241,7 +248,7 @@ export async function POST(req: Request) {
       const newApplication = {
         id: 'app-' + Date.now(),
         email: normalizedEmail,
-        plan: plan, // "ESSENTIAL", "PRO", or "SPONSOR"
+        plan: plan, // "ESSENTIAL", "PREMIUM", "ENTERPRISE_BASIC", etc.
         fullName: fullName.trim(),
         whatsapp: whatsapp ? whatsapp.trim() : '',
         phone: phone ? phone.trim() : '',
@@ -255,7 +262,10 @@ export async function POST(req: Request) {
         bankDoc: bankDoc.name || 'BankAccount_Doc.pdf',
         idDoc: idDoc.name || 'Identification_ID.pdf',
         status: 'PENDING',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        l2Extra: plan === "ESSENTIAL" ? !!l2Extra : undefined,
+        l2Domain: plan === "ESSENTIAL" ? !!l2Domain : undefined,
+        l2Listings: plan === "ESSENTIAL" ? !!l2Listings : undefined,
       };
 
       applications.push(newApplication);

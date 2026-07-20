@@ -1299,9 +1299,41 @@ export default function AdminDashboard() {
             <div className="space-y-4">
               {premiumApps.map((app) => {
                 const planFormatted = (app.plan || "ESSENTIAL").toUpperCase();
-                let priceText = "R199.00 / Month";
-                if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00 / Month";
-                else if (planFormatted === "ENTERPRISE" || planFormatted === "SPONSOR") priceText = "R299,999.00 / Month";
+                let priceText = "R199.99 / Month";
+                if (planFormatted === "FREE") {
+                  priceText = "R0.00 / Month";
+                } else if (planFormatted === "PREMIUM" || planFormatted === "PRO" || planFormatted === "PREMIUM_TIER") {
+                  priceText = "R9,999.00 / Month";
+                } else if (planFormatted === "ENTERPRISE_BASIC") {
+                  priceText = "R499,999.00 / Month";
+                } else if (planFormatted === "ENTERPRISE_PREMIUM") {
+                  priceText = "R999,999.00 / Month";
+                } else if (planFormatted === "ELITE_BASIC") {
+                  priceText = "R25,000,000.00 / Month";
+                } else if (planFormatted === "ELITE_PREMIUM") {
+                  priceText = "R50,000,000.00 / Month";
+                } else if (planFormatted === "ELITE_ENTERPRISE") {
+                  priceText = "R100,000,000.00 / Month";
+                } else if (planFormatted === "ESSENTIAL") {
+                  let priceVal = 199.99;
+                  const addons: string[] = [];
+                  if (app.l2Extra) {
+                    priceVal += 199.00;
+                    addons.push("Hosting/Email/Web (+R199)");
+                  }
+                  if (app.l2Listings) {
+                    priceVal += 199.00;
+                    addons.push("Extra Listings (+R199)");
+                  }
+                  priceText = `R${priceVal.toFixed(2)} / Month`;
+                  if (app.l2Domain) {
+                    addons.push(".co.za Domain (+R99/year)");
+                    priceText += " + R99/yr";
+                  }
+                  if (addons.length > 0) {
+                    priceText += ` (${addons.join(', ')})`;
+                  }
+                }
 
                 return (
                   <div key={app.id} className="border border-slate-200 rounded-2xl p-6 bg-slate-50">
@@ -2178,10 +2210,14 @@ export default function AdminDashboard() {
                               onChange={(e) => handleUpdateUserPlan(u.id, e.target.value)}
                               className="bg-slate-100 text-slate-800 text-[10px] font-extrabold uppercase tracking-wider rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
                             >
-                              <option value="FREE">FREE (Free Basic)</option>
-                              <option value="ESSENTIAL">ESSENTIAL (Verified R199)</option>
+                              <option value="FREE">FREE (Free Basic R0)</option>
+                              <option value="ESSENTIAL">ESSENTIAL (Verified R199.99)</option>
                               <option value="PREMIUM">PREMIUM (Premium R9,999)</option>
-                              <option value="ENTERPRISE">ENTERPRISE (Sponsor R299,999)</option>
+                              <option value="ENTERPRISE_BASIC">ENTERPRISE BASIC (R499,999)</option>
+                              <option value="ENTERPRISE_PREMIUM">ENTERPRISE PREMIUM (R999,999)</option>
+                              <option value="ELITE_BASIC">ELITE BASIC (R25M)</option>
+                              <option value="ELITE_PREMIUM">ELITE PREMIUM (R50M)</option>
+                              <option value="ELITE_ENTERPRISE">ELITE ENTERPRISE (R100M)</option>
                             </select>
                           </div>
                           <div className="flex items-center space-x-1">

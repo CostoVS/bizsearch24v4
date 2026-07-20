@@ -107,13 +107,16 @@ export default function PremiumPage() {
   const router = useRouter();
   
   const [selectedPlan, setSelectedPlan] = useState("essential");
+  const [l2Extra, setL2Extra] = useState(false);
+  const [l2Domain, setL2Domain] = useState(false);
+  const [l2Listings, setL2Listings] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const plan = params.get("plan");
-      if (plan && ["essential", "premium", "enterprise"].includes(plan)) {
-        setSelectedPlan(plan);
+      if (plan) {
+        setSelectedPlan(plan.toLowerCase());
       }
     }
   }, []);
@@ -199,9 +202,7 @@ export default function PremiumPage() {
       const idUrl = await uploadFile(files.idProof);
       const bankUrl = await uploadFile(files.bank);
 
-      let planPriceText = "R199.00";
-      if (selectedPlan === "premium") planPriceText = "R9,999.00";
-      else if (selectedPlan === "enterprise") planPriceText = "R299,999.00";
+      const planPriceText = displayPrice;
 
       // 2. Prepare message content
       const messageContent = `*** NEW UPGRADE REQUEST (${selectedPlan.toUpperCase()}) ***
@@ -257,7 +258,10 @@ ${signature}
           bankName: formData.bankName,
           accountHolder: formData.accountHolder,
           accountType: formData.accountType,
-          plan: selectedPlan.toUpperCase()
+          plan: selectedPlan.toUpperCase(),
+          l2Extra: selectedPlan === "essential" ? l2Extra : undefined,
+          l2Domain: selectedPlan === "essential" ? l2Domain : undefined,
+          l2Listings: selectedPlan === "essential" ? l2Listings : undefined,
         })
       });
 
@@ -309,7 +313,21 @@ ${signature}
     );
   }
 
-  const displayPrice = selectedPlan === "premium" ? "R9,999.00" : selectedPlan === "enterprise" ? "R299,999.00" : "R199.00";
+  let displayPrice = "R199.99";
+  const planUpper = selectedPlan.toUpperCase();
+  if (planUpper === "FREE") displayPrice = "R0";
+  else if (planUpper === "PREMIUM" || planUpper === "PRO" || planUpper === "PREMIUM_TIER") displayPrice = "R9,999.00";
+  else if (planUpper === "ENTERPRISE" || planUpper === "ENTERPRISE_BASIC") displayPrice = "R499,999.00";
+  else if (planUpper === "ENTERPRISE_PREMIUM") displayPrice = "R999,999.00";
+  else if (planUpper === "ELITE_BASIC") displayPrice = "R25,000,000.00";
+  else if (planUpper === "ELITE_PREMIUM") displayPrice = "R50,000,000.00";
+  else if (planUpper === "ELITE_ENTERPRISE") displayPrice = "R100,000,000.00";
+  else if (planUpper === "ESSENTIAL") {
+    let priceVal = 199.99;
+    if (l2Extra) priceVal += 199.00;
+    if (l2Listings) priceVal += 199.00;
+    displayPrice = `R${priceVal.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+  }
 
   return (
     <div className="w-full bg-slate-50 min-h-[calc(100vh-80px)] pt-12 pb-24">
@@ -331,67 +349,124 @@ ${signature}
         </div>
 
         {/* Pricing Info Cards Selector */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             {
-              id: "essential",
-              name: "Level 2: Essential Verified Tier",
-              badge: "Verified badge",
-              price: "R199.00",
-              period: "month",
-              desc: "Complete digital presence for South African businesses.",
+              id: "free",
+              name: "Level 1: Free Basic",
+              badge: "not verified badge",
+              price: "R0",
+              period: "forever",
+              desc: "1 Free unverified listing.",
               features: [
                 "1 Listing only",
-                "Business Name shown",
-                "Business Description included",
-                "Services Offered listed",
-                "Business Address",
-                "Phone Number",
-                "WhatsApp Number enabled",
-                "Business Email shown",
-                "Social media platform links",
-                "Unlimited hosting account",
-                "Unlimited email accounts",
-                "Smart static website design",
-                "Add-on: .co.za domain R99/yr",
-                "Add-on: Extra listings R199/area each/mo",
-                "Verified Badge unlocked"
+                "Business Name",
+                "Address",
+                "Phone",
+                "Services Offered",
+                "No Verified Badge"
+              ]
+            },
+            {
+              id: "essential",
+              name: "Level 2: Essential",
+              badge: "verified badge",
+              price: "R199.99",
+              period: "month",
+              desc: "Complete digital presence with optional extras.",
+              features: [
+                "Everything in Free Tier",
+                "Business Description & Email",
+                "WhatsApp Number",
+                "Website & Social Links",
+                "Add-on: Smart Static Web + R199/mo",
+                "Add-on: .co.za Domain + R99/yr",
+                "Add-on: Extra Listings + R199/mo",
+                "Verified Badge"
               ]
             },
             {
               id: "premium",
-              name: "Level 3: Premium Tier",
-              badge: "premium verified badge",
+              name: "Level 3: Premium",
+              badge: "premium verified",
               price: "R9,999.00",
               period: "month",
-              desc: "Regional dominance and broad community reach.",
+              desc: "Broad regional South African coverage.",
               features: [
-                "Everything from Essential Tier",
-                "1 Ad listing in all areas across South Africa",
-                "premium verified badge unlocked",
-                "Priority regional search placement",
-                "Premium SLA support response"
+                "Everything in Essential Tier",
+                "1 Ad listing in all areas of SA",
+                "Premium Verified Badge",
+                "Priority Regional Display",
+                "Premium SLA Response"
               ]
             },
             {
-              id: "enterprise",
-              name: "Level 4: Enterprise Sponsor Tier",
-              badge: "Enterprise Sponsor Premium Verified badge",
-              price: "R299,999.00",
+              id: "enterprise_basic",
+              name: "Level 4: Enterprise Basic",
+              badge: "Enterprise Verified",
+              price: "R499,999.00",
               period: "month",
-              desc: "Full-scale managed marketing powerhouse.",
+              desc: "Aggressive multi-channel campaigns.",
               features: [
-                "Everything from Essential & Premium tiers",
-                "Unlimited Ads with top priority",
-                "Marketing ads, images, posters, videos",
-                "Facebook marketing campaigns",
-                "TikTok marketing campaigns",
-                "YouTube marketing campaigns",
-                "X marketing campaigns",
-                "Instagram marketing campaigns",
-                "Google search marketing campaigns",
-                "Dedicated marketing account manager",
-                "Enterprise Sponsor Premium Verified Badge"
+                "Everything from Level 2 & 3",
+                "Unlimited Ads (1 per Area)",
+                "Full video/image/poster media",
+                "Facebook/TikTok/YouTube/X/Instagram/Google Marketing",
+                "Enterprise Verified Badge"
+              ]
+            },
+            {
+              id: "enterprise_premium",
+              name: "Level 5: Enterprise Premium",
+              badge: "Enterprise Premium",
+              price: "R999,999.00",
+              period: "month",
+              desc: "Top priority marketing dominance.",
+              features: [
+                "Everything from Level 4",
+                "Highly Aggressive Ad Campaigns",
+                "Full Media Production",
+                "Enterprise Premium Verified Badge"
+              ]
+            },
+            {
+              id: "elite_basic",
+              name: "Level 6: Elite Basic",
+              badge: "Elite Basic",
+              price: "R25,000,000.00",
+              period: "month",
+              desc: "20 Million Rands Per Month positioning.",
+              features: [
+                "Everything from Level 5",
+                "Tv Commercials (basics) included",
+                "Tv / Radio / Press Release features",
+                "Elite Verified Badge"
+              ]
+            },
+            {
+              id: "elite_premium",
+              name: "Level 7: Elite Premium",
+              badge: "Elite Premium",
+              price: "R50,000,000.00",
+              period: "month",
+              desc: "50 Million Rands Per Month media dominance.",
+              features: [
+                "Everything from Level 6",
+                "Tv Commercials (premium)",
+                "Elite Premium Verified Badge"
+              ]
+            },
+            {
+              id: "elite_enterprise",
+              name: "Level 8: Elite Enterprise",
+              badge: "Elite Enterprise",
+              price: "R100,000,000.00",
+              period: "month",
+              desc: "100 Million Rands corporate monopolization.",
+              features: [
+                "Everything from Level 7",
+                "Tv Commercials (elites)",
+                "Elite Enterprise Verified Badge"
               ]
             }
           ].map((plan) => {
@@ -401,16 +476,16 @@ ${signature}
                 key={plan.id}
                 type="button"
                 onClick={() => setSelectedPlan(plan.id)}
-                className={`text-left p-5 rounded-2xl border-2 transition-all duration-300 relative flex flex-col justify-between ${
+                className={`text-left p-4 rounded-2xl border-2 transition-all duration-300 relative flex flex-col justify-between ${
                   isSelected
                     ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20 shadow-md scale-[1.01]"
                     : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
                 }`}
               >
                 <div>
-                  <div className="flex justify-between items-start gap-1">
-                    <span className="font-black text-xs uppercase tracking-wide text-slate-800">{plan.name}</span>
-                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                  <div className="flex flex-col gap-1">
+                    <span className="font-black text-xs uppercase tracking-tight text-slate-800 leading-tight">{plan.name}</span>
+                    <span className={`self-start text-[7px] font-black uppercase px-2 py-0.5 rounded-full mt-1 ${
                       isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 border border-slate-200"
                     }`}>
                       {plan.badge}
@@ -421,13 +496,13 @@ ${signature}
                 
                 <div className="mt-4 pt-3 border-t border-slate-100 w-full">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-black text-slate-900">{plan.price}</span>
-                    <span className="text-[10px] font-bold text-slate-400">/{plan.period}</span>
+                    <span className="text-sm font-black text-slate-900">{plan.price}</span>
+                    <span className="text-[9px] font-bold text-slate-400">/{plan.period}</span>
                   </div>
-                  <ul className="mt-2 space-y-1 text-[9px] font-bold text-slate-600">
+                  <ul className="mt-2 space-y-1 text-[9px] font-medium text-slate-600">
                     {plan.features.map((f, i) => (
-                      <li key={i} className="flex items-center gap-1">
-                        <Check className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                      <li key={i} className="flex items-start gap-1">
+                        <Check className="w-2.5 h-2.5 text-emerald-600 shrink-0 mt-0.5" />
                         <span>{f}</span>
                       </li>
                     ))}
@@ -437,6 +512,58 @@ ${signature}
             );
           })}
         </div>
+
+        {/* Level 2 Options checkboxes */}
+        {selectedPlan === "essential" && (
+          <div className="bg-emerald-50/40 p-5 rounded-2xl border-2 border-emerald-500/20 mb-8 animate-fadeIn">
+            <h3 className="text-sm font-black uppercase text-emerald-950 mb-1 flex items-center gap-1.5">
+              ⚙️ Custom Level 2 Add-ons Selection
+            </h3>
+            <p className="text-xs text-slate-600 mb-4 font-medium">
+              Configure your Essential subscription. Each checked option adds directly to your calculated monthly or annual billing total.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+                <input 
+                  type="checkbox" 
+                  checked={l2Extra} 
+                  onChange={(e) => setL2Extra(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
+                />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Hosting & Emails</span>
+                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Unlimited Hosting + Unlimited Email accounts & Smart Static Website (+R199/mo)</span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+                <input 
+                  type="checkbox" 
+                  checked={l2Domain} 
+                  onChange={(e) => setL2Domain(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
+                />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Professional Domain</span>
+                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Secure your brand with a .co.za domain registration (+R99/year)</span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+                <input 
+                  type="checkbox" 
+                  checked={l2Listings} 
+                  onChange={(e) => setL2Listings(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
+                />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Extra Area Ads</span>
+                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Add an extra listing in more areas across South Africa (+R199/mo)</span>
+                </div>
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* The Form */}
         <div className="bg-white rounded-3xl shadow-lg border border-slate-200 overflow-hidden">

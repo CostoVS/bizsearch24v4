@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
       branchCode,
       bankName,
       accountHolder,
-      accountType
+      accountType,
+      plan,
+      l2Extra,
+      l2Domain,
+      l2Listings
     } = data;
 
     if (!email || !fullName || !idNumber) {
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
     const newApplication = {
       id: 'app-' + Date.now(),
       email: email,
-      plan: "PREMIUM",
+      plan: plan || "PREMIUM",
       fullName: fullName,
       whatsapp: whatsapp || '',
       phone: phone || '',
@@ -68,7 +72,10 @@ export async function POST(req: NextRequest) {
       accountHolder: accountHolder || '',
       accountType: accountType || '',
       status: 'PENDING',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      l2Extra: plan === "ESSENTIAL" ? !!l2Extra : undefined,
+      l2Domain: plan === "ESSENTIAL" ? !!l2Domain : undefined,
+      l2Listings: plan === "ESSENTIAL" ? !!l2Listings : undefined,
     };
 
     applications.push(newApplication);

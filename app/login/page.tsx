@@ -25,7 +25,11 @@ export default function LoginPage() {
   const [copied, setCopied] = useState(false);
   
   // Premium Tier Registration States
-  const [selectedPlan, setSelectedPlan] = useState<"FREE" | "ESSENTIAL" | "PRO" | "SPONSOR">("FREE");
+  const [selectedPlan, setSelectedPlan] = useState<string>("FREE");
+  const [l2Extra, setL2Extra] = useState(false);
+  const [l2Domain, setL2Domain] = useState(false);
+  const [l2Listings, setL2Listings] = useState(false);
+
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [phone, setPhone] = useState("");
@@ -137,7 +141,10 @@ export default function LoginPage() {
             cipcDoc: isPremium ? cipcFile : undefined,
             sarsDoc: isPremium ? sarsFile : undefined,
             bankDoc: isPremium ? bankFile : undefined,
-            idDoc: isPremium ? idFile : undefined
+            idDoc: isPremium ? idFile : undefined,
+            l2Extra: selectedPlan === "ESSENTIAL" ? l2Extra : undefined,
+            l2Domain: selectedPlan === "ESSENTIAL" ? l2Domain : undefined,
+            l2Listings: selectedPlan === "ESSENTIAL" ? l2Listings : undefined,
           }),
         });
         const data = await res.json();
@@ -396,7 +403,6 @@ export default function LoginPage() {
                         Choose Your Directory Tier:
                       </label>
                       <div className="space-y-3">
-                        {/* Basic Free Tier */}
                         {/* Free Basic Tier */}
                         <div 
                           onClick={() => {
@@ -421,68 +427,114 @@ export default function LoginPage() {
                         </div>
 
                         {/* Essential Tier */}
-                        <div 
-                          onClick={() => {
-                            setSelectedPlan("ESSENTIAL");
-                            setErrorMsg("");
-                          }}
-                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
-                            selectedPlan === "ESSENTIAL" 
-                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
-                            : "border-slate-200 hover:border-slate-300 text-slate-700"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
-                              <span className="flex items-center gap-1.5">
-                                Level 2: Essential Verified Tier ★
-                              </span>
-                              <span className="text-emerald-600 shrink-0">R199.00/mo</span>
+                        {(() => {
+                          const essentialPrice = 199.99 + (l2Extra ? 199.00 : 0) + (l2Listings ? 199.00 : 0);
+                          const essentialPriceStr = `R${essentialPrice.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+                          return (
+                            <div 
+                              onClick={() => {
+                                setSelectedPlan("ESSENTIAL");
+                                setErrorMsg("");
+                              }}
+                              className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                                selectedPlan === "ESSENTIAL" 
+                                ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                                : "border-slate-200 hover:border-slate-300 text-slate-700"
+                              }`}
+                            >
+                              <div>
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
+                                  <span className="flex items-center gap-1.5">
+                                    Level 2: Essential Verified Tier ★
+                                  </span>
+                                  <span className="text-emerald-600 shrink-0">{essentialPriceStr}</span>
+                                </div>
+                                <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                                  <div>• 1 Verified SearchBiz Listing, Your Own Logins</div>
+                                  <div>• Business Description, Services, Social links & Website</div>
+                                  
+                                  <div className="mt-3 text-[10px] font-black uppercase text-emerald-800 tracking-wider">
+                                    Select Level 2 Add-ons:
+                                  </div>
+                                  <div className="p-3 bg-slate-950/5 rounded-xl border border-emerald-500/15 space-y-2 mt-1" onClick={(e) => e.stopPropagation()}>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={l2Extra} 
+                                        onChange={(e) => {
+                                          setL2Extra(e.target.checked);
+                                          setSelectedPlan("ESSENTIAL");
+                                        }}
+                                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                      />
+                                      <span>Smart Static Website, Unlimited Hosting & Emails (+R199/mo)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={l2Domain} 
+                                        onChange={(e) => {
+                                          setL2Domain(e.target.checked);
+                                          setSelectedPlan("ESSENTIAL");
+                                        }}
+                                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                      />
+                                      <span>Register professional .co.za brand domain (+R99/year)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={l2Listings} 
+                                        onChange={(e) => {
+                                          setL2Listings(e.target.checked);
+                                          setSelectedPlan("ESSENTIAL");
+                                        }}
+                                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                      />
+                                      <span>Extra Directory Area Listing (+R199/mo)</span>
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
-                              <div>• Unlimited Hosting, Unlimited Email Accounts, Smart Static Website</div>
-                              <div>• 1 Verified SearchBiz Listing, Your Own Logins</div>
-                              <div>• .co.za domain registration included at R99 per year</div>
-                              <div>• Extra Verified Listings at R199.00 per listing per month</div>
-                            </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
 
                         {/* Pro Premium Tier */}
                         <div 
                           onClick={() => {
-                            setSelectedPlan("PRO");
+                            setSelectedPlan("PREMIUM");
                             setErrorMsg("");
                           }}
                           className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
-                            selectedPlan === "PRO" 
+                            selectedPlan === "PREMIUM" 
                             ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
                             : "border-slate-200 hover:border-slate-300 text-slate-700"
                           }`}
                         >
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
-                              <span className="flex items-center gap-1.5">
+                              <span className="flex items-center gap-1.5 font-bold">
                                 Level 3: Premium Tier ★★
                               </span>
                               <span className="text-emerald-600 shrink-0">R9,999.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• Everything in Essential Tier included</div>
-                              <div>• Unlimited Premium Ads, 1 Ad Per Area</div>
-                              <div>• Ads always displayed above basic Free tier and Essential tier ads</div>
+                              <div>• 1 Ad listing in all areas across South Africa</div>
+                              <div>• Premium Verified Badge</div>
                             </div>
                           </div>
                         </div>
 
-                        {/* Enterprise Sponsor Tier */}
+                        {/* Level 4: Enterprise Basic Grade Tier */}
                         <div 
                           onClick={() => {
-                            setSelectedPlan("SPONSOR");
+                            setSelectedPlan("ENTERPRISE_BASIC");
                             setErrorMsg("");
                           }}
                           className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
-                            selectedPlan === "SPONSOR" 
+                            selectedPlan === "ENTERPRISE_BASIC" 
                             ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
                             : "border-slate-200 hover:border-slate-300 text-slate-700"
                           }`}
@@ -490,14 +542,122 @@ export default function LoginPage() {
                           <div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
                               <span className="flex items-center gap-1.5">
-                                Level 4: Enterprise Sponsor Tier ★★★
+                                Level 4: Enterprise Basic Grade Tier ★ Hydra-Premium
                               </span>
-                              <span className="text-emerald-600 shrink-0">R299,999.00/mo</span>
+                              <span className="text-emerald-600 shrink-0">R499,999.00/mo</span>
                             </div>
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
-                              <div>• Everything from Essential & Premium Tiers included</div>
-                              <div>• A dedicated Sponsor Ad, pinned always on top of all other ads</div>
-                              <div>• Included in future company marketing: Facebook, YouTube, TikTok, Instagram, X marketing</div>
+                              <div>• Everything from essential & premium tiers included</div>
+                              <div>• Unlimited Ads in Searchbiz (1 per Area)</div>
+                              <div>• Facebook, TikTok, YouTube, X, Instagram, and Google Marketing</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Level 5: Enterprise Premium Grade Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("ENTERPRISE_PREMIUM");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "ENTERPRISE_PREMIUM" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
+                              <span className="flex items-center gap-1.5">
+                                Level 5: Enterprise Premium Grade Tier ★★★★
+                              </span>
+                              <span className="text-emerald-600 shrink-0">R999,999.00/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• Everything from essential & premium tiers included</div>
+                              <div>• Unlimited Ads in Searchbiz 1 per Area, Aggressive Marketing</div>
+                              <div>• Full video, image, poster media & campaign channels management</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Level 6: Elite Basic Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("ELITE_BASIC");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "ELITE_BASIC" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
+                              <span className="flex items-center gap-1.5">
+                                Level 6: Elite Basic Tier ★★★★★
+                              </span>
+                              <span className="text-emerald-600 shrink-0">R25,000,000.00/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• 20 Million Rands Per Month</div>
+                              <div>• Everything from essential & premium tiers included + Unlimited Ads</div>
+                              <div>• Tv Commercials (basics) and standard brand placement</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Level 7: Elite Premium Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("ELITE_PREMIUM");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "ELITE_PREMIUM" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
+                              <span className="flex items-center gap-1.5">
+                                Level 7: Elite Premium Tier ★★★★★★
+                              </span>
+                              <span className="text-emerald-600 shrink-0">R50,000,000.00/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• 50 Million Rands Per Month</div>
+                              <div>• Everything from essential & premium tiers included, Aggressive Ads</div>
+                              <div>• Tv Commercials (premium) and full media dominance</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Level 8: Elite Enterprise Grade Tier */}
+                        <div 
+                          onClick={() => {
+                            setSelectedPlan("ELITE_ENTERPRISE");
+                            setErrorMsg("");
+                          }}
+                          className={`rounded-2xl border-2 p-4 cursor-pointer selection-none transition-all flex flex-col justify-between ${
+                            selectedPlan === "ELITE_ENTERPRISE" 
+                            ? "border-emerald-600 bg-emerald-50/40 text-emerald-950 shadow-sm" 
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-bold mb-1 gap-1">
+                              <span className="flex items-center gap-1.5">
+                                Level 8: Elite Enterprise Grade Tier ★★★★★★★
+                              </span>
+                              <span className="text-emerald-600 shrink-0">R100,000,000.00/mo</span>
+                            </div>
+                            <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
+                              <div>• 100 Million Rands Per Month</div>
+                              <div>• Everything from essential & premium tiers included, Aggressive Ads</div>
+                              <div>• Tv Commercials (elites) and global market monopolization</div>
                             </div>
                           </div>
                         </div>
