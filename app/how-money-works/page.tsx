@@ -19,12 +19,23 @@ import {
   Layers,
   Zap,
   HelpCircle,
-  FileText
+  FileText,
+  AlertTriangle,
+  Megaphone,
+  Flame,
+  BrainCircuit,
+  Trophy,
+  Target,
+  Compass,
+  Search,
+  Share2,
+  Tv,
+  Users
 } from "lucide-react";
 
 export const metadata = {
   title: "How Money Works: The Core Rules of Value, Currency & Wealth | SearchBiz.co.za",
-  description: "A comprehensive guide to how money actually works: the value equation, currency mechanics, 5 legal ways to make money, the wealth ladder, and tax realities.",
+  description: "A comprehensive guide to how money actually works: value equations, 5 legal ways to make money, marketing growth engines, and the hard realities of business.",
 };
 
 export default function HowMoneyWorksPage() {
@@ -33,7 +44,7 @@ export default function HowMoneyWorksPage() {
       {/* Background Glow Highlights */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] bg-gradient-to-b from-emerald-900/20 via-indigo-900/10 to-transparent blur-3xl pointer-events-none -z-10" />
 
-      {/* Navigation Breadcrumb & Header */}
+      {/* Navigation Breadcrumb */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
         <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400">
           <Link href="/" className="hover:text-emerald-400 transition-colors">Home</Link>
@@ -44,18 +55,29 @@ export default function HowMoneyWorksPage() {
         </div>
       </div>
 
+      {/* Educational Disclaimer Banner */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mb-4">
+        <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/30 text-amber-200/90 text-xs sm:text-sm leading-relaxed flex items-start gap-3 shadow-lg">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <strong className="text-amber-300 font-bold block mb-0.5 uppercase tracking-wide text-[11px]">Educational Disclaimer & Notice</strong>
+            This guide is provided strictly for general educational, financial literacy, and business context purposes. SearchBiz does not provide legal, accounting, tax, or investment advice. Always consult certified financial advisors and registered tax/legal professionals for personal or corporate financial decisions.
+          </div>
+        </div>
+      </div>
+
       {/* Hero Section */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 text-center">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 text-center">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono font-bold tracking-wider uppercase mb-6">
           <Coins className="w-4 h-4 text-emerald-400 animate-pulse" />
-          <span>The Universal Guide to Value & Wealth</span>
+          <span>The Universal Guide to Value, Marketing & Wealth</span>
         </div>
 
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-[1.1] mb-6">
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-[1.1] mb-6">
           How <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400">Money Works</span>
         </h1>
 
-        <p className="text-lg sm:text-xl text-slate-300 max-w-3xl mx-auto leading-relaxed font-normal mb-8">
+        <p className="text-base sm:text-xl text-slate-300 max-w-3xl mx-auto leading-relaxed font-normal mb-8">
           Money is fundamentally a tool for indirect exchange. Before money, people relied on bartering (trading a cow for 20 sacks of wheat). Bartering fails because of the <strong className="text-white font-semibold">&quot;coincidence of wants&quot;</strong> — you need to find someone who has what you want and wants what you have.
         </p>
 
@@ -80,7 +102,7 @@ export default function HowMoneyWorksPage() {
       </section>
 
       {/* Main Content Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 space-y-20">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 space-y-16 sm:space-y-20">
 
         {/* PART 1 */}
         <section id="part-1" className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-10 relative overflow-hidden backdrop-blur-sm">
@@ -200,59 +222,51 @@ export default function HowMoneyWorksPage() {
             While there are millions of specific jobs, every legal way to make money on Earth falls into <strong className="text-white font-semibold">5 core mechanics</strong>:
           </p>
 
-          {/* Interactive Visual Hierarchy Diagram */}
-          <div className="bg-slate-950 p-6 sm:p-8 rounded-2xl border border-slate-800 mb-12 text-center overflow-x-auto">
-            <div className="inline-block min-w-[640px] w-full">
-              {/* Top Central Node */}
-              <div className="inline-block bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-mono font-black text-sm px-6 py-3 rounded-xl shadow-lg border border-emerald-400/30 tracking-widest uppercase mb-6">
-                5 WAYS TO MAKE MONEY
-              </div>
+          {/* Fully Responsive 5 Cores Grid (No Horizontal Scrolling) */}
+          <div className="bg-slate-950 p-5 sm:p-8 rounded-2xl border border-slate-800 mb-12 text-center">
+            <div className="inline-block bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-mono font-black text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-lg border border-emerald-400/30 tracking-widest uppercase mb-6">
+              5 CORE MECHANICS OF MAKING MONEY
+            </div>
 
-              {/* Vertical Connector Line */}
-              <div className="w-0.5 h-6 bg-slate-700 mx-auto mb-2" />
-
-              {/* Horizontal Connecting Bar */}
-              <div className="w-4/5 h-0.5 bg-slate-700 mx-auto mb-6 relative">
-                <div className="absolute left-0 -top-1 w-2.5 h-2.5 rounded-full bg-slate-600" />
-                <div className="absolute left-1/4 -top-1 w-2.5 h-2.5 rounded-full bg-slate-600" />
-                <div className="absolute left-1/2 -top-1 w-2.5 h-2.5 rounded-full bg-slate-600" />
-                <div className="absolute left-3/4 -top-1 w-2.5 h-2.5 rounded-full bg-slate-600" />
-                <div className="absolute right-0 -top-1 w-2.5 h-2.5 rounded-full bg-slate-600" />
-              </div>
-
-              {/* 4 Primary Branch Cards */}
-              <div className="grid grid-cols-4 gap-4 text-left mb-6">
-                <div className="bg-slate-900 p-3.5 rounded-xl border border-emerald-500/30">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 text-left">
+              <div className="bg-slate-900 p-4 rounded-xl border border-emerald-500/30 flex flex-col justify-between">
+                <div>
                   <div className="text-[10px] font-mono font-bold text-emerald-400 uppercase">1. Trade Time</div>
-                  <div className="text-xs font-bold text-white mt-1">Labor / Skills</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Wage & Services</div>
+                  <div className="text-xs font-bold text-white mt-1">Labor & Skills</div>
                 </div>
-
-                <div className="bg-slate-900 p-3.5 rounded-xl border border-teal-500/30">
-                  <div className="text-[10px] font-mono font-bold text-teal-400 uppercase">2. Sell Products</div>
-                  <div className="text-xs font-bold text-white mt-1">Goods / IP</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Commerce & Digital</div>
-                </div>
-
-                <div className="bg-slate-900 p-3.5 rounded-xl border border-indigo-500/30">
-                  <div className="text-[10px] font-mono font-bold text-indigo-400 uppercase">3. Rent Assets</div>
-                  <div className="text-xs font-bold text-white mt-1">Property / Equip</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Leasing & Royalties</div>
-                </div>
-
-                <div className="bg-slate-900 p-3.5 rounded-xl border border-purple-500/30">
-                  <div className="text-[10px] font-mono font-bold text-purple-400 uppercase">4. Take Risk</div>
-                  <div className="text-xs font-bold text-white mt-1">Capital / Equity</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Investing & Ownership</div>
-                </div>
+                <div className="text-[10px] text-slate-400 mt-2">Wage, Salary, Freelance & Direct Services</div>
               </div>
 
-              {/* Arrow down to 5th Category */}
-              <div className="w-0.5 h-6 bg-slate-700 mx-auto mb-2" />
-              <div className="inline-block bg-slate-900 p-3.5 rounded-xl border border-amber-500/30 text-left max-w-xs">
-                <div className="text-[10px] font-mono font-bold text-amber-400 uppercase">5. Govt / Grants</div>
-                <div className="text-xs font-bold text-white mt-1">Transfers & Claims</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Grants, Bounties, Pensions</div>
+              <div className="bg-slate-900 p-4 rounded-xl border border-teal-500/30 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-mono font-bold text-teal-400 uppercase">2. Sell Products</div>
+                  <div className="text-xs font-bold text-white mt-1">Goods & IP</div>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-2">Commerce, Manufacturing & Software Assets</div>
+              </div>
+
+              <div className="bg-slate-900 p-4 rounded-xl border border-indigo-500/30 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-mono font-bold text-indigo-400 uppercase">3. Rent Assets</div>
+                  <div className="text-xs font-bold text-white mt-1">Property & Equip</div>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-2">Leasing, Rentals & Licensing Royalties</div>
+              </div>
+
+              <div className="bg-slate-900 p-4 rounded-xl border border-purple-500/30 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-mono font-bold text-purple-400 uppercase">4. Take Risk</div>
+                  <div className="text-xs font-bold text-white mt-1">Capital & Equity</div>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-2">Investing, Ownership & Market Trading</div>
+              </div>
+
+              <div className="bg-slate-900 p-4 rounded-xl border border-amber-500/30 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+                <div>
+                  <div className="text-[10px] font-mono font-bold text-amber-400 uppercase">5. Govt / Grants</div>
+                  <div className="text-xs font-bold text-white mt-1">Transfers & Claims</div>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-2">Grants, Bounties, Subsidies & Pensions</div>
               </div>
             </div>
           </div>
@@ -557,15 +571,248 @@ export default function HowMoneyWorksPage() {
           </div>
         </section>
 
+        {/* PART 4: MARKETING AS A TOOL & TYPES OF MARKETING */}
+        <section id="part-4" className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-10 relative overflow-hidden backdrop-blur-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-black text-lg">
+              4
+            </div>
+            <div>
+              <span className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold block">Part 4</span>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Marketing: The Growth Engine & Amplifier of Business
+              </h2>
+            </div>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 mb-8">
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-cyan-400" />
+              Marketing is Not an Expense — It is a Multiplier
+            </h3>
+            <p className="text-slate-300 text-sm leading-relaxed">
+              Having a world-class product or service hidden in total obscurity yields R0. <strong className="text-white">Marketing is the vehicle that connects your value to people who have problems and money.</strong> Without marketing, a business relies purely on luck; with structured marketing, a business builds a predictable, repeatable pipeline of revenue.
+            </p>
+          </div>
+
+          <h3 className="text-lg font-bold text-white mb-4">The 7 Primary Channels & Types of Marketing</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            
+            {/* Type 1 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-cyan-400 font-bold text-sm">
+                <FileText className="w-4 h-4" />
+                <span>1. Content Marketing</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Building trust and authority by creating high-value guides, articles, videos, and podcasts that educate prospects before asking for the sale.
+              </p>
+            </div>
+
+            {/* Type 2 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-emerald-400 font-bold text-sm">
+                <Search className="w-4 h-4" />
+                <span>2. Search Engine Marketing (SEO & PPC)</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Capturing active buyer intent on Google through organic Search Engine Optimization (SEO) and targeted Pay-Per-Click (PPC) search ads.
+              </p>
+            </div>
+
+            {/* Type 3 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-indigo-400 font-bold text-sm">
+                <Share2 className="w-4 h-4" />
+                <span>3. Social Media Marketing</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Engaging targeted communities on Meta, TikTok, LinkedIn, Instagram, and X to build brand affinity, story awareness, and social proof.
+              </p>
+            </div>
+
+            {/* Type 4 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-amber-400 font-bold text-sm">
+                <Target className="w-4 h-4" />
+                <span>4. Direct Response & Performance</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Highly deliberate campaigns engineered for measurable returns: immediate leads, phone calls, form fills, or online checkout conversions.
+              </p>
+            </div>
+
+            {/* Type 5 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-purple-400 font-bold text-sm">
+                <ShieldCheck className="w-4 h-4" />
+                <span>5. Brand & Public Relations (PR)</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Shaping public perception, press releases, media coverage, and corporate reputation to command premium pricing and long-term trust.
+              </p>
+            </div>
+
+            {/* Type 6 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2 text-rose-400 font-bold text-sm">
+                <Users className="w-4 h-4" />
+                <span>6. Referral & Word-of-Mouth</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Turning satisfied customers into active promoters through referral incentives, affiliate rewards, positive reviews, and direct word-of-mouth.
+              </p>
+            </div>
+
+            {/* Type 7 */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 md:col-span-2 lg:col-span-3">
+              <div className="flex items-center gap-2 mb-2 text-teal-400 font-bold text-sm">
+                <Tv className="w-4 h-4" />
+                <span>7. Outbound & Traditional Advertising</span>
+              </div>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Direct B2B outreach, cold calls, industry expos, networking, physical flyers, billboards, print press, radio broadcasts, and televised spots.
+              </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* PART 5: THE BRUTAL REALITY OF BUSINESS */}
+        <section id="part-5" className="bg-gradient-to-b from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30 rounded-3xl p-6 sm:p-10 relative overflow-hidden backdrop-blur-sm shadow-2xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 font-black text-lg">
+              5
+            </div>
+            <div>
+              <span className="text-xs font-mono uppercase tracking-widest text-rose-400 font-bold block">Part 5</span>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                The Brutal Reality: What It Truly Takes to Win
+              </h2>
+            </div>
+          </div>
+
+          <div className="space-y-8">
+            
+            {/* Core Reality 1 */}
+            <div className="p-6 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
+                  <Flame className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    Business Is Not Easy — It Will Demand All of You and More
+                  </h3>
+                  <p className="text-slate-300 text-sm leading-relaxed mb-3">
+                    Business is not a casual weekend hobby, nor is it a guaranteed shortcut to luxury. It is a high-stakes, relentless arena. <strong className="text-white">Winning in business will take all of you, and more, and still some more.</strong>
+                  </p>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    It will demand your late nights, your emotional discipline, your financial focus, and your willingness to stand firm when everything around you feels uncertain. If you expect easy comfort, business will quickly break your expectations.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Core Reality 2 */}
+            <div className="p-6 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                  <BrainCircuit className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    Put In the Work, Learn From Mistakes & Become a Relentless Problem Solver
+                  </h3>
+                  <p className="text-slate-300 text-sm leading-relaxed mb-3">
+                    You will fail. You will make mistakes, launch products that nobody buys, hire the wrong people, or lose money on bad campaigns. <strong className="text-white">Giving up is easy — winning requires evolving into a master problem solver.</strong>
+                  </p>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Never let a failure go to waste: dissect what went wrong without emotion or ego.</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Focus 100% of your energy on solutions, not on complaining about the obstacle.</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Remember: the market pays you in direct proportion to the complexity of the problems you solve.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Core Reality 3 */}
+            <div className="p-6 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
+                  <Compass className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    Everyone Is Different — Not Everyone Is Cut Out for Business
+                  </h3>
+                  <p className="text-slate-300 text-sm leading-relaxed mb-3">
+                    Society glamorizes entrepreneurship, but the truth is that <strong className="text-white font-semibold">everyone is built differently</strong>. Carrying the entire weight of payroll, customer satisfaction, cash flow survival, and strategic risk is not suited for every temperament.
+                  </p>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    There is no shame in being an elite specialist, worker, or intrapreneur inside an existing system. True wisdom comes from understanding who you are rather than forcing yourself into a path that destroys your health and peace.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Core Reality 4 */}
+            <div className="p-6 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    Know Who You Are & Make the Hard Decisions
+                  </h3>
+                  <p className="text-slate-300 text-sm leading-relaxed mb-3">
+                    As an entrepreneur, nobody is coming to save you. You must look into the mirror, know your strengths and flaws, and possess the courage to make the hard decisions:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                      <strong className="text-white block mb-0.5">Cutting Losses Fast</strong>
+                      Pivoting away from dead products or bad ideas before they drain all your capital.
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                      <strong className="text-white block mb-0.5">Firing & Boundaries</strong>
+                      Letting go of toxic employees, bad partners, or unprofitable clients who drain energy.
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                      <strong className="text-white block mb-0.5">100% Extreme Ownership</strong>
+                      Refusing to blame the economy, government, or employees when things fail.
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                      <strong className="text-white block mb-0.5">Unwavering Persistence</strong>
+                      Pushing forward with discipline when motivation dies and nobody is cheering for you.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
         {/* CTA Banner */}
         <section className="bg-gradient-to-r from-emerald-900/60 via-slate-900 to-teal-900/60 border border-emerald-500/30 rounded-3xl p-8 md:p-12 text-center relative overflow-hidden shadow-2xl">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
           
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-4">
-            Ready to Scale Up the Wealth Ladder?
+            Ready to Build Real Leverage & Solve Big Problems?
           </h2>
           <p className="text-slate-300 text-sm sm:text-base max-w-2xl mx-auto mb-8 leading-relaxed">
-            Register your South African enterprise or freelance business on SearchBiz.co.za to attract verified clients, build digital leverage, and unlock verified tier listings today.
+            Register your South African enterprise or freelance business on SearchBiz.co.za to attract verified clients, build digital leverage, and market your products with confidence today.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
