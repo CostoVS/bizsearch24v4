@@ -118,6 +118,9 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
                <button onClick={onShowLegal} className="text-left hover:text-emerald-400 transition-colors">Terms of Service</button>
                 <Link href="/google-business-guide" className="hover:text-emerald-400 transition-colors font-semibold text-emerald-500">Google Business Guide</Link>
                 <Link href="/cipc-registration-guide" className="hover:text-emerald-400 transition-colors font-semibold text-indigo-400">CIPC & SARS Guide</Link>
+                <Link href="/how-money-works" className="hover:text-amber-300 transition-colors font-extrabold text-amber-400 col-span-2 flex items-center gap-1">
+                  💡 How Money Works Guide
+                </Link>
                <button onClick={onShowLegal} className="text-left hover:text-emerald-400 transition-colors">Privacy Policy</button>
                <button onClick={onShowLegal} className="text-left hover:text-emerald-400 transition-colors col-span-2">Disclaimer & POPIA</button>
                <Link href="/support" className="text-left hover:text-emerald-400 transition-colors font-bold text-emerald-400 col-span-2">Support / Help</Link>
