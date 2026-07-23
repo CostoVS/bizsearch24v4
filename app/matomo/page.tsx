@@ -84,21 +84,26 @@ export default function MatomoDashboard() {
         console.error("Failed to load live server analytics:", err);
       }
 
-      const savedProps = localStorage.getItem("bs24_matomo_props");
-      if (savedProps) {
-        try {
-          const parsed = JSON.parse(savedProps);
-          if (Array.isArray(parsed)) {
-            const filtered = parsed.filter(p => p && typeof p === 'object' && typeof p.domain === 'string');
-            setProperties(filtered);
-          } else {
-            setProperties([]);
+      // Fetch persistent properties from server
+      try {
+        const propsRes = await fetch("/api/matomo/properties");
+        if (propsRes.ok) {
+          const propsJson = await propsRes.json();
+          if (propsJson && propsJson.success && Array.isArray(propsJson.properties)) {
+            setProperties(propsJson.properties);
+            localStorage.setItem("bs24_matomo_props", JSON.stringify(propsJson.properties));
           }
-        } catch(e) {
-          setProperties([]);
         }
-      } else {
-        setProperties([]);
+      } catch (err) {
+        const savedProps = localStorage.getItem("bs24_matomo_props");
+        if (savedProps) {
+          try {
+            const parsed = JSON.parse(savedProps);
+            if (Array.isArray(parsed)) {
+              setProperties(parsed.filter(p => p && typeof p === 'object' && typeof p.domain === 'string'));
+            }
+          } catch(e) {}
+        }
       }
     }
   };
@@ -137,24 +142,45 @@ export default function MatomoDashboard() {
     }, 0);
   }, [metricsTimeframe, activeProperty, activeTab]);
 
-  const addProperty = () => {
+  const addProperty = async () => {
     if(!newDomain.trim() || !newDomain.includes(".")) return;
     const clean = newDomain.trim().toLowerCase().replace(/^https?:\/\//, "");
     if(properties.find(p => p && p.domain === clean)) return;
     
-    const next = [...properties, { id: "prop_" + Date.now(), domain: clean, added: new Date().toISOString() }];
+    const newProp = { id: "prop_" + Date.now(), domain: clean, added: new Date().toISOString() };
+    const next = [...properties, newProp];
     setProperties(next);
     localStorage.setItem("bs24_matomo_props", JSON.stringify(next));
     setNewDomain("");
+
+    try {
+      await fetch("/api/matomo/properties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newProp)
+      });
+      refreshData();
+    } catch (e) {
+      console.error("Failed to sync new property to server:", e);
+    }
   };
 
-  const removeProperty = (id: string) => {
+  const removeProperty = async (id: string) => {
     if (confirm("Are you sure you want to stop tracking this website? Collected event logs will still remain in historical records, but embed tags cannot link here anymore.")) {
       const next = properties.filter(p => p.id !== id);
       setProperties(next);
       localStorage.setItem("bs24_matomo_props", JSON.stringify(next));
       if (activeProperty === id) {
         setActiveProperty("internal");
+      }
+
+      try {
+        await fetch(`/api/matomo/properties?id=${encodeURIComponent(id)}`, {
+          method: "DELETE"
+        });
+        refreshData();
+      } catch (e) {
+        console.error("Failed to delete property on server:", e);
       }
     }
   };

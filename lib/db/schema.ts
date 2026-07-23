@@ -42,6 +42,35 @@ export const storage = pgTable('storage', {
   data: text('data').notNull(), // Using text to store JSON string (or jsonb if available)
 });
 
+export const matomoEvents = pgTable('matomo_events', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  type: varchar('type', { length: 100 }).notNull(),
+  path: text('path'),
+  title: text('title'),
+  referrer: text('referrer'),
+  query: text('query'),
+  adId: text('ad_id'),
+  targetUrl: text('target_url'),
+  action: text('action'),
+  ip: varchar('ip', { length: 100 }),
+  city: varchar('city', { length: 100 }),
+  region: varchar('region', { length: 100 }),
+  country: varchar('country', { length: 100 }),
+  browser: varchar('browser', { length: 100 }),
+  device: varchar('device', { length: 100 }),
+  propertyId: varchar('property_id', { length: 255 }).default('internal'),
+  timestamp: text('timestamp'),
+  rawJson: text('raw_json'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const matomoProperties = pgTable('matomo_properties', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  domain: varchar('domain', { length: 255 }).notNull().unique(),
+  added: varchar('added', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 export const adsRelations = relations(ads, ({ one }) => ({
   user: one(users, {
     fields: [ads.userId],
