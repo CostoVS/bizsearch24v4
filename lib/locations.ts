@@ -30998,6 +30998,24 @@ export const NORTHERN_CAPE_SUBURBS: Record<string, SuburbInfo[]> = {
   ]
 };
 
+export const ALL_SUBURB_MAPS = [
+  KZN_SUBURBS,
+  GAUTENG_SUBURBS,
+  WESTERN_CAPE_SUBURBS,
+  EASTERN_CAPE_SUBURBS,
+  FREE_STATE_SUBURBS,
+  LIMPOPO_SUBURBS,
+  MPUMALANGA_SUBURBS,
+  NORTH_WEST_SUBURBS,
+  NORTHERN_CAPE_SUBURBS
+];
+
+export const TOTAL_SUBURBS_COUNT = ALL_SUBURB_MAPS.reduce((total, subMap) => {
+  return total + Object.values(subMap).reduce((subTotal, subList) => subTotal + subList.length, 0);
+}, 0);
+
+export const TOTAL_MAJOR_TOWNS_COUNT = SA_PROVINCES.filter(p => p.slug !== 'national').reduce((total, p) => total + p.towns.length, 0);
+
 export function getProvinceSuburbs(provinceSlug: string): Record<string, SuburbInfo[]> | null {
   switch (provinceSlug?.toLowerCase().trim()) {
     case 'kwazulu-natal':

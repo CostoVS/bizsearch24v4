@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import Image from "next/image";
 import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds } from "@/lib/data";
+import { TOTAL_SUBURBS_COUNT } from "@/lib/locations";
 import { Search, MapPin, BadgeCheck, Star, Briefcase, Zap, Sparkles, Edit, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -57,7 +58,7 @@ export default function HomePage() {
   });
 
   // Precomputed static count of all suburbs altogether across all 9 provinces
-  const totalSuburbsAltogether = 6929;
+  const totalSuburbsAltogether = TOTAL_SUBURBS_COUNT;
 
   return (
     <div className="flex flex-col w-full bg-slate-50">

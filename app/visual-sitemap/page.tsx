@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PROVINCES, CATEGORIES } from "@/lib/data";
-import { getPostalCodeForTown, KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS } from "@/lib/locations";
+import { getPostalCodeForTown, KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS, TOTAL_SUBURBS_COUNT, TOTAL_MAJOR_TOWNS_COUNT } from "@/lib/locations";
 import { MapPin, Briefcase } from "lucide-react";
 import fs from "fs";
 import path from "path";
@@ -84,23 +84,9 @@ export default async function SitemapPage() {
   // Load custom slugs on server-side using caching
   const customSlugs = await getCustomSlugsCached();
 
-  // Calculate total suburbs altogether across all 9 provinces
-  const allSubMaps = [
-    KZN_SUBURBS,
-    GAUTENG_SUBURBS,
-    WESTERN_CAPE_SUBURBS,
-    EASTERN_CAPE_SUBURBS,
-    FREE_STATE_SUBURBS,
-    LIMPOPO_SUBURBS,
-    MPUMALANGA_SUBURBS,
-    NORTH_WEST_SUBURBS,
-    NORTHERN_CAPE_SUBURBS
-  ];
-  const totalSuburbsAltogether = allSubMaps.reduce((total, subMap) => {
-    return total + Object.values(subMap).reduce((subTotal, subList) => subTotal + subList.length, 0);
-  }, 0);
-
-  const totalMajorTowns = PROVINCES.filter(p => p.slug !== 'national').reduce((total, p) => total + p.towns.length, 0);
+  // Total suburbs and major towns altogether across all 9 provinces
+  const totalSuburbsAltogether = TOTAL_SUBURBS_COUNT;
+  const totalMajorTowns = TOTAL_MAJOR_TOWNS_COUNT;
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">

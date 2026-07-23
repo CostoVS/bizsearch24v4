@@ -15,6 +15,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/terms',
     '/qa',
     '/ai-chat',
+    '/visual-sitemap',
+    '/sitemap',
+    '/google-business-guide',
+    '/how-money-works',
+    '/claim-business',
+    '/create-ad',
   ];
 
   const provinceRoutes = SA_PROVINCES.map((p) => `/${p.slug}`);
