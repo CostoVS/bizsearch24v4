@@ -35,7 +35,7 @@ export default function SupportPage() {
     {
       id: "welcome",
       sender: "bot",
-      text: "Welcome to SearchBiz Support. I am your AI assistant. I can guide you through our plans, direct messaging, account safety, or local business listings. If I cannot solve your issue, you can instantly escalate and send a direct chat message to our administrator!",
+      text: "Welcome to SearchBiz Support. I am your AI assistant. I can guide you through our plans, direct messaging, account safety, or local business listings. If I cannot solve your issue, you can instantly escalate and send a SearchBiz Chat message to our administrator!",
       timestamp: new Date()
     }
   ]);
@@ -104,7 +104,7 @@ export default function SupportPage() {
       const botMsg: Message = {
         id: `msg-${Date.now()}-bot`,
         sender: "bot",
-        text: "I am having trouble communicating with my AI host at the moment. Please feel free to use the button below to escalate this inquiry and send a direct chat message to our admin!",
+        text: "I am having trouble communicating with my AI host at the moment. Please feel free to use the button below to escalate this inquiry and send a SearchBiz Chat message to our admin!",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, botMsg]);
@@ -206,7 +206,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                 SearchBiz Support & Help Desk
               </h1>
               <p className="text-slate-300 text-sm sm:text-base max-w-2xl leading-relaxed">
-                Need help with listings, pricing plans, or system security? Talk to our AI assistant or instantly dispatch an encrypted message straight to our direct chat inbox.
+                Need help with listings, pricing plans, or system security? Talk to our AI assistant or instantly dispatch an encrypted message straight to our SearchBiz Chat inbox.
               </p>
             </div>
           </div>
@@ -305,7 +305,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                 </div>
 
                 <p className="text-slate-600 text-xs leading-relaxed">
-                  Is our AI system unable to fully solve your inquiry? You are welcome to submit a direct message. This escalates into a direct chat context directly in the SearchBiz admin dashboard.
+                  Is our AI system unable to fully solve your inquiry? You are welcome to submit a direct message. This escalates into a SearchBiz Chat context directly in the SearchBiz admin dashboard.
                 </p>
 
                 {/* Direct Action triggers depending on Auth state */}
@@ -317,7 +317,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                     }}
                     className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-4 rounded-2xl text-xs uppercase tracking-wider transition shadow-sm"
                   >
-                    Escalate to Direct Chat <ArrowRight className="w-4 h-4" />
+                    Escalate to SearchBiz Chat <ArrowRight className="w-4 h-4" />
                   </button>
                 ) : (
                   <div className="border-t border-slate-100 pt-4">

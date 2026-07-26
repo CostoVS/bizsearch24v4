@@ -517,7 +517,7 @@ export default function PremiumPartnersPage() {
               Aura Connected Circle
             </h1>
             <p className="text-slate-500 text-sm leading-relaxed max-w-md mx-auto font-medium">
-              You are trying to access the SearchBiz.co.za Verified Premium Partner Directory. Access to our elite circle, direct chat pipelines, and follower feeds is strictly restricted to authenticated chamber members.
+              You are trying to access the SearchBiz.co.za Verified Premium Partner Directory. Access to our elite circle, SearchBiz Chat pipelines, and follower feeds is strictly restricted to authenticated chamber members.
             </p>
           </div>
 
@@ -600,7 +600,7 @@ export default function PremiumPartnersPage() {
               Elite Chamber of Commerce
             </h1>
             <p className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed font-light">
-              Welcome to the inner circle. Meet verified premium participants, view public sars business checkmarks, connect via live direct chat pipelines, and follow deliverables for instant community news updates.
+              Welcome to the inner circle. Meet verified premium participants, view public sars business checkmarks, connect via live SearchBiz Chat pipelines, and follow deliverables for instant community news updates.
             </p>
 
             {/* Navigation tabs inside the header */}
@@ -811,7 +811,7 @@ export default function PremiumPartnersPage() {
                               }}
                               className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 focus:ring-2 focus:ring-slate-950"
                             >
-                              <MessageSquare className="w-3.5 h-3.5" /> Direct Chat
+                              <MessageSquare className="w-3.5 h-3.5" /> SearchBiz Chat
                             </button>
                             
                             <button
@@ -968,7 +968,7 @@ export default function PremiumPartnersPage() {
 
       </div>
 
-      {/* A. DIRECT CHAT POPUP DRAWER MODAL */}
+      {/* A. SEARCHBIZ CHAT POPUP DRAWER MODAL */}
       {chatPartner && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 select-text">
           <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setChatPartner(null)} />
@@ -1005,7 +1005,7 @@ export default function PremiumPartnersPage() {
                   <Star className="w-4 h-4 text-amber-500 fill-amber-500 animate-spin" /> Security Safeguards active
                 </p>
                 <p className="text-[11px] text-zinc-550 leading-relaxed pt-1">
-                  Your chat inquiry will be delivered instantly and permanently into this partner&apos;s personal Direct Chat Inbox under their profile section.
+                  Your chat inquiry will be delivered instantly and permanently into this partner&apos;s personal SearchBiz Chat Inbox under their profile section.
                 </p>
               </div>
 

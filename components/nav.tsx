@@ -324,7 +324,7 @@ export function Navbar() {
                   className="px-4 py-4 text-lg font-medium text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-2xl transition-colors flex items-center justify-between"
                 >
                   <div className="flex items-center">
-                    <MessageCircle className="w-5 h-5 mr-3 text-indigo-600" /> Direct Chat
+                    <MessageCircle className="w-5 h-5 mr-3 text-indigo-600" /> SearchBiz Chat
                   </div>
                   {unreadCount > 0 && (
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-xs font-black text-white shadow-lg">

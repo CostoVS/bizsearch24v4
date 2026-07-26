@@ -875,7 +875,7 @@ export default function PublicProfilePage() {
                         }}
                         className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-4 rounded-2xl transition shadow-lg shadow-emerald-700/10 inline-flex items-center justify-center gap-2"
                       >
-                        <MessageSquare className="w-4 h-4" /> Direct Chat
+                        <MessageSquare className="w-4 h-4" /> SearchBiz Chat
                       </button>
                     ) : (
                       <form onSubmit={handleSendDirectMessage} className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
@@ -947,7 +947,7 @@ export default function PublicProfilePage() {
                     <div className="flex items-center clarify justify-between border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2">
                         <MessageSquare className="w-5 h-5 text-emerald-600" />
-                        <h2 className="text-xl font-bold text-slate-900 tracking-tight leading-none">Direct Chat Inbox</h2>
+                        <h2 className="text-xl font-bold text-slate-900 tracking-tight leading-none">SearchBiz Chat Inbox</h2>
                       </div>
                       <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border border-emerald-200">
                         {userMessages.length} Chats

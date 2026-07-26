@@ -73,7 +73,7 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
     }
     
   } catch (err) {
-    console.error("Failed to inject auto direct chat verification message:", err);
+    console.error("Failed to inject auto SearchBiz Chat verification message:", err);
   }
 }
 
@@ -275,7 +275,7 @@ export async function POST(req: Request) {
         console.error("Failed to write to premium applications store:", e);
       }
 
-      // Auto-inject system message in Direct Chat
+      // Auto-inject system message in SearchBiz Chat
       await createVerificationSystemMessage(normalizedEmail, fullName.trim(), plan, companyName.trim(), idNumber.trim());
 
       // Relay submission details securely to business owner email

@@ -1066,7 +1066,7 @@ export default function CreateAdPage() {
                               onChange={(e) => setPreferredContact(e.target.value)}
                               className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition"
                             >
-                              <option value="Direct Message">Direct Message (Platform Chat)</option>
+                              <option value="Direct Message">SearchBiz Chat</option>
                               <option value="Phone Call">Phone Call</option>
                               <option value="WhatsApp">WhatsApp Message</option>
                               <option value="Email">Email Enquiry</option>

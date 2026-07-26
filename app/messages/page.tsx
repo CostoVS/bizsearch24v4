@@ -614,7 +614,7 @@ function DirectChatContent() {
   <div class="cert-container">
     <div class="cert-header">
       <h1 class="cert-title">SearchBiz Mandate Authorization Proof</h1>
-      <p style="margin-top: 4px; opacity: 0.8; font-size: 13px;">Official Direct Transmission Record</p>
+      <p style="margin-top: 4px; opacity: 0.8; font-size: 13px;">Official SearchBiz Chat Transmission Record</p>
     </div>
     <div class="cert-body">
       <h3>Subscriber Info</h3>
@@ -640,7 +640,7 @@ function DirectChatContent() {
 </head>
 <body>
   <div class="box">
-    <h2>SearchBiz Direct Message Transmission</h2>
+    <h2>SearchBiz Chat Transmission</h2>
     <p><strong>From:</strong> ${msg.senderName} (${msg.senderEmail})</p>
     <p><strong>To:</strong> ${msg.recipientEmail}</p>
     <p><strong>Date:</strong> ${new Date(msg.timestamp).toLocaleString()}</p>
@@ -678,7 +678,7 @@ function DirectChatContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium text-sm">
         <RefreshCcw className="w-5 h-5 animate-spin mr-2 text-emerald-600" />
-        Authenticating Direct Chat Session...
+        Authenticating SearchBiz Chat Session...
       </div>
     );
   }
@@ -727,7 +727,7 @@ function DirectChatContent() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-display tracking-tight">
-                Direct Chat
+                SearchBiz Chat
               </h1>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -825,7 +825,7 @@ function DirectChatContent() {
                 <Mail className="w-8 h-8 mx-auto text-slate-300" />
                 <p className="text-xs font-bold text-slate-600">No active chats found</p>
                 <p className="text-[11px] text-slate-400">
-                  Click "+ New Chat" above to send a direct message.
+                  Click "+ New Chat" above to send a SearchBiz Chat message.
                 </p>
               </div>
             ) : (
@@ -923,7 +923,7 @@ function DirectChatContent() {
                 <MessageSquare className="w-10 h-10" />
               </div>
               <h2 className="text-xl font-bold text-slate-800 font-display">
-                SearchBiz Direct Chat
+                SearchBiz Chat
               </h2>
               <p className="text-slate-500 text-xs sm:text-sm max-w-sm mt-2 leading-relaxed">
                 Send and receive private 1-on-1 messages with verified South African businesses, clients, and platform support.
@@ -1173,7 +1173,7 @@ function DirectChatContent() {
                     Start a New Conversation
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Send a direct message to a business or customer
+                    Send a SearchBiz Chat message to a business or customer
                   </p>
                 </div>
               </div>
@@ -1302,7 +1302,7 @@ export default function MessagesPage() {
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium text-sm">
         <RefreshCcw className="w-5 h-5 animate-spin mr-2 text-emerald-600" />
-        Loading Direct Chat Interface...
+        Loading SearchBiz Chat Interface...
       </div>
     }>
       <DirectChatContent />

@@ -33,7 +33,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: 'g2',
     category: 'general',
     question: 'Is using SearchBiz.co.za free for general searchers?',
-    answer: 'Absolutely! Finders and local searchers can look, search, filter by province/city, read AI summaries of news articles, browse portfolios, use the direct chat channel, and contact providers 100% free of charge.'
+    answer: 'Absolutely! Finders and local searchers can look, search, filter by province/city, read AI summaries of news articles, browse portfolios, use the SearchBiz Chat channel, and contact providers 100% free of charge.'
   },
   {
     id: 'g3',

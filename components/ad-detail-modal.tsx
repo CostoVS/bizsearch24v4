@@ -1070,7 +1070,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                       </h4>
                       {ad.preferredContact && ad.isClaimed !== false && (
                         <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          Prefers: {ad.preferredContact === "Direct Message" ? "Direct Chat" : ad.preferredContact}
+                          Prefers: {ad.preferredContact === "Direct Message" ? "SearchBiz Chat" : ad.preferredContact}
                         </span>
                       )}
                     </div>
@@ -1221,7 +1221,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 </div>
                                 
                                 <p className="text-[11px] text-amber-800 leading-tight">
-                                  Please fill out your verified representative contact details and upload the required proof documents. These records go securely and directly to your Admin Direct Chat.
+                                  Please fill out your verified representative contact details and upload the required proof documents. These records go securely and directly to your Admin SearchBiz Chat.
                                 </p>
 
                                 <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100">
@@ -1456,14 +1456,14 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                             <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
                             <h5 className="text-sm font-bold text-slate-900">Documents Submitted Successfully</h5>
                             <p className="text-xs text-slate-600 mt-1 mb-4 leading-relaxed">
-                              Your ownership proof has been submitted securely and dispatched directly to Admin Direct Chat. Our team will verify your business shortly and update your listing badges!
+                              Your ownership proof has been submitted securely and dispatched directly to Admin SearchBiz Chat. Our team will verify your business shortly and update your listing badges!
                             </p>
                             <Link
                               href="/messages"
                               className="inline-flex items-center gap-2 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
                             >
                               <MessageCircle className="w-4 h-4" />
-                              Open Admin Direct Chat
+                              Open Admin SearchBiz Chat
                             </Link>
                           </div>
                         )}
@@ -1478,7 +1478,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                                 className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-200 transition-all border border-indigo-500"
                               >
                                 <MessageCircle className="w-5 h-5" />
-                                Direct Chat
+                                SearchBiz Chat
                               </button>
                             ) : (
                           <motion.div
@@ -1489,7 +1489,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                               <div className="flex items-center gap-2 mb-4 border-b border-indigo-100 pb-3">
                                 <MessageCircle className="w-5 h-5 text-indigo-600" />
                                 <h5 className="text-xs sm:text-sm font-black text-indigo-900 uppercase tracking-wide">
-                                  Direct Chat
+                                  SearchBiz Chat
                                 </h5>
                               </div>
 
@@ -1502,7 +1502,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                                 <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto" />
                                 <div className="space-y-1">
                                   <p className="text-sm font-bold text-slate-900">
-                                    Direct Chat Dispatched!
+                                    SearchBiz Chat Dispatched!
                                   </p>
                                   <p className="text-xs text-slate-500">
                                     Your message has been securely sent to the business owner.
@@ -1630,7 +1630,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                                   >
                                     {submitting
                                       ? "Sending..."
-                                      : "Send Direct Chat"}
+                                      : "Send SearchBiz Chat"}
                                     <MessageCircle className="w-4 h-4" />
                                   </button>
                                 </div>

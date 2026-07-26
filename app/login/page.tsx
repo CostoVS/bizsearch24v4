@@ -881,7 +881,7 @@ export default function LoginPage() {
                             {/* Info Box */}
                             <div className="pt-2">
                               <div className="text-[10px] text-slate-600 leading-normal bg-slate-100 p-3 rounded-xl border border-slate-200">
-                                <strong>Admin Communication & Payment Setup:</strong> Upon submitting your application, you will instantly get a direct chat thread with the SearchBiz Administrator. Your account is held as PENDING verification until payment is processed and business legitimacy documents are verified.
+                                <strong>Admin Communication & Payment Setup:</strong> Upon submitting your application, you will instantly get a SearchBiz Chat thread with the SearchBiz Administrator. Your account is held as PENDING verification until payment is processed and business legitimacy documents are verified.
                               </div>
                             </div>
                           </div>

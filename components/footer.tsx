@@ -108,7 +108,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
                <Link href="/posts" className="hover:text-emerald-400 transition-colors">Show-Off</Link>
 
                <Link href={user ? "/messages" : "/login"} className="hover:text-emerald-400 transition-colors font-semibold text-indigo-400 flex items-center gap-2">
-                 Direct Chat
+                 SearchBiz Chat
                  {unreadCount > 0 && (
                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white shadow-sm animate-pulse">
                      {unreadCount}
