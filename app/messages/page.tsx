@@ -1,10 +1,35 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
-import { Mail, ArrowLeft, Trash2, ShieldAlert, Download, CheckCircle, FileText, Eye } from "lucide-react";
+import {
+  Mail,
+  ArrowLeft,
+  Trash2,
+  ShieldAlert,
+  Download,
+  CheckCircle,
+  FileText,
+  Eye,
+  Send,
+  Search,
+  Plus,
+  Phone,
+  User,
+  Clock,
+  Check,
+  CheckCheck,
+  X,
+  Building,
+  MessageSquare,
+  Sparkles,
+  RefreshCcw,
+  MoreVertical,
+  ExternalLink
+} from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getStoredAds } from "@/lib/data";
 
 interface ParsedUpgradeRequest {
   isUpgradeRequest: boolean;
@@ -60,7 +85,6 @@ function parseUpgradeRequest(content: string): ParsedUpgradeRequest {
       return;
     }
     
-    // Parse normal fields like "Full Name: value"
     const colonIndex = trimmed.indexOf(":");
     if (colonIndex !== -1 && !trimmed.startsWith("*")) {
       const key = trimmed.slice(0, colonIndex).trim();
@@ -69,7 +93,6 @@ function parseUpgradeRequest(content: string): ParsedUpgradeRequest {
         result.fields[key] = val;
       }
     } else if (trimmed.startsWith("*")) {
-      // Consent bullets
       result.consents.push(trimmed.slice(1).trim());
     }
   });
@@ -80,8 +103,8 @@ function parseUpgradeRequest(content: string): ParsedUpgradeRequest {
 interface Message {
   id: string;
   threadId: string;
-  adId: string;
-  adTitle: string;
+  adId?: string;
+  adTitle?: string;
   senderEmail: string;
   senderName: string;
   recipientEmail: string;
@@ -91,12 +114,25 @@ interface Message {
   reportedBy?: string;
   reportReason?: string;
   read?: boolean;
+  senderPhone?: string;
 }
 
-export default function MessagesPage() {
+interface ConversationContact {
+  email: string;
+  displayName: string;
+  companyName?: string;
+  phone?: string;
+  lastMessage: Message;
+  unreadCount: number;
+  adTitle?: string;
+  memberId: string;
+}
+
+function DirectChatContent() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+
   const [messages, setMessages] = useState<Message[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("searchbiz_messages_v1");
@@ -109,49 +145,66 @@ export default function MessagesPage() {
     return [];
   });
 
-  const [replyingToId, setReplyingToId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
+  const [activeContactEmail, setActiveContactEmail] = useState<string | null>(null);
+  const [searchQuery, setSearchSearchQuery] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatEmail, setNewChatEmail] = useState("");
+  const [newChatName, setNewChatName] = useState("");
+  const [newChatMessage, setNewChatMessage] = useState("");
+  const [knownBusinesses, setKnownBusinesses] = useState<{ name: string; email: string; phone?: string; category?: string }[]>([]);
 
-  const formatEmailForDisplay = (email: string) => {
-    if (!email) return "";
-    const lower = email.trim().toLowerCase();
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const myEmail = useMemo(() => {
+    if (!user) return "";
+    const lower = user.email.toLowerCase().trim();
     if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") {
       return "admin";
     }
-    return email;
-  };
+    return lower;
+  }, [user]);
 
-  const downloadSingleMessage = (msg: Message) => {
-    const cleanEmail = (em: string) => {
-      const lower = em.toLowerCase().trim();
-      return (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") ? "admin" : em;
-    };
-    const cleanName = (name: string, email: string) => {
-      const lower = email.toLowerCase().trim();
-      if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin" || name.toLowerCase().includes("nicholaus") || name.toLowerCase().includes("nicholas")) {
-        return "SearchBiz Admin";
+  const isAdmin = user?.role === "ADMIN";
+
+  // Load known businesses for starting a new chat
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const ads = getStoredAds();
+      const bizMap = new Map<string, { name: string; email: string; phone?: string; category?: string }>();
+      
+      // Always include Admin Support
+      bizMap.set("admin", { name: "SearchBiz Support & Admin", email: "admin@searchbiz.co.za", phone: "+27 800 000 000" });
+
+      ads.forEach(ad => {
+        if (ad.contactEmail) {
+          const cleanEmail = ad.contactEmail.toLowerCase().trim();
+          if (cleanEmail !== myEmail && !bizMap.has(cleanEmail)) {
+            bizMap.set(cleanEmail, {
+              name: ad.businessName || ad.title || cleanEmail.split("@")[0],
+              email: cleanEmail,
+              phone: ad.contactPhone || ad.whatsappNumber || "",
+              category: ad.category
+            });
+          }
+        }
+      });
+      setKnownBusinesses(Array.from(bizMap.values()));
+    }
+  }, [myEmail]);
+
+  // Sync messages from localStorage & window events
+  const loadMessagesFromStorage = () => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("searchbiz_messages_v1");
+      if (stored) {
+        try {
+          const parsed: Message[] = JSON.parse(stored);
+          setMessages(parsed);
+        } catch (e) {}
       }
-      return name;
-    };
-    const content = `Sender: ${cleanName(msg.senderName, msg.senderEmail)} (${cleanEmail(msg.senderEmail)})
-Recipient: ${cleanEmail(msg.recipientEmail)}
-Date: ${msg.timestamp}
-Subject/Ad: ${msg.adTitle || "General"}
-
---------------------------------------------------
-MESSAGE CONTENT:
-${msg.content}
---------------------------------------------------
-`;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `Message_${msg.id}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    }
   };
 
   useEffect(() => {
@@ -161,143 +214,41 @@ ${msg.content}
   }, [user, isLoading, router]);
 
   useEffect(() => {
-    const handleSync = () => {
-      const stored = localStorage.getItem("searchbiz_messages_v1");
-      if (stored) {
-        try {
-          setMessages(JSON.parse(stored));
-        } catch (e) {}
-      }
-    };
+    loadMessagesFromStorage();
+
+    const handleSync = () => loadMessagesFromStorage();
     window.addEventListener("searchbiz_messages_updated", handleSync);
     window.addEventListener("storage", handleSync);
+
+    const interval = setInterval(loadMessagesFromStorage, 3500);
+
     return () => {
       window.removeEventListener("searchbiz_messages_updated", handleSync);
       window.removeEventListener("storage", handleSync);
+      clearInterval(interval);
     };
   }, []);
 
-  // Synchronize with storage updates on focus/render if needed, but otherwise pure computation is perfect
-  const filteredMessages = messages.filter(m => {
-    if (!user) return false;
-    if (user.role === "ADMIN") return true;
-    return m.recipientEmail.toLowerCase() === user.email.toLowerCase() || m.senderEmail.toLowerCase() === user.email.toLowerCase();
-  }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  const handleDelete = (id: string, adTitle?: string) => {
-    setDeleteId(id);
-  };
-
-  const executeDelete = async (id: string) => {
-    // 1. Add to local deleted tracking set.
-    const deletedStr = localStorage.getItem("searchbiz_deleted_messages_v1");
-    let localDeleted: string[] = [];
-    if (deletedStr) {
-      try {
-        localDeleted = JSON.parse(deletedStr);
-        if (!Array.isArray(localDeleted)) localDeleted = [];
-      } catch (e) {}
+  // Check URL query param for target contact email (e.g. /messages?to=someone@example.com)
+  useEffect(() => {
+    const toParam = searchParams.get("to");
+    if (toParam) {
+      const cleanTo = toParam.toLowerCase().trim();
+      setActiveContactEmail(cleanTo);
     }
-    if (!localDeleted.includes(id)) {
-      localDeleted.push(id);
+  }, [searchParams]);
+
+  const formatEmailDisplay = (email: string) => {
+    if (!email) return "";
+    const lower = email.trim().toLowerCase();
+    if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") {
+      return "SearchBiz Admin";
     }
-    localStorage.setItem("searchbiz_deleted_messages_v1", JSON.stringify(localDeleted));
-
-    // 2. Filter out from messages
-    const stored = localStorage.getItem("searchbiz_messages_v1");
-    let remainingMsgs: Message[] = [];
-    if (stored) {
-      try {
-        const allMsgs: Message[] = JSON.parse(stored);
-        remainingMsgs = allMsgs.filter(m => m.id !== id);
-      } catch (e) {}
-    }
-    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(remainingMsgs));
-    setMessages(remainingMsgs);
-    
-    // Dispatch local updates to nav bar and storage immediately
-    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
-
-    // 3. Immediately push deletion and messages list update to the server
-    try {
-      await fetch('/api/storage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: remainingMsgs,
-          deletedMessages: localDeleted
-        })
-      });
-      console.log("Deleted message synced with server successfully.");
-    } catch (e) {
-      console.error("Failed to sync deleted message list to server:", e);
-    }
-
-    setDeleteId(null);
-  };
-
-  const handleMarkRead = (id: string) => {
-    const stored = localStorage.getItem("searchbiz_messages_v1");
-    if (stored) {
-      let allMsgs: Message[] = JSON.parse(stored);
-      allMsgs = allMsgs.map(m => m.id === id ? { ...m, read: true } : m);
-      localStorage.setItem("searchbiz_messages_v1", JSON.stringify(allMsgs));
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
-      window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
-    }
-  };
-
-  const handleSendReply = async (msg: Message) => {
-    if (!user || !replyText.trim()) return;
-    
-    const senderEmail = (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" || user.email.toLowerCase() === "admin") ? "admin" : user.email.toLowerCase();
-    const senderName = (user.email.toLowerCase() === "nicholauscostochetty@gmail.com" || user.email.toLowerCase() === "admin") ? "SearchBiz Admin" : (user.fullName || user.email.split('@')[0]);
-
-    let rawRecipient = msg.senderEmail.toLowerCase();
-    if (rawRecipient === "nicholauscostochetty@gmail.com" || rawRecipient === "admin@searchbiz.co.za") {
-      rawRecipient = "admin";
-    }
-
-    const newMsg: Message = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      threadId: msg.threadId || `thread_${Date.now()}`,
-      adId: msg.adId,
-      adTitle: msg.adTitle,
-      senderEmail: senderEmail,
-      senderName: senderName,
-      recipientEmail: rawRecipient,
-      content: replyText.trim(),
-      timestamp: new Date().toLocaleString(),
-      read: false
-    };
-    
-    const storedStr = localStorage.getItem("searchbiz_messages_v1");
-    let existing: Message[] = [];
-    if (storedStr) {
-      try { existing = JSON.parse(storedStr); } catch (e) {}
-    }
-    existing.push(newMsg);
-    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
-    setMessages(existing);
-    
-    try {
-      await fetch('/api/storage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: existing })
-      });
-      console.log("Reply sent securely to server!");
-    } catch (err) {
-      console.error("Immediate reply sync failed:", err);
-    }
-
-    setReplyingToId(null);
-    setReplyText("");
-    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+    return email;
   };
 
   const getDeterministicMemberId = (email: string) => {
-    if (!email) return "";
+    if (!email) return "SB-GUEST";
     const clean = email.trim().toLowerCase();
     if (clean === "nicholauscostochetty@gmail.com" || clean === "admin@searchbiz.co.za" || clean === "admin") {
       return "SB-ADMIN";
@@ -311,29 +262,311 @@ ${msg.content}
     return `SB-${numericStr}`;
   };
 
-  if (isLoading || !user) return <div className="p-20 text-center text-slate-500 text-sm">Authenticating Secure Session...</div>;
+  // Group all messages into distinct conversation contacts
+  const conversationsMap = useMemo(() => {
+    if (!user) return new Map<string, ConversationContact>();
 
-  const downloadMessageProof = (msg: Message) => {
+    const map = new Map<string, ConversationContact>();
+
+    // Sort messages ascending by time
+    const sorted = [...messages].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    sorted.forEach((msg) => {
+      const sender = msg.senderEmail.toLowerCase().trim();
+      const recipient = msg.recipientEmail.toLowerCase().trim();
+
+      let counterpartyEmail = "";
+      if (isAdmin) {
+        // Admin sees each non-admin email as a contact
+        if (sender === "admin" || sender === "nicholauscostochetty@gmail.com" || sender === "admin@searchbiz.co.za") {
+          counterpartyEmail = recipient;
+        } else {
+          counterpartyEmail = sender;
+        }
+      } else {
+        if (sender === myEmail) {
+          counterpartyEmail = recipient;
+        } else if (recipient === myEmail) {
+          counterpartyEmail = sender;
+        } else {
+          // Message not for/from this user
+          return;
+        }
+      }
+
+      if (!counterpartyEmail) return;
+
+      const isUnread = recipient === myEmail && !msg.read;
+
+      const existing = map.get(counterpartyEmail);
+
+      let bestName = msg.senderName;
+      if (sender === myEmail) {
+        bestName = existing ? existing.displayName : counterpartyEmail.split("@")[0];
+      }
+
+      if (counterpartyEmail === "admin" || counterpartyEmail === "nicholauscostochetty@gmail.com" || counterpartyEmail === "admin@searchbiz.co.za") {
+        bestName = "SearchBiz Support & Admin";
+      }
+
+      map.set(counterpartyEmail, {
+        email: counterpartyEmail,
+        displayName: bestName || counterpartyEmail.split("@")[0],
+        companyName: msg.adTitle || existing?.companyName,
+        phone: msg.senderPhone || existing?.phone,
+        lastMessage: msg,
+        unreadCount: (existing?.unreadCount || 0) + (isUnread ? 1 : 0),
+        adTitle: msg.adTitle || existing?.adTitle,
+        memberId: getDeterministicMemberId(counterpartyEmail)
+      });
+    });
+
+    return map;
+  }, [messages, user, myEmail, isAdmin]);
+
+  // Convert map to sorted list by latest message time
+  const conversationList = useMemo(() => {
+    const list = Array.from(conversationsMap.values());
+    list.sort(
+      (a, b) =>
+        new Date(b.lastMessage.timestamp).getTime() -
+        new Date(a.lastMessage.timestamp).getTime()
+    );
+
+    if (!searchQuery.trim()) return list;
+
+    const q = searchQuery.toLowerCase().trim();
+    return list.filter(
+      (c) =>
+        c.displayName.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        (c.companyName && c.companyName.toLowerCase().includes(q)) ||
+        (c.lastMessage.content && c.lastMessage.content.toLowerCase().includes(q))
+    );
+  }, [conversationsMap, searchQuery]);
+
+  // Auto-select first contact if none selected on desktop
+  useEffect(() => {
+    if (!activeContactEmail && conversationList.length > 0 && typeof window !== "undefined" && window.innerWidth >= 768) {
+      setActiveContactEmail(conversationList[0].email);
+    }
+  }, [conversationList, activeContactEmail]);
+
+  // Mark unread messages in current active conversation as read
+  useEffect(() => {
+    if (!activeContactEmail || !user) return;
+
+    let updated = false;
+    const allMsgs = [...messages];
+
+    const nextMsgs = allMsgs.map((m) => {
+      const sender = m.senderEmail.toLowerCase().trim();
+      const recipient = m.recipientEmail.toLowerCase().trim();
+
+      if (
+        sender === activeContactEmail &&
+        recipient === myEmail &&
+        !m.read
+      ) {
+        updated = true;
+        return { ...m, read: true };
+      }
+      return m;
+    });
+
+    if (updated) {
+      setMessages(nextMsgs);
+      localStorage.setItem("searchbiz_messages_v1", JSON.stringify(nextMsgs));
+      window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+    }
+  }, [activeContactEmail, user, myEmail]);
+
+  // Messages in current selected active contact thread
+  const activeThreadMessages = useMemo(() => {
+    if (!activeContactEmail || !user) return [];
+
+    return messages
+      .filter((m) => {
+        const s = m.senderEmail.toLowerCase().trim();
+        const r = m.recipientEmail.toLowerCase().trim();
+
+        if (isAdmin) {
+          return s === activeContactEmail || r === activeContactEmail;
+        }
+
+        return (
+          (s === myEmail && r === activeContactEmail) ||
+          (s === activeContactEmail && r === myEmail)
+        );
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [messages, activeContactEmail, user, myEmail, isAdmin]);
+
+  // Auto scroll to bottom of chat area when messages change
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeThreadMessages, activeContactEmail]);
+
+  // Active contact info
+  const activeContactInfo = useMemo(() => {
+    if (!activeContactEmail) return null;
+    return conversationsMap.get(activeContactEmail) || {
+      email: activeContactEmail,
+      displayName: formatEmailDisplay(activeContactEmail),
+      lastMessage: activeThreadMessages[activeThreadMessages.length - 1],
+      unreadCount: 0,
+      memberId: getDeterministicMemberId(activeContactEmail)
+    };
+  }, [activeContactEmail, conversationsMap, activeThreadMessages]);
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!user || !activeContactEmail || !inputText.trim()) return;
+
+    const senderEmail = myEmail;
+    const senderName =
+      senderEmail === "admin"
+        ? "SearchBiz Support & Admin"
+        : user.fullName || user.email.split("@")[0];
+
+    const lastAdTitle = activeContactInfo?.adTitle || activeThreadMessages[0]?.adTitle || "";
+    const lastAdId = activeThreadMessages[0]?.adId || "";
+
+    const newMsg: Message = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      threadId: activeThreadMessages[0]?.threadId || `thread_${Date.now()}`,
+      adId: lastAdId,
+      adTitle: lastAdTitle,
+      senderEmail: senderEmail,
+      senderName: senderName,
+      recipientEmail: activeContactEmail,
+      content: inputText.trim(),
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    const nextMsgs = [...messages, newMsg];
+    setMessages(nextMsgs);
+    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(nextMsgs));
+    setInputText("");
+
+    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+
+    // Sync to server immediately
+    try {
+      await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMsgs })
+      });
+    } catch (err) {
+      console.error("Failed to sync new message to server:", err);
+    }
+  };
+
+  const handleStartNewChat = async () => {
+    if (!newChatEmail.trim() || !newChatMessage.trim() || !user) return;
+
+    const recipient = newChatEmail.toLowerCase().trim();
+    const senderEmail = myEmail;
+    const senderName =
+      senderEmail === "admin"
+        ? "SearchBiz Support & Admin"
+        : user.fullName || user.email.split("@")[0];
+
+    const newMsg: Message = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      threadId: `thread_${Date.now()}`,
+      senderEmail: senderEmail,
+      senderName: senderName,
+      recipientEmail: recipient,
+      content: newChatMessage.trim(),
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    const nextMsgs = [...messages, newMsg];
+    setMessages(nextMsgs);
+    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(nextMsgs));
+
+    setShowNewChatModal(false);
+    setNewChatEmail("");
+    setNewChatName("");
+    setNewChatMessage("");
+    setActiveContactEmail(recipient);
+
+    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+
+    try {
+      await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMsgs })
+      });
+    } catch (err) {}
+  };
+
+  const executeDeleteMessage = async (id: string) => {
+    const deletedStr = localStorage.getItem("searchbiz_deleted_messages_v1");
+    let localDeleted: string[] = [];
+    if (deletedStr) {
+      try {
+        localDeleted = JSON.parse(deletedStr);
+      } catch (e) {}
+    }
+    if (!localDeleted.includes(id)) {
+      localDeleted.push(id);
+    }
+    localStorage.setItem("searchbiz_deleted_messages_v1", JSON.stringify(localDeleted));
+
+    const remaining = messages.filter((m) => m.id !== id);
+    setMessages(remaining);
+    localStorage.setItem("searchbiz_messages_v1", JSON.stringify(remaining));
+
+    window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+
+    try {
+      await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: remaining,
+          deletedMessages: localDeleted
+        })
+      });
+    } catch (e) {}
+
+    setDeleteMsgId(null);
+  };
+
+  const downloadSingleMessageProof = (msg: Message) => {
     const parsed = parseUpgradeRequest(msg.content);
     let htmlContent = "";
 
     if (parsed.isUpgradeRequest) {
-      // Create a gorgeous certificate / formal consent receipt
       const fieldsHtml = Object.entries(parsed.fields)
-        .map(([key, val]) => `
+        .map(
+          ([key, val]) => `
           <div class="field-row">
             <span class="field-label">${key}</span>
             <span class="field-value">${val}</span>
           </div>
-        `).join("");
+        `
+        )
+        .join("");
 
       const consentsHtml = (parsed.consents || [])
-        .map((c: string) => `
+        .map(
+          (c: string) => `
           <div class="consent-item">
             <span class="check-icon">✓</span>
             <span class="consent-text">${c}</span>
           </div>
-        `).join("");
+        `
+        )
+        .join("");
 
       const docsHtml = Object.entries(parsed.documents)
         .map(([name, url]) => {
@@ -342,692 +575,737 @@ ${msg.content}
             return `
               <div class="doc-card">
                 <div class="doc-title">📄 ${name}</div>
-                <div class="doc-meta">PDF Document Attachment</div>
-                <a href="${url}" download="${name.replace(/\s+/g, '_')}.pdf" class="doc-btn">Download PDF File</a>
+                <div class="doc-meta">PDF Attachment</div>
+                <a href="${url}" download="${name.replace(/\s+/g, "_")}.pdf" class="doc-btn">Download PDF</a>
               </div>
             `;
           } else {
             return `
               <div class="doc-card">
                 <div class="doc-title">🖼️ ${name}</div>
-                <div class="doc-meta">Image Asset Attachment</div>
+                <div class="doc-meta">Image Attachment</div>
                 <img src="${url}" class="doc-preview" alt="${name}" />
-                <a href="${url}" download="${name.replace(/\s+/g, '_')}.png" class="doc-btn">Download Image</a>
+                <a href="${url}" download="${name.replace(/\s+/g, "_")}.png" class="doc-btn">Download Image</a>
               </div>
             `;
           }
-        }).join("");
+        })
+        .join("");
 
       htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Consent Authorization Certificate - ${parsed.fields["Company Name"] || parsed.fields["Full Name"]}</title>
+  <title>Consent Authorization Certificate</title>
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
-      margin: 0;
-      padding: 40px 20px;
-      line-height: 1.5;
-    }
-    .cert-container {
-      max-width: 800px;
-      background: white;
-      margin: 0 auto;
-      border: 2px solid #e2e8f0;
-      border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-      overflow: hidden;
-    }
-    .cert-header {
-      background: #0f172a;
-      color: white;
-      padding: 40px;
-      text-align: center;
-      border-bottom: 4px solid #10b981;
-    }
-    .cert-badge {
-      display: inline-block;
-      background: #10b981;
-      color: white;
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      padding: 6px 16px;
-      border-radius: 100px;
-      margin-bottom: 16px;
-    }
-    .cert-title {
-      font-size: 26px;
-      font-weight: 800;
-      margin: 0 0 8px 0;
-      letter-spacing: -0.5px;
-    }
-    .cert-subtitle {
-      font-size: 14px;
-      color: #94a3b8;
-      margin: 0;
-    }
-    .cert-body {
-      padding: 40px;
-    }
-    .section-title {
-      font-size: 16px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #475569;
-      border-bottom: 2px solid #f1f5f9;
-      padding-bottom: 8px;
-      margin-top: 32px;
-      margin-bottom: 16px;
-    }
-    .section-title:first-child {
-      margin-top: 0;
-    }
-    .field-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .field-row {
-      background: #f8fafc;
-      border: 1px solid #f1f5f9;
-      padding: 12px 16px;
-      border-radius: 8px;
-    }
-    .field-label {
-      display: block;
-      font-size: 11px;
-      font-weight: bold;
-      color: #64748b;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-    .field-value {
-      font-size: 14px;
-      font-weight: 600;
-      color: #0f172a;
-    }
-    .consent-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      background: #f0fdf4;
-      border: 1px solid #dcfce7;
-      padding: 14px 16px;
-      border-radius: 8px;
-      margin-bottom: 10px;
-    }
-    .check-icon {
-      color: #10b981;
-      font-weight: bold;
-      font-size: 16px;
-    }
-    .consent-text {
-      font-size: 13px;
-      font-weight: 600;
-      color: #14532d;
-    }
-    .docs-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .doc-card {
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 16px;
-      background: #f8fafc;
-      text-align: center;
-    }
-    .doc-title {
-      font-weight: 700;
-      font-size: 13px;
-      color: #1e293b;
-    }
-    .doc-meta {
-      font-size: 11px;
-      color: #64748b;
-      margin-top: 4px;
-      margin-bottom: 12px;
-    }
-    .doc-preview {
-      max-width: 100%;
-      max-height: 120px;
-      object-fit: contain;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      background: white;
-      margin-bottom: 12px;
-    }
-    .doc-btn {
-      display: block;
-      background: #0f172a;
-      color: white;
-      text-decoration: none;
-      font-size: 12px;
-      font-weight: bold;
-      padding: 8px 12px;
-      border-radius: 6px;
-      text-align: center;
-      transition: background 0.2s;
-    }
-    .doc-btn:hover {
-      background: #1e293b;
-    }
-    .sig-container {
-      margin-top: 20px;
-      padding: 16px;
-      border: 1px dashed #cbd5e1;
-      background: #f8fafc;
-      border-radius: 12px;
-      text-align: center;
-    }
-    .sig-img {
-      max-height: 80px;
-      background: white;
-      padding: 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-    }
-    .cert-footer {
-      background: #f1f5f9;
-      border-top: 1px solid #e2e8f0;
-      padding: 24px;
-      text-align: center;
-      font-size: 11px;
-      color: #64748b;
-    }
+    body { font-family: sans-serif; background: #f8fafc; color: #1e293b; padding: 40px 20px; }
+    .cert-container { max-width: 750px; background: white; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .cert-header { background: #0f172a; color: white; padding: 30px; text-align: center; border-bottom: 4px solid #10b981; }
+    .cert-title { font-size: 24px; margin: 0; }
+    .cert-body { padding: 30px; }
+    .field-row { background: #f8fafc; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; }
+    .field-label { font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; }
+    .field-value { font-size: 14px; font-weight: bold; color: #0f172a; display: block; }
+    .consent-item { background: #f0fdf4; border: 1px solid #dcfce7; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; color: #166534; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="cert-container">
     <div class="cert-header">
-      <div class="cert-badge">Verified Consent Order</div>
-      <h1 class="cert-title">Debit Order Authorization</h1>
-      <p class="cert-subtitle">SearchBiz South Africa Premium Business Subscription</p>
+      <h1 class="cert-title">SearchBiz Mandate Authorization Proof</h1>
+      <p style="margin-top: 4px; opacity: 0.8; font-size: 13px;">Official Direct Transmission Record</p>
     </div>
     <div class="cert-body">
-      <div class="section-title">Authorized Account & Subscriber Info</div>
-      <div class="field-grid">
-        ${fieldsHtml}
-        <div class="field-row">
-          <span class="field-label">Reference Member ID</span>
-          <span class="field-value" style="color: #4f46e5;">SB-GEN-${Math.abs(msg.senderEmail.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0) % 900000 + 100000)}</span>
-        </div>
-        <div class="field-row">
-          <span class="field-label">Timestamp (UTC)</span>
-          <span class="field-value">${msg.timestamp}</span>
-        </div>
-      </div>
-
-      <div class="section-title">Explicit Debit Mandate Consents</div>
-      <div>
-        ${consentsHtml}
-      </div>
-
-      <div class="section-title">Uploaded Verification Attachments</div>
-      <div class="docs-grid">
-        ${docsHtml}
-      </div>
-
-      <div class="section-title">Authorized Digital Signature Signature</div>
-      <div class="sig-container">
-        <img src="${parsed.signature}" class="sig-img" alt="Authorized Signature" />
-        <p style="font-size: 10px; color: #64748b; margin-top: 8px; font-weight: bold;">Digitally Signed & Stamp Bonded on ${msg.timestamp}</p>
-      </div>
-    </div>
-    <div class="cert-footer">
-      <p>SearchBiz (Pty) Ltd South Africa • Registration Ref No: 2026/05411/07</p>
-      <p>This document constitutes a binding monthly debit debit card authorization (R199.00/month, cancel anytime). Stored safely on secure decentral servers.</p>
+      <h3>Subscriber Info</h3>
+      ${fieldsHtml}
+      <h3>Consents & Authorization</h3>
+      ${consentsHtml}
+      ${docsHtml ? `<h3>Attachments</h3>${docsHtml}` : ""}
     </div>
   </div>
 </body>
-</html>
-      `;
+</html>`;
     } else {
-      // Create a nice standard chat message transmission proof
       htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>SearchBiz Chat Transmission Proof</title>
+  <title>SearchBiz Chat Proof</title>
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
-      padding: 40px 20px;
-    }
-    .container {
-      max-width: 600px;
-      background: white;
-      margin: 0 auto;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 30px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-    }
-    .header {
-      border-bottom: 2px solid #f1f5f9;
-      padding-bottom: 16px;
-      margin-bottom: 20px;
-    }
-    .title {
-      font-size: 20px;
-      font-weight: 800;
-      margin: 0;
-      color: #0f172a;
-    }
-    .meta {
-      font-size: 12px;
-      color: #64748b;
-      margin-top: 4px;
-    }
-    .content-box {
-      background: #f8fafc;
-      border: 1px solid #f1f5f9;
-      border-radius: 8px;
-      padding: 20px;
-      font-size: 14px;
-      color: #334155;
-      white-space: pre-wrap;
-      line-height: 1.6;
-    }
-    .footer {
-      margin-top: 30px;
-      font-size: 11px;
-      color: #94a3b8;
-      text-align: center;
-    }
+    body { font-family: sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }
+    .box { max-width: 600px; background: white; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; margin: 0 auto; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1 class="title">Official SearchBiz Transmission Proof</h1>
-      <div class="meta">Sender: ${msg.senderName} (${msg.senderEmail}) ➝ Recipient: ${msg.recipientEmail}</div>
-      <div class="meta">Date Transmitted: ${msg.timestamp}</div>
-      ${msg.adTitle ? `<div class="meta">Subject Ad: ${msg.adTitle}</div>` : ""}
-    </div>
-    <div class="content-box">${msg.content}</div>
-    <div class="footer">
-      Generated automatically by SearchBiz South Africa Secure Communication Server.
-    </div>
+  <div class="box">
+    <h2>SearchBiz Direct Message Transmission</h2>
+    <p><strong>From:</strong> ${msg.senderName} (${msg.senderEmail})</p>
+    <p><strong>To:</strong> ${msg.recipientEmail}</p>
+    <p><strong>Date:</strong> ${new Date(msg.timestamp).toLocaleString()}</p>
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 16px 0;" />
+    <p style="white-space: pre-wrap;">${msg.content}</p>
   </div>
 </body>
-</html>
-      `;
+</html>`;
     }
 
     const blob = new Blob([htmlContent], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    
-    // File name: Consent_Proof_[Company/FullName]_[Date].html or Transmission_Proof_[Sender]_[Date].html
-    const entityName = (parsed.fields["Company Name"] || parsed.fields["Full Name"] || msg.senderName || "Unknown").replace(/[^a-zA-Z0-9]/g, "_");
-    const docName = parsed.isUpgradeRequest ? `Consent_Proof_${entityName}.html` : `Message_Proof_${entityName}.html`;
-    
-    a.download = docName;
+    a.download = `SearchBiz_Message_Proof_${Date.now()}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const handleExportChat = () => {
-    const dataStr = JSON.stringify(filteredMessages, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
+  const handleExportChatHistory = () => {
+    const dataStr = JSON.stringify(activeThreadMessages, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
     link.href = url;
-    link.download = `searchbiz_chat_history_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `SearchBiz_Chat_${activeContactEmail}_${new Date().toISOString().split("T")[0]}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium text-sm">
+        <RefreshCcw className="w-5 h-5 animate-spin mr-2 text-emerald-600" />
+        Authenticating Direct Chat Session...
+      </div>
+    );
+  }
+
+  // Group active thread messages by Date Header (e.g. "Today", "Yesterday", "26 July 2026")
+  const groupedMessagesByDate = activeThreadMessages.reduce((groups, msg) => {
+    const msgDate = new Date(msg.timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    let dateKey = msgDate.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+
+    if (msgDate.toDateString() === today.toDateString()) {
+      dateKey = "Today";
+    } else if (msgDate.toDateString() === yesterday.toDateString()) {
+      dateKey = "Yesterday";
+    }
+
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
+    }
+    groups[dateKey].push(msg);
+    return groups;
+  }, {} as Record<string, Message[]>);
+
   return (
-    <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 pb-6 border-b border-slate-200 gap-4">
+    <div className="w-full max-w-7xl mx-auto py-6 px-2 sm:px-6">
+      {/* Top Banner & Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-4 border-b border-slate-200 gap-3">
         <div className="flex items-center">
-          <Link href="/dashboard" className="mr-4 p-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition text-slate-500">
+          <Link
+            href="/dashboard"
+            className="mr-3 p-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition text-slate-600"
+            title="Return to Dashboard"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div className="bg-indigo-600 p-3 rounded-xl mr-4 shadow-sm shrink-0">
-            <Mail className="w-6 h-6 text-white" />
+          <div className="bg-emerald-600 p-2.5 rounded-xl mr-3 shadow-sm shrink-0">
+            <MessageSquare className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 font-display tracking-tight">Direct Chat</h1>
-            <p className="text-slate-500 text-sm mt-1">Direct Private Communications with Verified Businesses & Customers</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-display tracking-tight">
+                Direct Chat
+              </h1>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                WhatsApp Style
+              </span>
+            </div>
+            <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+              Private 1-on-1 Messages & Instant Partner Communications
+            </p>
           </div>
         </div>
-        {user?.role === "ADMIN" && (
-          <button 
-            onClick={handleExportChat}
-            className="text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl transition shadow-sm self-start sm:self-center"
+
+        <div className="flex items-center gap-2 self-start sm:self-center">
+          <button
+            onClick={() => setShowNewChatModal(true)}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5"
           >
-            ↓ Export Chat History
+            <Plus className="w-4 h-4" />
+            New Chat
           </button>
-        )}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                const dataStr = JSON.stringify(messages, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `SearchBiz_All_Messages_${Date.now()}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1"
+            >
+              <Download className="w-3.5 h-3.5" />
+              All Export
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-4">
-        {filteredMessages.length === 0 ? (
-          <div className="text-center py-16 bg-slate-50 border border-slate-100 rounded-2xl">
-            <Mail className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-slate-700">No Messages Found</h3>
-            <p className="text-slate-500 text-sm mt-2">Your inbox is currently empty.</p>
-          </div>
-        ) : (
-          filteredMessages.map(msg => {
-            const isReceived = msg.recipientEmail.toLowerCase() === user.email.toLowerCase() || user.role === "ADMIN";
-            return (
-              <div key={msg.id} className={`p-6 rounded-2xl border transition-all ${!msg.read && isReceived ? 'bg-indigo-50/50 border-indigo-200' : 'bg-white border-slate-200'}`}>
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-2 mb-4">
-                  <div className="flex-1 min-w-0 w-full">
-                    <div className="flex flex-wrap items-center gap-1.5 mb-1 pr-1">
-                      <span className="text-[10px] sm:text-xs font-black uppercase text-indigo-600 tracking-wider break-all leading-tight">
-                        {user.role === "ADMIN" ? (
-                          <span className="flex flex-wrap items-center gap-1.5">
-                            <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[8px] font-black shrink-0">ADMIN VIEW</span>
-                            <span className="break-all">
-                              {msg.senderName} <span className="bg-slate-100 text-slate-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded">{getDeterministicMemberId(msg.senderEmail)}</span>
-                              {" ➝ "} 
-                              {formatEmailForDisplay(msg.recipientEmail)} <span className="bg-slate-100 text-slate-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded">{getDeterministicMemberId(msg.recipientEmail)}</span>
-                            </span>
-                          </span>
-                        ) : isReceived && msg.senderEmail.toLowerCase() !== user.email.toLowerCase() ? (
-                          <span>From: {msg.senderName} <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded ml-1">{getDeterministicMemberId(msg.senderEmail)}</span></span>
-                        ) : (
-                          <span>Sent To: {formatEmailForDisplay(msg.recipientEmail)} <span className="bg-slate-100 text-slate-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded ml-1">{getDeterministicMemberId(msg.recipientEmail)}</span></span>
-                        )}
-                      </span>
-                      {user.role === "ADMIN" && <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0 self-start mt-0.5" />}
-                    </div>
-                    {msg.adTitle && (
-                      <div className="flex flex-wrap">
-                        <span className="text-[9px] text-slate-500 bg-slate-100 px-2 py-1 rounded-full font-semibold break-all leading-tight">
-                          Re: {msg.adTitle}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-row sm:flex-col items-center sm:items-end shrink-0 gap-2 sm:gap-0 text-right whitespace-nowrap bg-slate-50/50 sm:bg-transparent px-2 py-1 sm:p-0 rounded-lg">
-                    <div className="text-[9px] sm:text-[10px] font-bold text-slate-400">
-                      {new Date(msg.timestamp).toLocaleDateString()}
-                    </div>
-                    <div className="text-[8px] sm:text-[9px] text-slate-300">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                </div>
-                
-                {(() => {
-                  const parsed = parseUpgradeRequest(msg.content);
-                  if (parsed.isUpgradeRequest) {
-                    return (
-                      <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl mb-4 space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
-                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider flex items-center gap-1.5 self-start">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                            Premium Business Upgrade Proposal
-                          </span>
-                          <button
-                            onClick={() => downloadMessageProof(msg)}
-                            className="text-xs font-black text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Download Consent Proof (HTML)
-                          </button>
-                        </div>
-
-                        {/* Subscriber Form Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {Object.entries(parsed.fields).map(([label, val]) => (
-                            <div key={label} className="bg-white border border-slate-150 p-3 rounded-xl shadow-2xs">
-                              <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
-                              <span className="text-sm font-bold text-slate-800 mt-1 block">{val}</span>
-                            </div>
-                          ))}
-                          <div className="bg-white border border-slate-150 p-3 rounded-xl shadow-2xs">
-                            <span className="block text-[9px] font-black text-indigo-400 uppercase tracking-widest">System Tracking Member ID</span>
-                            <span className="text-sm font-black text-indigo-700 mt-1 block font-mono">{getDeterministicMemberId(msg.senderEmail)}</span>
-                          </div>
-                          <div className="bg-white border border-indigo-100 p-3 rounded-xl shadow-2xs bg-indigo-50/10">
-                            <span className="block text-[9px] font-black text-indigo-400 uppercase tracking-widest">Authorized Mandate Timestamp</span>
-                            <span className="text-xs font-bold text-indigo-800 mt-1 block">{msg.timestamp}</span>
-                          </div>
-                        </div>
-
-                        {/* Consent Checkboxes */}
-                        {parsed.consents.length > 0 && (
-                          <div className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-xl space-y-2.5">
-                            <span className="block text-[10px] font-black text-emerald-800 uppercase tracking-wider mb-2">Debit Authorization & Mandate Consents</span>
-                            {parsed.consents.map((consent, i) => (
-                              <div key={i} className="flex items-start gap-2.5">
-                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <span className="text-xs font-bold text-emerald-900 leading-tight">{consent}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Uploaded Documents Grid */}
-                        {Object.keys(parsed.documents).length > 0 && (
-                          <div className="space-y-3">
-                            <span className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Uploaded Support Files & Proof Attachments</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              {Object.entries(parsed.documents).map(([docName, docUrl]) => {
-                                const isPdf = String(docUrl).startsWith("data:application/pdf");
-                                return (
-                                  <div key={docName} className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col items-center justify-between shadow-2xs gap-3 text-center">
-                                    <div className="flex-1">
-                                      <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mx-auto mb-2 border border-slate-100">
-                                        {isPdf ? <FileText className="w-5 h-5 text-indigo-500" /> : <Eye className="w-5 h-5 text-emerald-500" />}
-                                      </div>
-                                      <span className="block text-xs font-bold text-slate-800 truncate max-w-[180px]" title={docName}>{docName}</span>
-                                      <span className="text-[9px] text-slate-400 mt-0.5 block font-mono">{isPdf ? "PDF Document Attachment" : "Image Asset File"}</span>
-                                    </div>
-                                    <div className="w-full flex items-center gap-2">
-                                      {isPdf ? (
-                                        <a 
-                                          href={docUrl} 
-                                          download={`${docName.replace(/\s+/g, '_')}.pdf`}
-                                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition text-center flex items-center justify-center gap-1"
-                                        >
-                                          <Download className="w-3 h-3" />
-                                          Download PDF
-                                        </a>
-                                      ) : (
-                                        <div className="w-full space-y-2">
-                                          <div className="w-full h-20 relative bg-slate-50 border border-slate-100 rounded overflow-hidden">
-                                            <img src={docUrl} alt={docName} className="w-full h-full object-contain" />
-                                          </div>
-                                          <a 
-                                            href={docUrl} 
-                                            download={`${docName.replace(/\s+/g, '_')}.png`}
-                                            className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold rounded-lg transition text-center flex items-center justify-center gap-1"
-                                          >
-                                            <Download className="w-3 h-3" />
-                                            Download Image
-                                          </a>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Signature Visual Block */}
-                        {parsed.signature && (
-                          <div className="border border-dashed border-slate-300 p-4 rounded-xl bg-white flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div>
-                              <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Subscriber Authorization Signature</span>
-                              <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed font-semibold">I authorize SearchBiz to deduct R199.00/month securely under debit card instruction.</p>
-                            </div>
-                            <div className="bg-slate-50 p-2.5 border border-slate-200 rounded-lg shrink-0">
-                              <img src={parsed.signature} alt="Authorized Signature" className="h-10 object-contain mix-blend-multiply" />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-xl text-slate-700 text-sm whitespace-pre-line mb-4 break-words overflow-hidden relative group">
-                      {msg.content}
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => downloadMessageProof(msg)}
-                          title="Download Transmission Proof as HTML"
-                          className="bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 p-1.5 rounded-lg shadow-sm flex items-center justify-center transition"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Inline reply form when this message is being replied to */}
-                {replyingToId === msg.id && (
-                  <div className="mt-4 p-4 bg-slate-50 border border-slate-250 rounded-xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <label className="block text-xs font-black text-slate-500 uppercase tracking-wider">
-                        Reply to {msg.senderName}
-                      </label>
-                      <span className="text-[10px] text-slate-400 font-mono font-semibold">
-                        Thread: {msg.adTitle || "General"}
-                      </span>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Type your response here..."
-                      className="w-full px-3 py-2 border border-slate-350 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => {
-                          setReplyingToId(null);
-                          setReplyText("");
-                        }}
-                        className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 rounded-md transition"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => handleSendReply(msg)}
-                        disabled={!replyText.trim()}
-                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition"
-                      >
-                        Send Response
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 flex-wrap">
-                  <button 
-                    onClick={() => {
-                      const parsed = parseUpgradeRequest(msg.content);
-                      if (parsed.isUpgradeRequest) {
-                        downloadMessageProof(msg);
-                      } else {
-                        downloadSingleMessage(msg);
-                      }
-                    }}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1 shrink-0"
-                    title="Download message separately"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download
-                  </button>
-
-                  {isReceived && !msg.read && msg.senderEmail.toLowerCase() !== user.email.toLowerCase() && (
-                    <button 
-                      onClick={() => handleMarkRead(msg.id)}
-                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
-                    >
-                      Mark as Read
-                    </button>
-                  )}
-
-                  {msg.senderEmail.toLowerCase() !== user.email.toLowerCase() && (
-                    <button
-                      onClick={() => {
-                        setReplyingToId(msg.id);
-                        setReplyText("");
-                      }}
-                      className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition shrink-0"
-                    >
-                      Reply
-                    </button>
-                  )}
-
-                  <button 
-                    onClick={() => handleDelete(msg.id, msg.adTitle)}
-                    className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+      {/* Main WhatsApp-Style Dual Pane Window */}
+      <div className="w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-250 grid grid-cols-1 md:grid-cols-12 h-[calc(100vh-180px)] min-h-[580px] max-h-[800px]">
+        {/* LEFT SIDEBAR: Contact Conversations List */}
+        <div
+          className={`md:col-span-4 lg:col-span-4 border-r border-slate-200 flex flex-col bg-slate-50/90 h-full ${
+            activeContactEmail ? "hidden md:flex" : "flex"
+          }`}
+        >
+          {/* Sidebar Header */}
+          <div className="p-3.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-emerald-700 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                {(user.fullName || user.email)[0].toUpperCase()}
               </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Custom Delete Confirmation Modal */}
-      {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative bg-white max-w-md w-full rounded-2xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
-            {/* Warning Icon Banner */}
-            <div className="flex items-center gap-4 mb-4">
-              <div className="p-3 bg-red-50 rounded-xl text-red-600">
-                <Trash2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 font-display">Delete Message?</h3>
-                <p className="text-xs text-slate-500">This action cannot be undone.</p>
+              <div className="min-w-0">
+                <span className="block text-xs font-bold text-slate-800 truncate">
+                  {user.fullName || user.email.split("@")[0]}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Active Account
+                </span>
               </div>
             </div>
 
-            <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-              Are you sure you want to permanently delete this message? It will be removed from your list and all secure server sync points.
-            </p>
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              title="Start New Conversation"
+              className="p-2 hover:bg-slate-200 text-slate-600 rounded-full transition"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
 
-            <div className="flex items-center justify-end gap-3 font-semibold">
+          {/* Search Contacts Bar */}
+          <div className="p-2.5 bg-slate-50 border-b border-slate-200 shrink-0">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search or start new chat..."
+                value={searchQuery}
+                onChange={(e) => setSearchSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          {/* Conversations Scrollable List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            {conversationList.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 space-y-2">
+                <Mail className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs font-bold text-slate-600">No active chats found</p>
+                <p className="text-[11px] text-slate-400">
+                  Click "+ New Chat" above to send a direct message.
+                </p>
+              </div>
+            ) : (
+              conversationList.map((contact) => {
+                const isSelected = activeContactEmail === contact.email;
+                const isLastMsgMine =
+                  contact.lastMessage.senderEmail.toLowerCase().trim() === myEmail;
+
+                const msgTimeStr = new Date(contact.lastMessage.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit"
+                });
+
+                return (
+                  <div
+                    key={contact.email}
+                    onClick={() => setActiveContactEmail(contact.email)}
+                    className={`p-3.5 flex items-start gap-3 cursor-pointer transition relative group ${
+                      isSelected
+                        ? "bg-emerald-50/90 border-l-4 border-emerald-600"
+                        : "hover:bg-slate-100/80"
+                    }`}
+                  >
+                    {/* Contact Avatar */}
+                    <div className="relative shrink-0 mt-0.5">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-emerald-600 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                        {contact.displayName[0].toUpperCase()}
+                      </div>
+                      {contact.unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-emerald-600 text-white font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-bounce">
+                          {contact.unreadCount}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Contact Info & Last Snippet */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <span className="text-xs font-bold text-slate-900 truncate">
+                          {contact.displayName}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                          {msgTimeStr}
+                        </span>
+                      </div>
+
+                      {contact.adTitle && (
+                        <div className="text-[10px] text-indigo-600 font-bold truncate mb-0.5 flex items-center gap-1">
+                          <Building className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>Re: {contact.adTitle}</span>
+                        </div>
+                      )}
+
+                      <p className="text-[11px] text-slate-500 truncate flex items-center gap-1 font-medium">
+                        {isLastMsgMine && (
+                          <span className="text-slate-400 shrink-0">
+                            {contact.lastMessage.read ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-blue-500 inline" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-slate-400 inline" />
+                            )}
+                          </span>
+                        )}
+                        <span className="truncate">
+                          {contact.lastMessage.content.replace(/\n/g, " ")}
+                        </span>
+                      </p>
+
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[9px] font-mono font-bold bg-slate-200/70 text-slate-600 px-1.5 py-0.2 rounded">
+                          {contact.memberId}
+                        </span>
+                        <span className="text-[9px] text-slate-400 truncate">
+                          {formatEmailDisplay(contact.email)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT SIDEBAR/PANE: Chat Workspace */}
+        <div
+          className={`md:col-span-8 lg:col-span-8 flex flex-col h-full bg-[#efeae2]/40 relative ${
+            !activeContactEmail ? "hidden md:flex" : "flex"
+          }`}
+        >
+          {!activeContactEmail || !activeContactInfo ? (
+            /* Blank WhatsApp Web Welcome State */
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50/50">
+              <div className="w-20 h-20 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mb-4 shadow-inner">
+                <MessageSquare className="w-10 h-10" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-800 font-display">
+                SearchBiz Direct Chat
+              </h2>
+              <p className="text-slate-500 text-xs sm:text-sm max-w-sm mt-2 leading-relaxed">
+                Send and receive private 1-on-1 messages with verified South African businesses, clients, and platform support.
+              </p>
               <button
-                onClick={() => setDeleteId(null)}
-                className="px-4 py-2.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition"
+                onClick={() => setShowNewChatModal(true)}
+                className="mt-6 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2"
               >
-                Cancel, Keep It
+                <Plus className="w-4 h-4" />
+                Start New Conversation
+              </button>
+            </div>
+          ) : (
+            /* Active Conversation Workspace */
+            <>
+              {/* Active Chat Header */}
+              <div className="p-3.5 bg-slate-100 border-b border-slate-250 flex items-center justify-between shrink-0 shadow-xs z-10">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    onClick={() => setActiveContactEmail(null)}
+                    className="md:hidden p-1.5 text-slate-600 hover:bg-slate-200 rounded-lg transition"
+                    title="Back to contacts list"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
+                    {activeContactInfo.displayName[0].toUpperCase()}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900 truncate">
+                        {activeContactInfo.displayName}
+                      </h3>
+                      <span className="text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded shrink-0">
+                        {activeContactInfo.memberId}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 truncate flex items-center gap-2">
+                      <span>{formatEmailDisplay(activeContactInfo.email)}</span>
+                      {activeContactInfo.phone && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-0.5">
+                            <Phone className="w-3 h-3 text-emerald-600 inline" />
+                            {activeContactInfo.phone}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Top Action Options */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={handleExportChatHistory}
+                    title="Export conversation history"
+                    className="p-2 text-slate-600 hover:bg-slate-200 rounded-xl transition text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Export</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Messages Body */}
+              <div
+                className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#f0f2f5]"
+                style={{
+                  backgroundImage: "radial-gradient(#cbd5e1 0.75px, transparent 0.75px)",
+                  backgroundSize: "16px 16px"
+                }}
+              >
+                {Object.entries(groupedMessagesByDate).map(([dateLabel, msgGroup]) => (
+                  <div key={dateLabel} className="space-y-3">
+                    {/* Date Badge Separator */}
+                    <div className="flex justify-center my-2">
+                      <span className="bg-white/90 backdrop-blur-xs border border-slate-200/80 text-slate-600 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-2xs">
+                        {dateLabel}
+                      </span>
+                    </div>
+
+                    {msgGroup.map((msg) => {
+                      const isMine =
+                        msg.senderEmail.toLowerCase().trim() === myEmail;
+                      const parsed = parseUpgradeRequest(msg.content);
+
+                      const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      });
+
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${
+                            isMine ? "items-end" : "items-start"
+                          } group relative`}
+                        >
+                          <div
+                            className={`max-w-[88%] sm:max-w-[75%] p-3.5 rounded-2xl shadow-xs relative text-xs sm:text-sm ${
+                              isMine
+                                ? "bg-[#dcfce7] text-slate-900 rounded-tr-xs border border-emerald-200/60"
+                                : "bg-white text-slate-900 rounded-tl-xs border border-slate-200/80"
+                            }`}
+                          >
+                            {/* Sender Name if not mine */}
+                            {!isMine && (
+                              <div className="text-[10px] font-black text-emerald-800 mb-1 flex items-center justify-between gap-2">
+                                <span>{msg.senderName}</span>
+                                {isAdmin && (
+                                  <span className="text-[8px] bg-rose-100 text-rose-700 px-1 rounded font-bold">
+                                    {msg.senderEmail}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {msg.adTitle && (
+                              <div className="text-[10px] text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 rounded-lg p-1.5 mb-2 flex items-center gap-1">
+                                <Building className="w-3 h-3 text-indigo-600 shrink-0" />
+                                <span className="truncate">Ad Ref: {msg.adTitle}</span>
+                              </div>
+                            )}
+
+                            {/* Render Message Body */}
+                            {parsed.isUpgradeRequest ? (
+                              <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 text-slate-800">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                  <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">
+                                    ★ Premium Mandate Request
+                                  </span>
+                                  <button
+                                    onClick={() => downloadSingleMessageProof(msg)}
+                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                  >
+                                    <Download className="w-3 h-3" /> Proof HTML
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-1 gap-1.5 text-xs">
+                                  {Object.entries(parsed.fields).map(([k, v]) => (
+                                    <div key={k} className="flex justify-between border-b border-slate-50 py-0.5">
+                                      <span className="font-bold text-slate-500">{k}:</span>
+                                      <span className="font-semibold text-slate-900">{v}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                {parsed.signature && (
+                                  <div className="border border-slate-200 p-2 rounded bg-slate-50">
+                                    <span className="text-[9px] font-bold text-slate-400 block mb-1">Signature:</span>
+                                    <img src={parsed.signature} alt="Signature" className="h-8 object-contain" />
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="whitespace-pre-wrap leading-relaxed break-words">
+                                {msg.content}
+                              </p>
+                            )}
+
+                            {/* Bottom timestamp & read receipts */}
+                            <div className="flex items-center justify-end gap-1.5 mt-1.5 text-[9px] text-slate-400 font-bold">
+                              <span>{timeStr}</span>
+                              {isMine && (
+                                <span>
+                                  {msg.read ? (
+                                    <CheckCheck className="w-3.5 h-3.5 text-blue-600 inline" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5 text-slate-400 inline" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Hover Options Menu */}
+                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-white/90 rounded-lg p-0.5 border border-slate-200 shadow-xs">
+                              <button
+                                onClick={() => downloadSingleMessageProof(msg)}
+                                title="Download message copy"
+                                className="p-1 hover:bg-slate-100 text-slate-600 rounded"
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteMsgId(msg.id)}
+                                title="Delete message"
+                                className="p-1 hover:bg-rose-50 text-rose-500 rounded"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Chat Input Bar */}
+              <form
+                onSubmit={handleSendMessage}
+                className="p-3 bg-white border-t border-slate-200 flex items-center gap-2 shrink-0 z-10"
+              >
+                <textarea
+                  rows={1}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder={`Type a message to ${activeContactInfo.displayName}...`}
+                  className="flex-1 bg-slate-100/90 text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm outline-none focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none max-h-28"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!inputText.trim()}
+                  className="w-10 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white flex items-center justify-center transition shadow-sm shrink-0"
+                  title="Send Message"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* New Chat Modal */}
+      {showNewChatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white max-w-lg w-full rounded-2xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 font-display">
+                    Start a New Conversation
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Send a direct message to a business or customer
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowNewChatModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Option to select from known businesses */}
+              {knownBusinesses.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Select Business / Partner Contact
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setNewChatEmail(e.target.value);
+                        const found = knownBusinesses.find(
+                          (b) => b.email === e.target.value
+                        );
+                        if (found) setNewChatName(found.name);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-emerald-500 focus:bg-white"
+                  >
+                    <option value="">-- Choose from Directory --</option>
+                    {knownBusinesses.map((b) => (
+                      <option key={b.email} value={b.email}>
+                        {b.name} ({b.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Recipient Email / ID
+                </label>
+                <input
+                  type="email"
+                  placeholder="e.g. info@company.co.za or admin"
+                  value={newChatEmail}
+                  onChange={(e) => setNewChatEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-emerald-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Message Content
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Write your message here..."
+                  value={newChatMessage}
+                  onChange={(e) => setNewChatMessage(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-emerald-500 focus:bg-white resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+              <button
+                onClick={() => setShowNewChatModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                Cancel
               </button>
               <button
-                onClick={() => executeDelete(deleteId)}
-                className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm hover:shadow transition flex items-center gap-2"
+                onClick={handleStartNewChat}
+                disabled={!newChatEmail.trim() || !newChatMessage.trim()}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Yes, Delete
+                <Send className="w-4 h-4" />
+                Start Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Single Message Modal */}
+      {deleteMsgId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white max-w-sm w-full rounded-2xl p-6 shadow-2xl border border-slate-100">
+            <div className="flex items-center gap-3 mb-3 text-rose-600">
+              <div className="p-2.5 bg-rose-50 rounded-xl">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 font-display">
+                Delete Message?
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed mb-5">
+              This message will be permanently deleted from this chat thread.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setDeleteMsgId(null)}
+                className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeDeleteMessage(deleteMsgId)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+              >
+                Delete
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export default function MessagesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium text-sm">
+        <RefreshCcw className="w-5 h-5 animate-spin mr-2 text-emerald-600" />
+        Loading Direct Chat Interface...
+      </div>
+    }>
+      <DirectChatContent />
+    </Suspense>
   );
 }
