@@ -284,7 +284,7 @@ Please answer the user's inquiry based on this verified dataset.
       responseText += `Feel free to ask for contact details or search for other services!`;
       return NextResponse.json({ text: responseText });
     }
-    return NextResponse.json({ text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:\n• **Services & Trades:** Search for active plumbers, Cape Town digital agencies, or Durban markets.\n• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).\n• **Verification process:** Learn how to verify your business listing.\nCurrently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Plumbers, Web Design, Food Services"}**.\nPlease refine your search or ask about a specific category!` });
+    return NextResponse.json({ text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:\n• **Services & Trades:** Search for active businesses or local services.\n• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).\n• **Verification process:** Learn how to verify your business listing.\nCurrently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Trades, Services, Local Businesses"}**.\nPlease refine your search or ask about a specific category!` });
 
   } catch (error: any) {
     console.error("AI Chat API General Error:", error);

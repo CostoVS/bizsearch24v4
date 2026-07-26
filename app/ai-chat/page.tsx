@@ -52,10 +52,10 @@ export default function AIChat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/gemini/chat', {
+      const response = await fetch('/api/llama3/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: textToSend })
+        body: JSON.stringify({ message: textToSend })
       });
 
       if (!response.ok) {
@@ -164,7 +164,7 @@ export default function AIChat() {
           >
             <input
               type="text"
-              placeholder="Ask me anything about Apex Plumbers, Cape Town Design, Joburg Contractors..."
+              placeholder="Ask me anything about registered South African businesses, services, or plans..."
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               disabled={isLoading}

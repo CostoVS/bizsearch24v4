@@ -56,182 +56,19 @@ function generateId(prefix: string): string {
   return `${prefix}_${Math.floor(Math.random() * 10000000)}`;
 }
 
-const SEED_PARTNERS: PremiumPartner[] = [
-  {
-    id: "seed_1",
-    email: "admin",
-    role: "ADMIN",
-    plan: "PREMIUM",
-    businessName: "SearchBiz Admin Holdings (Pty) Ltd",
-    logoUrl: "https://picsum.photos/seed/security/200/200",
-    location: "KZN & Sandton, South Africa",
-    profile: {
-      userId: "seed_1",
-      fullName: "SearchBiz",
-      surname: "Admin",
-      address: "15 Sandton Drive, Sandown, Johannesburg, 2196",
-      businessName: "SearchBiz Admin Holdings (Pty) Ltd",
-      cipcNumber: "2024/485912/07",
-      sarsNumber: "9586112349 SA",
-      phoneNumber: "+27 82 445 6132",
-      whatsappNumber: "+27824456132",
-      email: "admin",
-      displayName: "SearchBiz Admin",
-      tiktok: "",
-      instagram: "",
-      facebook: "",
-      x: "",
-      youtube: "",
-      aboutThem: "SearchBiz Security Administrator and Lead Systems Engineer.",
-      aboutBusiness: "Our holding conglomerate specializes in providing B2B directory infrastructure, enterprise application management, and priority listing index audits.",
-      servicesOffered: "Enterprise Cloud Hosting, Search Priority Indexing Architecture, Next.js Development Operations Consultancy, Security Audit Management",
-      avatarUrl: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200&h=200",
-      logoUrl: "https://picsum.photos/seed/security/200/200",
-      isProfilePublic: true,
-      isPersonalInfoPublic: false,
-      isBusinessInfoPublic: true,
-      isSocialLinksPublic: false,
-      isAboutMePublic: true,
-      isServicesPublic: true,
-      hideEmail: false
-    }
-  },
-  {
-    id: "seed_2",
-    email: "sarah.jones@example.co.za",
-    role: "USER",
-    plan: "PREMIUM",
-    businessName: "Sarah Jones - Apex Creative Strategy",
-    logoUrl: "https://picsum.photos/seed/apex/200/200",
-    location: "Braamfontein, Gauteng",
-    profile: {
-      userId: "seed_2",
-      fullName: "Sarah",
-      surname: "Jones",
-      address: "8 Juta Street, Braamfontein, Johannesburg, 2001",
-      businessName: "Sarah Jones Creative Media Agency",
-      cipcNumber: "2019/331045/07",
-      sarsNumber: "9123445890 TAX",
-      phoneNumber: "+27 11 555 9811",
-      whatsappNumber: "+27115559811",
-      email: "sarah.jones@example.co.za",
-      displayName: "Chief Creative Officer",
-      tiktok: "https://tiktok.com/@sarahcreates",
-      instagram: "https://instagram.com/sarahjones_media",
-      facebook: "",
-      x: "",
-      youtube: "",
-      aboutThem: "Award-winning commercial copywriter and editorial graphic artist. Passionate about empowering local South African business sectors through strategic storytelling.",
-      aboutBusiness: "Apex Strategy is a premier design agency providing top-tier copywriting, brand guidelines publishing, visual sitemaps consulting, and highly engaging social media promotional campaigns.",
-      servicesOffered: "Copywriting & Editing, Corporate Visual Guidelines, Print and Web Design Layouts, Community Management Strategy",
-      avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200",
-      logoUrl: "https://picsum.photos/seed/apex/200/200",
-      isProfilePublic: true,
-      isPersonalInfoPublic: true,
-      isBusinessInfoPublic: true,
-      isSocialLinksPublic: true,
-      isAboutMePublic: true,
-      isServicesPublic: true
-    }
-  },
-  {
-    id: "seed_3",
-    email: "vibrant.tech@vibrant.co.za",
-    role: "USER",
-    plan: "PREMIUM",
-    businessName: "Vibrant Tech Pty Ltd",
-    logoUrl: "https://picsum.photos/seed/vibrant/200/200",
-    location: "Cape Town, Western Cape",
-    profile: {
-      userId: "seed_3",
-      fullName: "Naledi",
-      surname: "Dlamini",
-      address: "Waterfront Business Hub, Cape Town, 8001",
-      businessName: "Vibrant Tech Africa Pty Ltd",
-      cipcNumber: "2021/889241/07",
-      sarsNumber: "9673891002 TAXID",
-      phoneNumber: "+27 21 821 0200",
-      whatsappNumber: "",
-      email: "billing@vibrant.co.za",
-      displayName: "Technical Operations Officer",
-      tiktok: "",
-      instagram: "",
-      facebook: "",
-      x: "",
-      youtube: "",
-      aboutThem: "Director of operations centering digital solutions, local e-commerce deployments, and localized SaaS scaling architectures.",
-      aboutBusiness: "Vibrant Tech provides cutting-edge local B2B software solutions, managed servers, online payment gateway integrations, and mobile application strategies.",
-      servicesOffered: "SaaS Systems Development, Cloud Database Orchestration, Secure API Pipeline Integrations, Local Payment Checkouts Setup",
-      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200",
-      logoUrl: "https://picsum.photos/seed/vibrant/200/200",
-      isProfilePublic: true,
-      isPersonalInfoPublic: false,
-      isBusinessInfoPublic: true,
-      isSocialLinksPublic: false,
-      isAboutMePublic: true,
-      isServicesPublic: true
-    }
-  },
-  {
-    id: "seed_4",
-    email: "sandton.logistics@elite.co.za",
-    role: "USER",
-    plan: "PREMIUM",
-    businessName: "Sandton Elite Logistics & Courier",
-    logoUrl: "https://picsum.photos/seed/truck/200/200",
-    location: "Sandton, Gauteng",
-    profile: {
-      userId: "seed_4",
-      fullName: "Michael",
-      surname: "van der Merwe",
-      address: "Grayston Drive Industrial Park, Sandton, 2031",
-      businessName: "Sandton Elite Logistics Group Ltd",
-      cipcNumber: "2018/112567/07",
-      sarsNumber: "9812455610 SARS",
-      phoneNumber: "+27 11 884 1022",
-      whatsappNumber: "+27118841022",
-      email: "operations@sandtonlogistics.co.za",
-      displayName: "Chief Logistics Officer",
-      tiktok: "",
-      instagram: "",
-      facebook: "",
-      x: "",
-      youtube: "",
-      aboutThem: "Logistics specialist managing last-mile deliveries, B2B commercial warehousing, and local freight routes.",
-      aboutBusiness: "Providing top-grade commercial freight distribution, secure document courier packages, temperature-controlled fleet services, and warehousing options across Gauteng and coastal ports.",
-      servicesOffered: "B2B Secure Document Courier, Commercial Freight Auditing, Dedicated Last-Mile Business Warehousing, Temperature Checked Box Shipping",
-      avatarUrl: "https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?auto=format&fit=crop&q=80&w=200&h=200",
-      logoUrl: "https://picsum.photos/seed/truck/200/200",
-      isProfilePublic: true,
-      isPersonalInfoPublic: true,
-      isBusinessInfoPublic: true,
-      isSocialLinksPublic: false,
-      isAboutMePublic: true,
-      isServicesPublic: true
-    }
-  }
-];
+const SEED_PARTNERS: PremiumPartner[] = [];
 
 function getFallbackBusinessName(email: string) {
   if (email.includes("nicholaus")) return "SearchBiz Admin Holdings";
-  if (email.includes("sarah")) return "Apex Design & Print Agency";
-  return "Consolidated Trade Services";
+  return "Verified Business Partner";
 }
 
 function getFallbackLogo(email: string) {
-  if (email.includes("nicholaus")) return "https://picsum.photos/seed/tech/200/200";
-  if (email.includes("sarah")) return "https://picsum.photos/seed/design/200/200";
-  return "https://picsum.photos/seed/build/200/200";
+  return "https://picsum.photos/seed/biz/200/200";
 }
 
 function appendEliteSeedPartners(current: PremiumPartner[]): PremiumPartner[] {
-  const merged = [...current];
-  SEED_PARTNERS.forEach(s => {
-    if (!merged.some(item => item.email.toLowerCase() === s.email.toLowerCase())) {
-      merged.push(s);
-    }
-  });
-  return merged;
+  return current;
 }
 
 export default function PremiumPartnersPage() {

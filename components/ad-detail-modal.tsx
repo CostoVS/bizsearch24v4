@@ -435,8 +435,8 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   const idHash = ad.id
     .split("")
     .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const mockPhone = `+27 (0) 11 ${600 + (idHash % 200)} ${1000 + (idHash % 8900)}`;
-  const mockEmail = `contact@${ad.title.toLowerCase().replace(/[^a-z0-9]/g, "") || "business"}.co.za`;
+  const mockPhone = "";
+  const mockEmail = "";
 
   return (
     <AnimatePresence>
@@ -1669,7 +1669,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 
                       {ad.phone && ad.showCallOption !== false && (
                         <a
-                          href={`tel:${ad.phone || mockPhone}`}
+                          href={`tel:${ad.phone}`}
                           className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
                         >
                           <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
@@ -1680,7 +1680,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                               Phone Support
                             </span>
                             <span className="text-sm font-bold font-mono">
-                              {ad.phone || mockPhone}
+                              {ad.phone}
                             </span>
                           </div>
                         </a>
@@ -1688,7 +1688,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 
                       {!isEmailHidden && ad.email && (
                         <a
-                          href={`mailto:${ad.email || mockEmail}`}
+                          href={`mailto:${ad.email}`}
                           className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
                         >
                           <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
@@ -1699,7 +1699,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                               Email Direct
                             </span>
                             <span className="text-sm font-bold break-all">
-                              {ad.email || mockEmail}
+                              {ad.email}
                             </span>
                           </div>
                         </a>
