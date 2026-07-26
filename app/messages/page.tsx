@@ -160,13 +160,13 @@ function DirectChatContent() {
   const myEmail = useMemo(() => {
     if (!user) return "";
     const lower = user.email.toLowerCase().trim();
-    if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") {
+    if (lower.includes("nicholaus") || lower === "nicholauscostochetty@gmail.com" || lower === "admin") {
       return "admin";
     }
     return lower;
   }, [user]);
 
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = user?.role === "ADMIN" || myEmail === "admin" || user?.email?.toLowerCase().includes("nicholaus");
 
   // Load known businesses for starting a new chat
   useEffect(() => {
@@ -175,7 +175,7 @@ function DirectChatContent() {
       const bizMap = new Map<string, { name: string; email: string; phone?: string; category?: string }>();
       
       // Always include Admin Support
-      bizMap.set("admin", { name: "SearchBiz Support & Admin", email: "admin@searchbiz.co.za", phone: "+27 800 000 000" });
+      bizMap.set("admin", { name: "SearchBiz Support & Admin", email: "admin", phone: "+27 800 000 000" });
 
       ads.forEach(ad => {
         if (ad.contactEmail) {
@@ -241,7 +241,7 @@ function DirectChatContent() {
   const formatEmailDisplay = (email: string) => {
     if (!email) return "";
     const lower = email.trim().toLowerCase();
-    if (lower === "nicholauscostochetty@gmail.com" || lower === "admin@searchbiz.co.za" || lower === "admin") {
+    if (lower === "nicholauscostochetty@gmail.com" || lower === "admin") {
       return "SearchBiz Admin";
     }
     return email;
@@ -250,7 +250,7 @@ function DirectChatContent() {
   const getDeterministicMemberId = (email: string) => {
     if (!email) return "SB-GUEST";
     const clean = email.trim().toLowerCase();
-    if (clean === "nicholauscostochetty@gmail.com" || clean === "admin@searchbiz.co.za" || clean === "admin") {
+    if (clean === "nicholauscostochetty@gmail.com" || clean === "admin") {
       return "SB-ADMIN";
     }
     let hash = 0;
@@ -280,7 +280,7 @@ function DirectChatContent() {
       let counterpartyEmail = "";
       if (isAdmin) {
         // Admin sees each non-admin email as a contact
-        if (sender === "admin" || sender === "nicholauscostochetty@gmail.com" || sender === "admin@searchbiz.co.za") {
+        if (sender === "admin" || sender === "nicholauscostochetty@gmail.com") {
           counterpartyEmail = recipient;
         } else {
           counterpartyEmail = sender;
@@ -307,7 +307,7 @@ function DirectChatContent() {
         bestName = existing ? existing.displayName : counterpartyEmail.split("@")[0];
       }
 
-      if (counterpartyEmail === "admin" || counterpartyEmail === "nicholauscostochetty@gmail.com" || counterpartyEmail === "admin@searchbiz.co.za") {
+      if (counterpartyEmail === "admin" || counterpartyEmail === "nicholauscostochetty@gmail.com") {
         bestName = "SearchBiz Support & Admin";
       }
 
@@ -782,11 +782,11 @@ function DirectChatContent() {
           <div className="p-3.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full bg-emerald-700 text-white font-black text-sm flex items-center justify-center shadow-xs">
-                {(user.fullName || user.email)[0].toUpperCase()}
+                {isAdmin ? "A" : (user.fullName || user.email)[0].toUpperCase()}
               </div>
               <div className="min-w-0">
                 <span className="block text-xs font-bold text-slate-800 truncate">
-                  {user.fullName || user.email.split("@")[0]}
+                  {isAdmin ? "SearchBiz Admin" : (user.fullName || user.email.split("@")[0])}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>

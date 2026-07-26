@@ -295,7 +295,9 @@ export default function UserDashboard() {
             <div className="space-y-3.5 text-sm">
               <div className="pb-3 border-b border-slate-100">
                 <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">Registered Mail</span>
-                <span className="font-semibold text-slate-700 block truncate">{user.email}</span>
+                <span className="font-semibold text-slate-700 block truncate">
+                  {(user.role === "ADMIN" || user.email?.toLowerCase().includes("nicholaus") || user.email?.toLowerCase() === "admin") ? "admin" : user.email}
+                </span>
               </div>
               <div>
                 <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Service Level</span>

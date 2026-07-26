@@ -111,8 +111,8 @@ export function getLocalProfile(userId: string, defaultEmail: string = "", extra
   // Anonymization override for administrative account
   const isTargetAdmin = userId === "seed_1" || 
                         userId === "admin-1" || 
-                        (profile.email && (profile.email.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || profile.email.toLowerCase().trim() === "admin")) || 
-                        (defaultEmail && (defaultEmail.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || defaultEmail.toLowerCase().trim() === "admin"));
+                        (profile.email && (profile.email.toLowerCase().trim().includes("nicholaus") || profile.email.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || profile.email.toLowerCase().trim() === "admin")) || 
+                        (defaultEmail && (defaultEmail.toLowerCase().trim().includes("nicholaus") || defaultEmail.toLowerCase().trim() === "nicholauscostochetty@gmail.com" || defaultEmail.toLowerCase().trim() === "admin"));
 
   if (isTargetAdmin) {
     profile.fullName = "SearchBiz";

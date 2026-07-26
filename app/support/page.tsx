@@ -360,7 +360,7 @@ ${messages.map(m => `[${m.sender === "user" ? "User" : "AI"}]: ${m.text}`).join(
                                 <ShieldCheck className="w-4 h-4 shrink-0 text-indigo-600 mt-0.5" />
                                 <div>
                                   <span className="font-bold">Logged In Session: </span> 
-                                  {user.fullName || user.email} ({user.plan} Tier)
+                                  {(user.role === "ADMIN" || user.email?.toLowerCase().includes("nicholaus") || user.email?.toLowerCase() === "admin") ? "SearchBiz Admin" : (user.fullName || user.email)} ({user.plan} Tier)
                                 </div>
                               </div>
 

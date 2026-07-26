@@ -9,8 +9,7 @@ export async function GET(req: Request) {
     const adminEmail = req.headers.get("X-Admin-Email");
     if (!adminEmail || !(
       adminEmail.toLowerCase() === "nicholauscostochetty@gmail.com" ||
-      adminEmail.toLowerCase() === "admin" ||
-      adminEmail.toLowerCase() === "admin@searchbiz.co.za"
+      adminEmail.toLowerCase() === "admin"
     )) {
       return NextResponse.json({ error: "Unauthorized - Admin access only" }, { status: 403 });
     }

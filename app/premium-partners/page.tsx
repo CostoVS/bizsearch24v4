@@ -59,7 +59,7 @@ function generateId(prefix: string): string {
 const SEED_PARTNERS: PremiumPartner[] = [
   {
     id: "seed_1",
-    email: "nicholauscostochetty@gmail.com",
+    email: "admin",
     role: "ADMIN",
     plan: "PREMIUM",
     businessName: "SearchBiz Admin Holdings (Pty) Ltd",

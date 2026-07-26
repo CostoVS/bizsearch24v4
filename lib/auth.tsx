@@ -54,10 +54,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       console.warn("localStorage is not available:", e);
     }
-    let initialUser = null;
+    let initialUser: User | null = null;
     if (session) {
       try {
         initialUser = JSON.parse(session);
+        if (initialUser) {
+          const isOwnerAdmin = initialUser.role === "ADMIN" || 
+                               initialUser.email?.toLowerCase().includes("nicholaus") || 
+                               initialUser.email?.toLowerCase() === "admin";
+          if (isOwnerAdmin) {
+            initialUser.role = "ADMIN";
+            initialUser.plan = "PREMIUM";
+            initialUser.fullName = "SearchBiz Admin";
+            initialUser.businessName = "SearchBiz Admin Holdings";
+          }
+        }
       } catch (e) {
         console.error(e);
       }
@@ -85,18 +96,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     idNumber?: string,
     memberId?: string
   ) => {
-    const isOwnerAdmin = email.trim().toLowerCase() === "nicholauscostochetty@gmail.com" || email.trim().toLowerCase() === "admin" || email.trim().toLowerCase() === "admin@searchbiz.co.za";
+    const isOwnerAdmin = email.trim().toLowerCase().includes("nicholaus") ||
+                         email.trim().toLowerCase() === "nicholauscostochetty@gmail.com" || 
+                         email.trim().toLowerCase() === "admin" || 
+                         role === "ADMIN";
     const resolvedRole = isOwnerAdmin ? "ADMIN" : role;
     const resolvedPlan = isOwnerAdmin ? "PREMIUM" : plan;
+    const resolvedFullName = isOwnerAdmin ? "SearchBiz Admin" : (fullName || "");
+    const resolvedBizName = isOwnerAdmin ? "SearchBiz Admin Holdings" : (businessName || "");
 
     const loggedInUser: User = {
       id: id || (isOwnerAdmin ? "admin-1" : "user-" + Math.random().toString(36).substring(7)),
       email,
       role: resolvedRole,
       plan: resolvedPlan,
-      fullName,
+      fullName: resolvedFullName,
       address,
-      businessName,
+      businessName: resolvedBizName,
       businessCategory,
       phone,
       idNumber,
@@ -129,7 +145,6 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   const isAdmin = context.user?.role === "ADMIN" || 
                   context.user?.email?.toLowerCase() === "nicholauscostochetty@gmail.com" || 
-                  context.user?.email?.toLowerCase() === "admin" ||
-                  context.user?.email?.toLowerCase() === "admin@searchbiz.co.za";
+                  context.user?.email?.toLowerCase() === "admin";
   return { ...context, isAdmin };
 };
