@@ -16,6 +16,7 @@ import {
   Search,
   Newspaper,
   MessageCircle,
+  ChevronRight,
 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -96,6 +97,12 @@ export function Navbar() {
             {/* Desktop Nav */}
             <div className="hidden lg:flex items-center space-x-2 xl:space-x-3.5 2xl:space-x-4">
               <LanguageSelector />
+              <Link
+                href="/posts"
+                className="flex items-center text-xs xl:text-sm font-bold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+              >
+                Showofs
+              </Link>
               <Link
                 href="/services"
                 className="flex items-center text-xs xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
@@ -199,9 +206,10 @@ export function Navbar() {
               {!isLoading && (
                 <Link
                   href="/create-ad"
-                  className="flex bg-emerald-600 hover:bg-emerald-700 text-white text-xs xl:text-sm font-semibold px-3 py-2 xl:px-4 xl:py-2.5 rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-xs xl:text-sm px-3.5 py-2.5 xl:px-4.5 xl:py-2.5 rounded-xl shadow-md hover:shadow-amber-400/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 shrink-0 whitespace-nowrap border border-amber-200/80 ring-2 ring-amber-400/30"
                 >
-                  Create Ad
+                  <Sparkles className="w-4 h-4 fill-amber-950 text-amber-950" />
+                  <span>Create Ad</span>
                 </Link>
               )}
             </div>
@@ -260,92 +268,161 @@ export function Navbar() {
               <LanguageSelector />
             </div>
 
-            <div className="flex flex-col space-y-2 mt-4">
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/directory"
-                className="px-4 py-4 text-lg font-medium text-slate-800 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-colors"
-              >
-                Explore Directory
-              </Link>
+            <div className="flex flex-col space-y-3 mt-4">
+              {/* Bright Standout Create Ad Button */}
               <Link
                 onClick={() => setMobileMenuOpen(false)}
                 href="/create-ad"
-                className="px-4 py-4 text-lg font-medium text-slate-800 hover:bg-slate-50 rounded-lg transition-colors"
+                className="px-4 py-3.5 text-base font-black text-slate-950 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:from-amber-300 hover:to-yellow-200 rounded-2xl shadow-md transition-all flex items-center justify-between border border-amber-300 ring-2 ring-amber-400/30"
               >
-                Create Ad
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 fill-amber-950 text-amber-950" />
+                  Create Ad
+                </span>
+                <span className="text-[10px] uppercase bg-slate-950 text-amber-300 px-2.5 py-1 rounded-full font-extrabold tracking-wider">
+                  Post Listing
+                </span>
               </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/posts"
-                className="px-4 py-4 text-lg font-medium text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
-              >
-                Show-Off
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/services"
-                className="px-4 py-4 text-lg font-medium text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center"
-              >
-                <Sparkles className="w-5 h-5 mr-3 text-emerald-600" />{" "}
-                SearchBiz.co.za Services
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/news"
-                className="px-4 py-4 text-lg font-medium text-slate-800 hover:bg-slate-50 rounded-lg transition-colors flex items-center"
-              >
-                <Newspaper className="w-5 h-5 mr-3 text-emerald-600" /> News
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/tools"
-                className="px-4 py-4 text-lg font-medium text-slate-800 hover:bg-slate-50 rounded-lg transition-colors flex items-center"
-              >
-                <Sparkles className="w-5 h-5 mr-3 text-indigo-600" /> SearchBiz.co.za Tools
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/premium-partners"
-                className="px-4 py-4 text-lg font-bold text-amber-700 bg-amber-50/40 hover:bg-amber-100/40 rounded-2xl transition-colors flex items-center"
-              >
-                <Sparkles className="w-5 h-5 mr-3 text-amber-500 fill-amber-500" /> Premium Partners
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/llama3-chat"
-                className="px-4 py-4 text-lg font-bold text-purple-700 bg-purple-50/40 hover:bg-purple-100/40 rounded-2xl transition-colors flex items-center"
-              >
-                <Sparkles className="w-5 h-5 mr-3 text-purple-500 fill-purple-500" /> AI Search
-              </Link>
-                <Link
-                  onClick={() => setMobileMenuOpen(false)}
-                  href={user ? "/messages" : "/login"}
-                  className="px-4 py-4 text-lg font-medium text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-2xl transition-colors flex items-center justify-between"
-                >
-                  <div className="flex items-center">
-                    <MessageCircle className="w-5 h-5 mr-3 text-indigo-600" /> SearchBiz Chat
-                  </div>
-                  {unreadCount > 0 && (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-xs font-black text-white shadow-lg">
-                      {unreadCount}
+
+              {/* Main Features */}
+              <div className="pt-2">
+                <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold px-1 mb-2">
+                  Main Directory
+                </div>
+                <div className="space-y-1.5">
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/directory"
+                    className="px-4 py-3 text-base font-semibold text-slate-800 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Search className="w-4 h-4 text-emerald-600" />
+                      Explore Directory
                     </span>
-                  )}
-                </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/visual-sitemap"
-                className="px-4 py-4 text-lg font-medium text-slate-800 hover:bg-slate-50 rounded-lg transition-colors"
-              >
-                Visual Sitemap
-              </Link>
-              <Link
-                onClick={() => setMobileMenuOpen(false)}
-                href="/support"
-                className="px-4 py-4 text-lg font-bold text-emerald-700 hover:bg-emerald-50 rounded-2xl transition-colors flex items-center"
-              >
-                <MessageCircle className="w-5 h-5 mr-3 text-emerald-600" /> Support / Help
-              </Link>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/posts"
+                    className="px-4 py-3 text-base font-bold text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100/70 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      Showofs
+                    </span>
+                    <span className="text-[10px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded-full uppercase">Feed</span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href={user ? "/messages" : "/login"}
+                    className="px-4 py-3 text-base font-semibold text-indigo-900 bg-indigo-50/70 hover:bg-indigo-100/70 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <MessageCircle className="w-4 h-4 text-indigo-600" />
+                      <span>SearchBiz Chat</span>
+                    </div>
+                    {unreadCount > 0 && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white shadow-md">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Link>
+                </div>
+              </div>
+
+              {/* Ecosystem & Services */}
+              <div className="pt-2">
+                <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold px-1 mb-2">
+                  Ecosystem & Services
+                </div>
+                <div className="space-y-1.5">
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/services"
+                    className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      SearchBiz Services
+                    </span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/tools"
+                    className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      SearchBiz Tools
+                    </span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/news"
+                    className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Newspaper className="w-4 h-4 text-emerald-600" />
+                      News & Updates
+                    </span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/premium-partners"
+                    className="px-4 py-3 text-sm font-bold text-amber-800 bg-amber-50/60 hover:bg-amber-100/60 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" />
+                      Premium Partners
+                    </span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/llama3-chat"
+                    className="px-4 py-3 text-sm font-bold text-purple-800 bg-purple-50/60 hover:bg-purple-100/60 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-purple-500 fill-purple-500" />
+                      AI Search Assistant
+                    </span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Support & Sitemap */}
+              <div className="pt-2">
+                <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold px-1 mb-2">
+                  Help & Navigation
+                </div>
+                <div className="space-y-1.5">
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/support"
+                    className="px-4 py-3 text-sm font-bold text-emerald-700 bg-emerald-50/40 hover:bg-emerald-50 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <MessageCircle className="w-4 h-4 text-emerald-600" />
+                      Support / Help Center
+                    </span>
+                  </Link>
+
+                  <Link
+                    onClick={() => setMobileMenuOpen(false)}
+                    href="/visual-sitemap"
+                    className="px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      Visual Sitemap
+                    </span>
+                  </Link>
+                </div>
+              </div>
 
               <div className="h-px bg-slate-100 my-4" />
 

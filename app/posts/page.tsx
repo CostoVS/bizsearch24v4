@@ -365,8 +365,8 @@ export default function PostsFeedPage() {
     <div className="w-full bg-slate-50 min-h-screen py-8 px-4 sm:px-6">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Show-Off Feed</h1>
-          <p className="text-slate-500">Discover recent show-offs, updates, specials, and reviews from South African businesses.</p>
+          <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Showofs Feed</h1>
+          <p className="text-slate-500">Discover recent showofss, updates, specials, and reviews from South African businesses.</p>
         </div>
 
         {/* Post Creator */}
@@ -392,7 +392,7 @@ export default function PostsFeedPage() {
               </div>
               <textarea 
                 className="w-full bg-slate-50 rounded-2xl p-4 text-slate-800 placeholder-slate-400 outline-none border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none text-sm md:text-base mb-3"
-                placeholder="Share a promo, show-off a recent job, business update, or ask a question..."
+                placeholder="Share a promo, showofs a recent job, business update, or ask a question..."
                 rows={3}
                 value={newPostContent}
                 onChange={(e) => setNewPostContent(e.target.value)}
@@ -515,7 +515,7 @@ export default function PostsFeedPage() {
                         </button>
                         <button 
                           onClick={() => {
-                            if (confirm("Are you sure you want to delete this show-off post?")) {
+                            if (confirm("Are you sure you want to delete this showofs post?")) {
                               deletePost(post.id);
                             }
                           }} 
