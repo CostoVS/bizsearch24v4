@@ -731,7 +731,7 @@ function DirectChatContent() {
               </h1>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                WhatsApp Style
+                LIVE MESSAGING
               </span>
             </div>
             <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
@@ -770,7 +770,7 @@ function DirectChatContent() {
         </div>
       </div>
 
-      {/* Main WhatsApp-Style Dual Pane Window */}
+      {/* Main Responsive Dual Pane Window */}
       <div className="w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-250 grid grid-cols-1 md:grid-cols-12 h-[calc(100vh-180px)] min-h-[580px] max-h-[800px]">
         {/* LEFT SIDEBAR: Contact Conversations List */}
         <div
