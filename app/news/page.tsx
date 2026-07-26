@@ -258,17 +258,25 @@ export default function NewsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
             <AnimatePresence mode="popLayout">
               {loading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <div key={`loader-${i}`} className="animate-pulse bg-slate-50 rounded-3xl p-8 h-64 flex flex-col justify-between">
-                    <div className="space-y-4">
-                      <div className="h-4 bg-slate-200 rounded w-1/4" />
-                      <div className="h-8 bg-slate-200 rounded w-full" />
-                      <div className="h-4 bg-slate-200 rounded w-full" />
-                      <div className="h-4 bg-slate-200 rounded w-2/3" />
+                <>
+                  <div className="col-span-full py-8 text-center bg-slate-50/80 rounded-2xl border border-slate-100 mb-2">
+                    <div className="inline-flex items-center justify-center gap-3 text-slate-600 font-bold text-sm">
+                      <RefreshCcw className="w-5 h-5 text-emerald-600 animate-spin" />
+                      <span>Loading, please wait...</span>
                     </div>
-                    <div className="h-4 bg-slate-200 rounded w-1/3" />
                   </div>
-                ))
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={`loader-${i}`} className="animate-pulse bg-slate-50 rounded-3xl p-8 h-64 flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <div className="h-4 bg-slate-200 rounded w-1/4" />
+                        <div className="h-8 bg-slate-200 rounded w-full" />
+                        <div className="h-4 bg-slate-200 rounded w-full" />
+                        <div className="h-4 bg-slate-200 rounded w-2/3" />
+                      </div>
+                      <div className="h-4 bg-slate-200 rounded w-1/3" />
+                    </div>
+                  ))}
+                </>
               ) : news.length > 0 ? (
                 news.map((item, idx) => (
                   <motion.div

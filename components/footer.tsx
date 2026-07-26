@@ -105,7 +105,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
                 <Link href="/llama3-chat" className="hover:text-purple-400 transition-colors font-bold text-purple-400">AI Search</Link>
                <Link href="/create-ad" className="hover:text-emerald-400 transition-colors">Create Ad</Link>
                <Link href="/visual-sitemap" className="hover:text-emerald-400 transition-colors">Visual Sitemap</Link>
-               <Link href="/posts" className="hover:text-emerald-400 transition-colors">Community Posts</Link>
+               <Link href="/posts" className="hover:text-emerald-400 transition-colors">Show-Off</Link>
 
                <Link href={user ? "/messages" : "/login"} className="hover:text-emerald-400 transition-colors font-semibold text-indigo-400 flex items-center gap-2">
                  Direct Chat

@@ -280,7 +280,7 @@ export function Navbar() {
                 href="/posts"
                 className="px-4 py-4 text-lg font-medium text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
               >
-                Community Posts
+                Show-Off
               </Link>
               <Link
                 onClick={() => setMobileMenuOpen(false)}

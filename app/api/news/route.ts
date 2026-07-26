@@ -74,12 +74,31 @@ function bizsearchAISummarizer(title: string, description: string, isInternation
   return optimized.replace(/&nbsp;?/gi, " ").replace(/\s+/g, " ").trim();
 }
 
+// Global in-memory cache for news feed to ensure sub-millisecond response times
+const globalNewsRef = global as any;
+if (!globalNewsRef.newsMemoryCache) {
+  globalNewsRef.newsMemoryCache = new Map<string, { data: any[]; timestamp: number }>();
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const region = searchParams.get("region") || "south-africa";
   const category = searchParams.get("category") || "General";
 
   const isInternational = region === "international";
+  const cacheKey = `${region}_${category.toLowerCase()}`;
+  const now = Date.now();
+
+  // Return cached result if fresh (within 15 minutes)
+  const cached = globalNewsRef.newsMemoryCache.get(cacheKey);
+  if (cached && (now - cached.timestamp < 15 * 60 * 1000)) {
+    return NextResponse.json({ news: cached.data }, {
+      headers: {
+        'Cache-Control': 'public, max-age=900, stale-while-revalidate=1800',
+        'X-News-Cache': 'HIT-MEMORY'
+      }
+    });
+  }
 
   // Formulate a robust live search query based on category and region
   const searchCategory = category === "General" ? "business" : category;
@@ -150,12 +169,18 @@ export async function GET(req: NextRequest) {
   const fallbackNews = isInternational ? fallbackInternational : fallbackSA;
 
   try {
+    // Fast 3.5 second abort signal so RSS requests never hang or time out the route
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
     const res = await fetch(rssUrl, {
-      next: { revalidate: 300 }, // Cache on server-side for 5 minutes
+      signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
       }
     });
+
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       throw new Error(`Failed to fetch RSS. Status: ${res.status}`);
@@ -167,6 +192,7 @@ export async function GET(req: NextRequest) {
     const itemMatches = xmlText.match(/<item>([\s\S]*?)<\/item>/g) || [];
     
     if (itemMatches.length === 0) {
+      globalNewsRef.newsMemoryCache.set(cacheKey, { data: fallbackNews, timestamp: now });
       return NextResponse.json({ news: fallbackNews });
     }
 
@@ -204,10 +230,21 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ news: scrapedArticles });
+    // Save to memory cache
+    globalNewsRef.newsMemoryCache.set(cacheKey, { data: scrapedArticles, timestamp: Date.now() });
 
-  } catch (error) {
-    console.error("News scraper failed, returning fallback:", error);
-    return NextResponse.json({ news: fallbackNews });
+    return NextResponse.json({ news: scrapedArticles }, {
+      headers: {
+        'Cache-Control': 'public, max-age=900, stale-while-revalidate=1800',
+        'X-News-Cache': 'MISS-SCRAPED'
+      }
+    });
+
+  } catch (error: any) {
+    console.warn("News scraper fallback triggered:", error?.message || error);
+    // Return stale cache if available, else fallback
+    const stale = globalNewsRef.newsMemoryCache.get(cacheKey);
+    const resultNews = stale?.data || fallbackNews;
+    return NextResponse.json({ news: resultNews });
   }
 }

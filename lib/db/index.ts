@@ -10,9 +10,9 @@ let lastOfflineCheck = 0;
 
 export const initDb = () => {
   const now = Date.now();
-  // If previously failed, allow retry every 5 seconds instead of permanent lockout
+  // If previously failed, backoff for 30 seconds before retrying DB connection
   if (isDbOffline) {
-    if (now - lastOfflineCheck < 5000) {
+    if (now - lastOfflineCheck < 30000) {
       return null;
     }
     // Reset state to attempt retry
@@ -32,7 +32,7 @@ export const initDb = () => {
 
   pool = new Pool({
     connectionString,
-    connectionTimeoutMillis: 3000,
+    connectionTimeoutMillis: 1000, // 1 sec timeout max for instant non-blocking fallback
   });
 
   pool.on('error', (err) => {

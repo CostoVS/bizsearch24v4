@@ -27,7 +27,7 @@ export async function loadAnalyticsEvents(): Promise<any[]> {
   try {
     initDb();
     if (dbReadyPromise) {
-      await dbReadyPromise;
+      await Promise.race([dbReadyPromise, new Promise(r => setTimeout(r, 600))]).catch(() => {});
     }
     if (db) {
       let dbEvents: any[] = [];
@@ -139,7 +139,7 @@ export async function saveAnalyticsEvents(events: any[]): Promise<void> {
   try {
     initDb();
     if (dbReadyPromise) {
-      await dbReadyPromise;
+      await Promise.race([dbReadyPromise, new Promise(r => setTimeout(r, 600))]).catch(() => {});
     }
     if (db) {
       // 1. Write to storage key 'analytics_events'
@@ -198,7 +198,7 @@ export async function loadMatomoProperties(): Promise<{ id: string; domain: stri
   try {
     initDb();
     if (dbReadyPromise) {
-      await dbReadyPromise;
+      await Promise.race([dbReadyPromise, new Promise(r => setTimeout(r, 600))]).catch(() => {});
     }
     if (db) {
       let dbProps: any[] = [];
