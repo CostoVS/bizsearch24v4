@@ -10,27 +10,32 @@ let lastOfflineCheck = 0;
 
 export const initDb = () => {
   const now = Date.now();
-  // Short backoff (2 seconds) for fast recovery
+  // If DB was flagged offline, backoff for 30 seconds to prevent connection spam and event loop hanging
   if (isDbOffline) {
-    if (now - lastOfflineCheck < 2000) {
+    if (now - lastOfflineCheck < 30000) {
       return null;
     }
-    // Reset state to attempt retry
+    // Reset state to attempt retry after backoff
     isDbOffline = false;
+    if (pool) {
+      pool.end().catch(() => {});
+    }
     pool = null;
     db = null;
   }
-  if (db) return db;
+  if (db && pool) return db;
 
   const connectionString = process.env.DATABASE_URL || "postgresql://sb_admin_secure_usr:Sb9_kL82_vX97_mQ41_zP30_rN@db:5432/searchbiz_db";
 
   pool = new Pool({
     connectionString,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 1000,
+    idleTimeoutMillis: 10000,
+    max: 5,
   });
 
   pool.on('error', (err) => {
-    console.error('Unexpected error on idle SQL pool client:', err);
+    console.error('Unexpected error on idle SQL pool client:', err?.message || err);
     isDbOffline = true;
     lastOfflineCheck = Date.now();
   });

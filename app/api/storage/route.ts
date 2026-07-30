@@ -237,7 +237,7 @@ async function loadAndReconcileData(): Promise<any> {
     } catch (e: any) {
       console.warn("DB read failed. Fallback to local db.json:", e.message);
       globalRef.isDbOffline = true;
-      globalRef.dbOfflineUntil = now + 2000; // fast retry (2s)
+      globalRef.dbOfflineUntil = now + 30000; // 30s backoff
     }
   }
 
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
       } catch (e: any) {
         console.warn("DB read failed on POST. Using local fallback.", e.message);
         globalRef.isDbOffline = true;
-        globalRef.dbOfflineUntil = now + 2000;
+        globalRef.dbOfflineUntil = now + 30000;
       }
     }
 
@@ -372,7 +372,7 @@ export async function POST(req: Request) {
       saveDbData(newData).catch(err => {
         console.warn("Background DB sync failed on POST:", err.message);
         globalRef.isDbOffline = true;
-        globalRef.dbOfflineUntil = Date.now() + 2000;
+        globalRef.dbOfflineUntil = Date.now() + 30000;
       });
     }
 
