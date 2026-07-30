@@ -78,7 +78,7 @@ Please answer the user's inquiry based on this verified dataset.
       // 1a. Query tags endpoint to discover available models and verify connection
       try {
         const tagsController = new AbortController();
-        const tagsTimeout = setTimeout(() => tagsController.abort(), 4000); // 4s fast check
+        const tagsTimeout = setTimeout(() => tagsController.abort(), 1200); // 1.2s fast check
         const tagsResponse = await fetch(`${ollamaHost}/api/tags`, {
           signal: tagsController.signal
         });
@@ -104,9 +104,9 @@ Please answer the user's inquiry based on this verified dataset.
         console.warn("Could not retrieve Ollama tags, defaulting to configuration model name:", err);
       }
 
-      // 1b. Transmit request with a robust 60-second timeout
+      // 1b. Transmit request with a strict 10-second timeout to prevent Cloudflare 524
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s robust timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s fast timeout
 
       const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
         method: "POST",

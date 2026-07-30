@@ -13,7 +13,7 @@ const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 // Global cache object to survive hot reloads and next.js api invocations in the same process
 const globalRef = global as any;
 if (globalRef.storageCache === undefined) {
-  globalRef.storageCache = null;
+  globalRef.storageCache = getLocalDataNoCache();
 }
 if (globalRef.storageCacheTime === undefined) {
   globalRef.storageCacheTime = 0;
@@ -67,7 +67,7 @@ function saveLocalDataNoCache(data: any) {
   }
 }
 
-async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 1000): Promise<T> {
+async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 500): Promise<T> {
   let timeoutId: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -237,7 +237,7 @@ async function loadAndReconcileData(): Promise<any> {
     } catch (e: any) {
       console.warn("DB read failed. Fallback to local db.json:", e.message);
       globalRef.isDbOffline = true;
-      globalRef.dbOfflineUntil = now + 30000; // 30s backoff
+      globalRef.dbOfflineUntil = now + 60000; // 60s backoff
     }
   }
 
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
       } catch (e: any) {
         console.warn("DB read failed on POST. Using local fallback.", e.message);
         globalRef.isDbOffline = true;
-        globalRef.dbOfflineUntil = now + 30000;
+        globalRef.dbOfflineUntil = now + 60000;
       }
     }
 
@@ -372,7 +372,7 @@ export async function POST(req: Request) {
       saveDbData(newData).catch(err => {
         console.warn("Background DB sync failed on POST:", err.message);
         globalRef.isDbOffline = true;
-        globalRef.dbOfflineUntil = Date.now() + 30000;
+        globalRef.dbOfflineUntil = Date.now() + 60000;
       });
     }
 
