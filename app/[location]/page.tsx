@@ -9,7 +9,7 @@ import { VerificationBadge } from "@/components/ui-extras";
 import LocationListings from "@/components/location-listings";
 import fs from "fs";
 import path from "path";
-import { db, initDb } from "@/lib/db";
+import { db, initDb, withDbTimeout, isDbCurrentlyOffline } from "@/lib/db";
 import { storage } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import LocationMap from "@/components/location-map";
@@ -53,11 +53,11 @@ async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
   let ads: any[] = [];
 
   // Check if DB is known to be offline before attempting
-  if (!(globalRef.isDbOffline && (now < globalRef.dbOfflineUntil))) {
+  if (!isDbCurrentlyOffline()) {
     try {
       initDb();
       if (db) {
-        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
+        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
         if (record && record.length > 0) {
           const parsed = JSON.parse(record[0].data);
           if (parsed) {

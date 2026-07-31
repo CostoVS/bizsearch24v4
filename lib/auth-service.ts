@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { db, initDb, dbReadyPromise } from './db';
+import { db, initDb, dbReadyPromise, withDbTimeout } from './db';
 import { users } from './db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -131,9 +131,9 @@ export async function getUsersList(): Promise<ServerUser[]> {
     const dClient = initDb();
     if (dClient) {
       if (dbReadyPromise) {
-        await dbReadyPromise;
+        await withDbTimeout(dbReadyPromise, 400).catch(() => {});
       }
-      const dbUsers = await dClient.select().from(users);
+      const dbUsers = await withDbTimeout(dClient.select().from(users), 600);
       
       const list: ServerUser[] = [];
       if (dbUsers) {
@@ -160,31 +160,10 @@ export async function getUsersList(): Promise<ServerUser[]> {
         });
       }
 
-      // Add any users that exist in the backup but are not yet synced to the database (so we don't delete them!)
+      // Add any users that exist in the backup but are not yet synced to the database
       backupUsers.forEach((backupUser) => {
         if (!list.some((u) => u.email.trim().toLowerCase() === backupUser.email.trim().toLowerCase())) {
           list.push(backupUser);
-          
-          // Try to sync this missing user back to the DB as a background self-healing action
-          dClient.insert(users).values({
-            email: backupUser.email,
-            password: backupUser.password,
-            role: backupUser.role,
-            plan: backupUser.plan,
-            secretKey: backupUser.secretKey || getDeterministicSecretKey(backupUser.email),
-            hasSetup2FA: backupUser.hasSetup2FA || false,
-            phone: backupUser.phone,
-            failedAttempts: backupUser.failedAttempts,
-            isLocked: backupUser.isLocked,
-            fullName: backupUser.fullName,
-            address: backupUser.address,
-            businessName: backupUser.businessName,
-            businessCategory: backupUser.businessCategory,
-          }).then(() => {
-            console.log(`Self-healed: Successfully synced missing backup user ${backupUser.email} back to Postgres.`);
-          }).catch((syncErr) => {
-            console.warn(`Self-healing sync for user ${backupUser.email} failed (likely expected if temporary DB issue):`, syncErr.message);
-          });
         }
       });
       
@@ -193,7 +172,7 @@ export async function getUsersList(): Promise<ServerUser[]> {
       return list;
     }
   } catch (err) {
-    console.warn('Database select failed or offline, falling back to server JSON file:', err);
+    // Database check failed or timed out - silently fall back to local JSON file
   }
 
   return backupUsers;
@@ -223,12 +202,12 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
     const dClient = initDb();
     if (dClient) {
       if (dbReadyPromise) {
-        await dbReadyPromise;
+        await withDbTimeout(dbReadyPromise, 400).catch(() => {});
       }
       // Check if user exists in database
-      const existingDb = await dClient.select().from(users).where(eq(users.email, updatedUser.email));
+      const existingDb = await withDbTimeout(dClient.select().from(users).where(eq(users.email, updatedUser.email)), 600);
       if (existingDb && existingDb.length > 0) {
-        await dClient.update(users).set({
+        await withDbTimeout(dClient.update(users).set({
           password: updatedUser.password,
           role: updatedUser.role,
           plan: updatedUser.plan,
@@ -241,9 +220,9 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
           address: updatedUser.address,
           businessName: updatedUser.businessName,
           businessCategory: updatedUser.businessCategory,
-        }).where(eq(users.email, updatedUser.email));
+        }).where(eq(users.email, updatedUser.email)), 600);
       } else {
-        await dClient.insert(users).values({
+        await withDbTimeout(dClient.insert(users).values({
           email: updatedUser.email,
           password: updatedUser.password,
           role: updatedUser.role,
@@ -257,12 +236,12 @@ export async function saveUser(newUser: ServerUser): Promise<boolean> {
           address: updatedUser.address,
           businessName: updatedUser.businessName,
           businessCategory: updatedUser.businessCategory,
-        });
+        }), 600);
       }
       return true;
     }
   } catch (dbErr) {
-    console.error('Failed to sync saved user on PostgreSQL, file backup is safe:', dbErr);
+    console.warn('Failed to sync saved user on PostgreSQL, file backup is safe:', (dbErr as any).message);
   }
 
   return true;

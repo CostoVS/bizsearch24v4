@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db, initDb, dbReadyPromise } from '@/lib/db';
+import { db, initDb, dbReadyPromise, withDbTimeout, isDbCurrentlyOffline, markDbOffline } from '@/lib/db';
 import { storage } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import fs from 'fs';
@@ -83,22 +83,22 @@ async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 500): 
 }
 
 async function getDbData(): Promise<any> {
-  if (globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil)) {
+  if (isDbCurrentlyOffline()) {
     throw new Error("DB flagged as offline");
   }
   
   initDb();
   if (dbReadyPromise) {
     // fast timeout for db readiness check
-    await runWithTimeout(dbReadyPromise, 1000).catch(() => {});
+    await withDbTimeout(dbReadyPromise, 300).catch(() => {});
   }
   if (!db) {
     throw new Error("DB connection not initialized");
   }
   
-  const record = await runWithTimeout(
+  const record = await withDbTimeout(
     db.select().from(storage).where(eq(storage.key, DB_KEY)).limit(1), 
-    1000
+    500
   );
   
   if (!record || record.length === 0) {
@@ -115,9 +115,9 @@ async function getDbData(): Promise<any> {
       claimRequests: Array.isArray(localData.claimRequests) ? localData.claimRequests : [],
       updatedAt: localData.updatedAt || Date.now()
     };
-    await runWithTimeout(
+    await withDbTimeout(
       db.insert(storage).values({ key: DB_KEY, data: JSON.stringify(initial, null, 2) }), 
-      1000
+      500
     );
     return initial;
   }
@@ -130,21 +130,21 @@ async function getDbData(): Promise<any> {
 }
 
 async function saveDbData(data: any): Promise<void> {
-  if (globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil)) {
+  if (isDbCurrentlyOffline()) {
     throw new Error("DB flagged as offline");
   }
   
   initDb();
   if (dbReadyPromise) {
-    await runWithTimeout(dbReadyPromise, 1000).catch(() => {});
+    await withDbTimeout(dbReadyPromise, 300).catch(() => {});
   }
   if (!db) {
     throw new Error("DB connection not initialized");
   }
   
-  await runWithTimeout(
+  await withDbTimeout(
     db.update(storage).set({ data: JSON.stringify(data, null, 2) }).where(eq(storage.key, DB_KEY)), 
-    1000
+    500
   );
 }
 
@@ -228,16 +228,14 @@ async function loadAndReconcileData(): Promise<any> {
   let dbData = null;
   let finalData = localData;
 
-  const now = Date.now();
-  if (globalRef.isDbOffline && (now < globalRef.dbOfflineUntil)) {
+  if (isDbCurrentlyOffline()) {
     // DB offline, skip connection attempt
   } else {
     try {
       dbData = await getDbData();
     } catch (e: any) {
       console.warn("DB read failed. Fallback to local db.json:", e.message);
-      globalRef.isDbOffline = true;
-      globalRef.dbOfflineUntil = now + 60000; // 60s backoff
+      markDbOffline();
     }
   }
 

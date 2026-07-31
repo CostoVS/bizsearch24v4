@@ -9,20 +9,50 @@ let isDbOffline = false;
 let lastOfflineCheck = 0;
 let hasRunMigrations = false;
 
-export const initDb = () => {
-  const now = Date.now();
-  // If DB was flagged offline, backoff for 60 seconds to prevent connection spam and event loop hanging
+export const markDbOffline = () => {
+  isDbOffline = true;
+  lastOfflineCheck = Date.now();
+};
+
+export const isDbCurrentlyOffline = () => {
   if (isDbOffline) {
-    if (now - lastOfflineCheck < 60000) {
-      return null;
+    if (Date.now() - lastOfflineCheck < 60000) {
+      return true;
     }
-    // Reset state to attempt retry after backoff
+    // Backoff expired, allow retry
     isDbOffline = false;
     if (pool) {
       pool.end().catch(() => {});
     }
     pool = null;
     db = null;
+  }
+  return false;
+};
+
+export async function withDbTimeout<T>(promise: Promise<T>, timeoutMs = 800): Promise<T> {
+  if (isDbCurrentlyOffline()) {
+    throw new Error("DB currently flagged as offline");
+  }
+
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      markDbOffline();
+      reject(new Error(`DB Query timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+export const initDb = () => {
+  if (isDbCurrentlyOffline()) {
+    return null;
   }
   if (db && pool) return db;
 
@@ -31,15 +61,14 @@ export const initDb = () => {
   try {
     pool = new Pool({
       connectionString,
-      connectionTimeoutMillis: 1000,
-      idleTimeoutMillis: 10000,
-      max: 5,
+      connectionTimeoutMillis: 500,
+      idleTimeoutMillis: 5000,
+      max: 3,
     });
 
     pool.on('error', (err) => {
-      console.error('Unexpected error on idle SQL pool client:', err?.message || err);
-      isDbOffline = true;
-      lastOfflineCheck = Date.now();
+      console.warn('SQL pool connection issue (falling back to JSON store):', err?.message || err);
+      markDbOffline();
     });
 
     // Run table setup ONLY ONCE per process lifetime
@@ -147,14 +176,13 @@ export const initDb = () => {
         };
 
         try {
-          await runMigrations(pool);
+          await withDbTimeout(runMigrations(pool), 1000);
           hasRunMigrations = true;
           console.log("Postgres tables checked/created successfully.");
           return true;
         } catch (err: any) {
-          console.warn("Primary DB connection check failed:", err.message);
-          isDbOffline = true;
-          lastOfflineCheck = Date.now();
+          console.warn("Primary DB connection check failed (falling back to JSON store):", err.message);
+          markDbOffline();
           return false;
         }
       })();
@@ -163,9 +191,8 @@ export const initDb = () => {
     db = drizzle(pool, { schema });
     return db;
   } catch (err: any) {
-    console.warn("Failed to initialize pool:", err.message);
-    isDbOffline = true;
-    lastOfflineCheck = Date.now();
+    console.warn("Failed to initialize pool (falling back to JSON store):", err.message);
+    markDbOffline();
     return null;
   }
 };

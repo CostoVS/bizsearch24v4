@@ -1,4 +1,4 @@
-import { db, initDb, dbReadyPromise } from '@/lib/db';
+import { db, initDb, dbReadyPromise, withDbTimeout } from '@/lib/db';
 import { storage, matomoEvents, matomoProperties } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import fs from 'fs';
@@ -27,56 +27,21 @@ export async function loadAnalyticsEvents(): Promise<any[]> {
   try {
     initDb();
     if (dbReadyPromise) {
-      await Promise.race([dbReadyPromise, new Promise(r => setTimeout(r, 600))]).catch(() => {});
+      await withDbTimeout(dbReadyPromise, 300).catch(() => {});
     }
     if (db) {
       let dbEvents: any[] = [];
 
-      // 1. Try querying dedicated matomo_events table first
+      // Try querying storage table key 'analytics_events' with fast timeout
       try {
-        const rows = await db.select().from(matomoEvents).orderBy(desc(matomoEvents.createdAt)).limit(3000);
-        if (rows && rows.length > 0) {
-          dbEvents = rows.map((r: any) => {
-            if (r.rawJson) {
-              try {
-                return JSON.parse(r.rawJson);
-              } catch (e) {}
-            }
-            return {
-              id: r.id,
-              type: r.type,
-              path: r.path,
-              title: r.title,
-              referrer: r.referrer,
-              query: r.query,
-              adId: r.adId,
-              targetUrl: r.targetUrl,
-              action: r.action,
-              ip: r.ip,
-              city: r.city,
-              region: r.region,
-              country: r.country,
-              browser: r.browser,
-              device: r.device,
-              propertyId: r.propertyId || 'internal',
-              timestamp: r.timestamp || r.createdAt
-            };
-          });
-        }
-      } catch (e) {
-        // Fallback if table query fails
-      }
-
-      // 2. Also check storage table key 'analytics_events'
-      if (dbEvents.length === 0) {
-        const record = await db.select().from(storage).where(eq(storage.key, STORAGE_KEY)).limit(1);
+        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, STORAGE_KEY)).limit(1), 500);
         if (record && record.length > 0) {
           const parsed = JSON.parse(record[0].data);
           if (Array.isArray(parsed)) {
             dbEvents = parsed;
           }
         }
-      }
+      } catch (e) {}
 
       // Merge local and DB sources
       const mergedMap = new Map();
@@ -96,7 +61,7 @@ export async function loadAnalyticsEvents(): Promise<any[]> {
       return merged;
     }
   } catch (e: any) {
-    console.warn("DB read failed for analytics. Using local fallback:", e.message);
+    // Silent fallback to localEvents
   }
 
   return localEvents;
@@ -124,7 +89,7 @@ export async function saveAnalyticsEvents(events: any[]): Promise<void> {
   // Preserve up to 5000 rich analytics events
   const trimmed = deduped.slice(0, 5000);
 
-  // Write to local file backup
+  // Write to local file backup instantly
   try {
     const dir = path.dirname(ANALYTICS_FILE_PATH);
     if (!fs.existsSync(dir)) {
@@ -135,51 +100,25 @@ export async function saveAnalyticsEvents(events: any[]): Promise<void> {
     console.error("Failed to write local analytics file:", e);
   }
 
-  // Write to DB
-  try {
-    initDb();
-    if (dbReadyPromise) {
-      await Promise.race([dbReadyPromise, new Promise(r => setTimeout(r, 600))]).catch(() => {});
-    }
-    if (db) {
-      // 1. Write to storage key 'analytics_events'
-      const record = await db.select().from(storage).where(eq(storage.key, STORAGE_KEY)).limit(1);
-      if (record && record.length > 0) {
-        await db.update(storage).set({ data: JSON.stringify(trimmed) }).where(eq(storage.key, STORAGE_KEY));
-      } else {
-        await db.insert(storage).values({ key: STORAGE_KEY, data: JSON.stringify(trimmed) });
+  // Write to DB asynchronously in background - NEVER block HTTP response thread
+  Promise.resolve().then(async () => {
+    try {
+      initDb();
+      if (dbReadyPromise) {
+        await withDbTimeout(dbReadyPromise, 300).catch(() => {});
       }
-
-      // 2. Insert new records into matomo_events table
-      const itemsToInsert = trimmed.slice(0, 100); // save top recent events to dedicated table
-      for (const item of itemsToInsert) {
-        try {
-          await db.insert(matomoEvents).values({
-            id: item.id,
-            type: item.type || 'pageview',
-            path: item.path || item.targetUrl || '',
-            title: item.title || '',
-            referrer: item.referrer || '',
-            query: item.query || '',
-            adId: item.adId ? String(item.adId) : '',
-            targetUrl: item.targetUrl || '',
-            action: item.action || '',
-            ip: item.ip || '',
-            city: item.city || '',
-            region: item.region || '',
-            country: item.country || '',
-            browser: item.browser || '',
-            device: item.device || '',
-            propertyId: item.propertyId || 'internal',
-            timestamp: item.timestamp || new Date().toISOString(),
-            rawJson: JSON.stringify(item)
-          }).onConflictDoNothing();
-        } catch (err) {}
+      if (db) {
+        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, STORAGE_KEY)).limit(1), 500);
+        if (record && record.length > 0) {
+          await withDbTimeout(db.update(storage).set({ data: JSON.stringify(trimmed) }).where(eq(storage.key, STORAGE_KEY)), 500);
+        } else {
+          await withDbTimeout(db.insert(storage).values({ key: STORAGE_KEY, data: JSON.stringify(trimmed) }), 500);
+        }
       }
+    } catch (e: any) {
+      // Background sync failed, local file is safe
     }
-  } catch (e: any) {
-    console.warn("DB write failed for analytics. Local file remains updated:", e.message);
-  }
+  });
 }
 
 // Matomo Properties persistence (Tracked Domains)

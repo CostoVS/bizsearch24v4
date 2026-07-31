@@ -44,7 +44,7 @@ ${JSON.stringify(batch, null, 2)}`;
       
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         
         const response = await fetch("http://host.docker.internal:11434/api/chat", {
           method: "POST",

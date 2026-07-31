@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { db, initDb } from "@/lib/db";
+import { db, initDb, withDbTimeout, isDbCurrentlyOffline, markDbOffline } from "@/lib/db";
 import { storage } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -16,11 +16,11 @@ async function getCustomSlugs(): Promise<any[]> {
   }
 
   const now = Date.now();
-  if (!(globalRef.isDbOffline && (now < globalRef.dbOfflineUntil))) {
+  if (!isDbCurrentlyOffline()) {
     try {
       initDb();
       if (db) {
-        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
+        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
         if (record && record.length > 0) {
           const parsed = JSON.parse(record[0].data);
           if (parsed && Array.isArray(parsed.slugs)) {
@@ -32,6 +32,7 @@ async function getCustomSlugs(): Promise<any[]> {
       }
     } catch (error) {
       console.warn("getCustomSlugs db read failed, relying on local db.json:", (error as any).message);
+      markDbOffline();
     }
   }
 
@@ -57,11 +58,13 @@ async function saveCustomSlugs(slugs: any[]) {
     currentData = { ...globalRef.storageCache };
   } else {
     try {
-      initDb();
-      if (db) {
-        const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
-        if (record && record.length > 0) {
-          currentData = JSON.parse(record[0].data);
+      if (!isDbCurrentlyOffline()) {
+        initDb();
+        if (db) {
+          const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
+          if (record && record.length > 0) {
+            currentData = JSON.parse(record[0].data);
+          }
         }
       }
     } catch (e) {
@@ -80,13 +83,16 @@ async function saveCustomSlugs(slugs: any[]) {
   globalRef.storageCache = currentData;
   globalRef.storageCacheTime = Date.now();
 
-  try {
-    initDb();
-    if (db) {
-      await db.update(storage).set({ data: JSON.stringify(currentData, null, 2) }).where(eq(storage.key, 'main'));
+  if (!isDbCurrentlyOffline()) {
+    try {
+      initDb();
+      if (db) {
+        await withDbTimeout(db.update(storage).set({ data: JSON.stringify(currentData, null, 2) }).where(eq(storage.key, 'main')), 400);
+      }
+    } catch (error) {
+      console.warn("saveCustomSlugs db update failed:", (error as any).message);
+      markDbOffline();
     }
-  } catch (error) {
-    console.warn("saveCustomSlugs db update failed:", (error as any).message);
   }
 
   try {
