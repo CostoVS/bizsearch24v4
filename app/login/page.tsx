@@ -26,6 +26,7 @@ export default function LoginPage() {
   
   // Premium Tier Registration States
   const [selectedPlan, setSelectedPlan] = useState<string>("FREE");
+  const [l2Verified, setL2Verified] = useState(false);
   const [l2Extra, setL2Extra] = useState(false);
   const [l2Domain, setL2Domain] = useState(false);
   const [l2Listings, setL2Listings] = useState(false);
@@ -99,6 +100,11 @@ export default function LoginPage() {
 
         const isPremium = selectedPlan !== "FREE";
 
+        if (selectedPlan === "ESSENTIAL" && !l2Verified && !l2Extra && !l2Domain && !l2Listings) {
+          setErrorMsg("Please select at least 1 option under Level 2 Essential (such as the Essential Verified Level +R199.99/mo) to proceed with registration. Amount cannot be R0.00.");
+          return;
+        }
+
         if (isPremium) {
           if (whatsapp.trim()) {
             const cleanWhatsapp = whatsapp.replace(/[\s\-\(\)]/g, "");
@@ -142,6 +148,7 @@ export default function LoginPage() {
             sarsDoc: isPremium ? sarsFile : undefined,
             bankDoc: isPremium ? bankFile : undefined,
             idDoc: isPremium ? idFile : undefined,
+            l2Verified: selectedPlan === "ESSENTIAL" ? l2Verified : undefined,
             l2Extra: selectedPlan === "ESSENTIAL" ? l2Extra : undefined,
             l2Domain: selectedPlan === "ESSENTIAL" ? l2Domain : undefined,
             l2Listings: selectedPlan === "ESSENTIAL" ? l2Listings : undefined,
@@ -428,8 +435,9 @@ export default function LoginPage() {
 
                         {/* Essential Tier */}
                         {(() => {
-                          const essentialPrice = 199.99 + (l2Extra ? 199.00 : 0) + (l2Listings ? 199.00 : 0);
-                          const essentialPriceStr = `R${essentialPrice.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+                          const hasAny = l2Verified || l2Extra || l2Domain || l2Listings;
+                          const essentialPrice = (l2Verified ? 199.99 : 0) + (l2Extra ? 199.00 : 0) + (l2Listings ? 199.00 : 0);
+                          const essentialPriceStr = hasAny ? `R${essentialPrice.toFixed(2)}${l2Domain ? " + R99/yr" : ""}` : "R0.00";
                           return (
                             <div 
                               onClick={() => {
@@ -447,16 +455,27 @@ export default function LoginPage() {
                                   <span className="flex items-center gap-1.5">
                                     Level 2: Essential Verified Tier ★
                                   </span>
-                                  <span className="text-emerald-600 shrink-0">{essentialPriceStr}</span>
+                                  <span className="text-emerald-600 shrink-0 font-extrabold">{essentialPriceStr}</span>
                                 </div>
                                 <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
-                                  <div>• 1 Verified SearchBiz Listing, Your Own Logins</div>
-                                  <div>• Business Description, Services, Social links & Website</div>
+                                  <div>• Complete digital presence with optional custom options</div>
                                   
                                   <div className="mt-3 text-[10px] font-black uppercase text-emerald-800 tracking-wider">
-                                    Select Level 2 Add-ons:
+                                    Select Level 2 Options (At least 1 required):
                                   </div>
                                   <div className="p-3 bg-slate-950/5 rounded-xl border border-emerald-500/15 space-y-2 mt-1" onClick={(e) => e.stopPropagation()}>
+                                    <label className="flex items-center gap-2 cursor-pointer text-slate-900 font-extrabold">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={l2Verified} 
+                                        onChange={(e) => {
+                                          setL2Verified(e.target.checked);
+                                          setSelectedPlan("ESSENTIAL");
+                                        }}
+                                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                      />
+                                      <span className="text-emerald-950 font-extrabold">Essential Verified Level (+R199.99/mo)</span>
+                                    </label>
                                     <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
                                       <input 
                                         type="checkbox" 

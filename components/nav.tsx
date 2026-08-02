@@ -75,17 +75,17 @@ export function Navbar() {
   return (
     <>
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-20 items-center">
-            <div className="flex items-center space-x-3">
+        <div className="w-full max-w-[1536px] mx-auto px-2 sm:px-4 lg:px-4 xl:px-6 2xl:px-8">
+          <div className="flex justify-between h-20 items-center gap-2">
+            <div className="flex items-center space-x-2 xl:space-x-3 shrink-0">
               <Link
                 href="/directory"
-                className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white hover:bg-emerald-700 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                className="w-10 h-10 xl:w-12 xl:h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white hover:bg-emerald-700 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 shrink-0"
               >
-                <Search className="w-6 h-6" />
+                <Search className="w-5 h-5 xl:w-6 xl:h-6" />
               </Link>
-              <Link href="/" className="flex flex-col">
-                <div className="font-display font-bold text-2xl tracking-tighter text-slate-900 leading-none mb-1">
+              <Link href="/" className="flex flex-col shrink-0">
+                <div className="font-display font-bold text-xl xl:text-2xl tracking-tighter text-slate-900 leading-none mb-1">
                   Search<span className="text-emerald-600">Biz</span>.co.za
                 </div>
                 <div className="text-[9px] tracking-widest text-slate-500 uppercase font-semibold leading-none">
@@ -95,53 +95,53 @@ export function Navbar() {
             </div>
 
             {/* Desktop Nav */}
-            <div className="hidden lg:flex items-center space-x-2 xl:space-x-3.5 2xl:space-x-4">
+            <div className="hidden lg:flex items-center gap-1 xl:gap-2.5 2xl:gap-3.5 shrink-0">
               <LanguageSelector />
               <Link
                 href="/posts"
-                className="flex items-center text-xs xl:text-sm font-bold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-bold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
               >
-                Showofs
+                SHOWOFS
               </Link>
               <Link
                 href="/services"
-                className="flex items-center text-xs xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
                 Services
               </Link>
               <Link
                 href="/news"
-                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
               >
-                <Newspaper className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                <Newspaper className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
                 News
               </Link>
               <Link
                 href="/tools"
-                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors whitespace-nowrap shrink-0"
               >
                 Tools
               </Link>
               <Link
                 href="/premium-partners"
-                className="flex items-center text-xs xl:text-sm font-bold text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-bold text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1 fill-amber-500 text-amber-500" />
+                <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1 fill-amber-500 text-amber-500" />
                 Partners
               </Link>
               <Link
                 href="/llama3-chat"
-                className="flex items-center text-xs xl:text-sm font-bold text-purple-600 hover:text-purple-700 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-bold text-purple-600 hover:text-purple-700 transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1 fill-purple-400 text-purple-400" />
+                <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1 fill-purple-400 text-purple-400" />
                 AI Search
               </Link>
               <Link
                 href={user ? "/messages" : "/login"}
-                className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors relative whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors relative whitespace-nowrap shrink-0"
               >
-                <MessageCircle className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                <MessageCircle className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
                 <span>Chat</span>
                 {unreadCount > 0 && (
                   <span className="absolute -top-1.5 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white ring-2 ring-white shadow-md animate-in zoom-in duration-300">
@@ -151,7 +151,7 @@ export function Navbar() {
               </Link>
               <Link
                 href="/support"
-                className="flex items-center text-xs xl:text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap shrink-0"
               >
                 Support
               </Link>
@@ -159,16 +159,16 @@ export function Navbar() {
                 <>
                   <Link
                     href="/premium"
-                    className="flex items-center text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1" />
+                    <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
                     Premium
                   </Link>
                   <Link
                     href="/login"
-                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-700 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LogIn className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
+                    <LogIn className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
                     <span>Login</span>
                   </Link>
                 </>
@@ -177,17 +177,17 @@ export function Navbar() {
                 <>
                   <Link
                     href="/dashboard"
-                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LayoutDashboard className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
+                    <LayoutDashboard className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
                     <span>Dashboard</span>
                   </Link>
                   {isAdmin && (
                     <Link
                       href="/admin"
-                      className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-rose-600 hover:text-rose-700 transition-colors whitespace-nowrap shrink-0"
+                      className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-semibold text-rose-600 hover:text-rose-700 transition-colors whitespace-nowrap shrink-0"
                     >
-                      <ShieldAlert className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
+                      <ShieldAlert className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
                       <span>Admin</span>
                     </Link>
                   )}
@@ -196,9 +196,9 @@ export function Navbar() {
                       logout();
                       window.location.href = "/";
                     }}
-                    className="flex items-center space-x-1 text-xs xl:text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
                   >
-                    <LogOut className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
+                    <LogOut className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
                     <span>Logout</span>
                   </button>
                 </>
@@ -206,9 +206,9 @@ export function Navbar() {
               {!isLoading && (
                 <Link
                   href="/create-ad"
-                  className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-xs xl:text-sm px-3.5 py-2.5 xl:px-4.5 xl:py-2.5 rounded-xl shadow-md hover:shadow-amber-400/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 shrink-0 whitespace-nowrap border border-amber-200/80 ring-2 ring-amber-400/30"
+                  className="flex items-center gap-1 xl:gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-[11px] xl:text-xs 2xl:text-sm px-2.5 py-1.5 xl:px-3.5 xl:py-2.5 rounded-xl shadow-md hover:shadow-amber-400/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 shrink-0 whitespace-nowrap border border-amber-200/80 ring-2 ring-amber-400/30"
                 >
-                  <Sparkles className="w-4 h-4 fill-amber-950 text-amber-950" />
+                  <Sparkles className="w-3.5 h-3.5 xl:w-4 xl:h-4 fill-amber-950 text-amber-950 shrink-0" />
                   <span>Create Ad</span>
                 </Link>
               )}
@@ -309,7 +309,7 @@ export function Navbar() {
                   >
                     <span className="flex items-center gap-2.5">
                       <Sparkles className="w-4 h-4 text-emerald-600" />
-                      Showofs
+                      SHOWOFS
                     </span>
                     <span className="text-[10px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded-full uppercase">Feed</span>
                   </Link>

@@ -107,6 +107,7 @@ export default function PremiumPage() {
   const router = useRouter();
   
   const [selectedPlan, setSelectedPlan] = useState("essential");
+  const [l2Verified, setL2Verified] = useState(false);
   const [l2Extra, setL2Extra] = useState(false);
   const [l2Domain, setL2Domain] = useState(false);
   const [l2Listings, setL2Listings] = useState(false);
@@ -118,6 +119,10 @@ export default function PremiumPage() {
       if (plan) {
         setSelectedPlan(plan.toLowerCase());
       }
+      if (params.get("verified") === "true") setL2Verified(true);
+      if (params.get("extra") === "true") setL2Extra(true);
+      if (params.get("domain") === "true") setL2Domain(true);
+      if (params.get("listings") === "true") setL2Listings(true);
     }
   }, []);
 
@@ -177,6 +182,10 @@ export default function PremiumPage() {
     e.preventDefault();
     if (!user) {
       setErrorMsg("You must be logged in to upgrade.");
+      return;
+    }
+    if (selectedPlan === "essential" && !l2Verified && !l2Extra && !l2Domain && !l2Listings) {
+      setErrorMsg("Please select at least 1 Level 2 option (such as the Essential Verified Level +R199.99/mo) to upgrade your account. Amount cannot be R0.00.");
       return;
     }
     if (!formData.consent) {
@@ -323,10 +332,12 @@ ${signature}
   else if (planUpper === "ELITE_PREMIUM") displayPrice = "R50,000,000.00";
   else if (planUpper === "ELITE_ENTERPRISE") displayPrice = "R100,000,000.00";
   else if (planUpper === "ESSENTIAL") {
-    let priceVal = 199.99;
+    const hasAny = l2Verified || l2Extra || l2Domain || l2Listings;
+    let priceVal = 0;
+    if (l2Verified) priceVal += 199.99;
     if (l2Extra) priceVal += 199.00;
     if (l2Listings) priceVal += 199.00;
-    displayPrice = `R${priceVal.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+    displayPrice = hasAny ? `R${priceVal.toFixed(2)}${l2Domain ? " + R99/yr" : ""}` : "R0.00";
   }
 
   return (
@@ -371,18 +382,14 @@ ${signature}
               id: "essential",
               name: "Level 2: Essential",
               badge: "verified badge",
-              price: "R199.99",
+              price: (l2Verified || l2Extra || l2Domain || l2Listings) ? displayPrice : "R0.00",
               period: "month",
               desc: "Complete digital presence with optional extras.",
               features: [
-                "Everything in Free Tier",
-                "Business Description & Email",
-                "WhatsApp Number",
-                "Website & Social Links",
-                "Add-on: Smart Static Web + R199/mo",
-                "Add-on: .co.za Domain + R99/yr",
-                "Add-on: Extra Listings + R199/mo",
-                "Verified Badge"
+                l2Verified ? "✓ Verified Level (+R199.99/mo) [SELECTED]" : "Verified Level (+R199.99/mo) [Select option below]",
+                l2Extra ? "✓ Hosting & Web Suite (+R199/mo) [SELECTED]" : "Hosting & Web Suite (+R199/mo)",
+                l2Domain ? "✓ .co.za Domain (+R99/yr) [SELECTED]" : ".co.za Domain (+R99/yr)",
+                l2Listings ? "✓ Extra Listings (+R199/mo) [SELECTED]" : "Extra Listings (+R199/mo)"
               ]
             },
             {
@@ -520,10 +527,23 @@ ${signature}
               ⚙️ Custom Level 2 Add-ons Selection
             </h3>
             <p className="text-xs text-slate-600 mb-4 font-medium">
-              Configure your Essential subscription. Each checked option adds directly to your calculated monthly or annual billing total.
+              Configure your Essential subscription. You must select at least 1 option below to upgrade your account (otherwise total amount is R0.00).
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer shadow-sm transition-all ${l2Verified ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
+                <input 
+                  type="checkbox" 
+                  checked={l2Verified} 
+                  onChange={(e) => setL2Verified(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
+                />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Essential Verified Level</span>
+                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Verified Badge, WhatsApp, email & index optimization (+R199.99/mo)</span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer shadow-sm transition-all ${l2Extra ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
                 <input 
                   type="checkbox" 
                   checked={l2Extra} 
@@ -532,11 +552,11 @@ ${signature}
                 />
                 <div>
                   <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Hosting & Emails</span>
-                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Unlimited Hosting + Unlimited Email accounts & Smart Static Website (+R199/mo)</span>
+                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Unlimited Hosting + Unlimited Emails & Smart Website (+R199/mo)</span>
                 </div>
               </label>
 
-              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+              <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer shadow-sm transition-all ${l2Domain ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
                 <input 
                   type="checkbox" 
                   checked={l2Domain} 
@@ -549,7 +569,7 @@ ${signature}
                 </div>
               </label>
 
-              <label className="flex items-start gap-3 p-4 bg-white rounded-xl border border-slate-200 cursor-pointer shadow-sm hover:border-emerald-500 transition-all">
+              <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer shadow-sm transition-all ${l2Listings ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
                 <input 
                   type="checkbox" 
                   checked={l2Listings} 
@@ -562,6 +582,13 @@ ${signature}
                 </div>
               </label>
             </div>
+
+            {!l2Verified && !l2Extra && !l2Domain && !l2Listings && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>You must select at least 1 Level 2 option above to upgrade your account. Total amount is currently R0.00.</span>
+              </div>
+            )}
           </div>
         )}
 

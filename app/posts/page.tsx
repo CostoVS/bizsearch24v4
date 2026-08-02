@@ -365,8 +365,8 @@ export default function PostsFeedPage() {
     <div className="w-full bg-slate-50 min-h-screen py-8 px-4 sm:px-6">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">Showofs Feed</h1>
-          <p className="text-slate-500">Discover recent showofss, updates, specials, and reviews from South African businesses.</p>
+          <h1 className="text-3xl font-display font-bold text-slate-900 mb-2">SHOWOFS Feed</h1>
+          <p className="text-slate-500">Discover recent showofs, updates, specials, and reviews from South African businesses.</p>
         </div>
 
         {/* Post Creator */}

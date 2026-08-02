@@ -11,15 +11,21 @@ export default function SearchBizServicesPage() {
   const whatsAppLink = "https://wa.me/27751613007?text=Hi%20SearchBiz.co.za%2C%20I'm%20interested%20in%20subscribing%20to%20your%20Premium%20Services%20and%20registering%20a%20domain!";
 
   // Interactive Level 2 Add-ons State
+  const [l2Verified, setL2Verified] = React.useState(false);
   const [l2Extra, setL2Extra] = React.useState(false);
   const [l2Domain, setL2Domain] = React.useState(false);
   const [l2Listings, setL2Listings] = React.useState(false);
 
   // Calculate dynamic Level 2 price
-  let l2PriceNum = 199.99;
+  const hasL2Option = l2Verified || l2Extra || l2Domain || l2Listings;
+  let l2PriceNum = 0;
+  if (l2Verified) l2PriceNum += 199.99;
   if (l2Extra) l2PriceNum += 199.00;
   if (l2Listings) l2PriceNum += 199.00;
-  const l2PriceStr = `R${l2PriceNum.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`;
+  
+  const l2PriceStr = hasL2Option
+    ? `R${l2PriceNum.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`
+    : "R0.00";
 
   const features = [
     {
@@ -86,8 +92,8 @@ export default function SearchBizServicesPage() {
         "Business Email",
         "Social media platform links",
         "Website link",
-        "Verified Badge",
-        l2Extra ? "✓ Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo) [SELECTED]" : "Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo)",
+        l2Verified ? "✓ Verified Badge & Essential Listing (+R199.99/mo) [SELECTED]" : "Essential Verified Level (+R199.99/mo) [Select option below]",
+        l2Extra ? "✓ Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo) [SELECTED]" : "Add-on extra: Unlimited hosting & website (+R199/mo)",
         l2Domain ? "✓ Add-on: .co.za domain (+R99/yr) [SELECTED]" : "Add-on: .co.za domain (+R99/yr)",
         l2Listings ? "✓ Add-on: Extra listings (+R199/area each/mo) [SELECTED]" : "Add-on: Extra listings (+R199/area each/mo)"
       ],
@@ -323,6 +329,15 @@ export default function SearchBizServicesPage() {
                       <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
                         <input
                           type="checkbox"
+                          checked={l2Verified}
+                          onChange={(e) => setL2Verified(e.target.checked)}
+                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-emerald-900 font-extrabold">Essential Verified Level (+R199.99/mo)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                        <input
+                          type="checkbox"
                           checked={l2Extra}
                           onChange={(e) => setL2Extra(e.target.checked)}
                           className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
@@ -361,30 +376,40 @@ export default function SearchBizServicesPage() {
                 </div>
 
                 <div className="pt-6">
-                  <a 
-                    href={
-                      tier.id === "free"
-                        ? "/create-ad"
-                        : tier.id === "essential"
-                          ? `/premium?plan=essential&extra=${l2Extra}&domain=${l2Domain}&listings=${l2Listings}`
-                          : `/premium?plan=${tier.id}`
-                    }
-                    className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${
-                      tier.popular 
-                        ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md" 
-                        : tier.id.startsWith("elite")
-                          ? "bg-amber-500 text-slate-900 hover:bg-amber-600 font-extrabold shadow-md"
-                          : tier.id === "enterprise" 
-                            ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
-                            : tier.id === "enterprise_premium"
-                              ? "bg-rose-600 text-white hover:bg-rose-700 shadow-md"
-                              : tier.id === "premium"
-                                ? "bg-white text-slate-950 hover:bg-slate-100 border border-slate-300"
-                                : "bg-slate-800 text-white hover:bg-slate-900"
-                    }`}
-                  >
-                    {tier.id === "free" ? "Get Started (Free)" : "Select & Upgrade"}
-                  </a>
+                  {tier.id === "essential" && !hasL2Option ? (
+                    <button 
+                      type="button"
+                      onClick={() => alert("Please select at least 1 option under Level 2 (e.g. Essential Verified Level +R199.99/mo) to upgrade your account. Amount is R0.00 until an option is selected.")}
+                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300"
+                    >
+                      Select Option to Upgrade (R0)
+                    </button>
+                  ) : (
+                    <a 
+                      href={
+                        tier.id === "free"
+                          ? "/create-ad"
+                          : tier.id === "essential"
+                            ? `/premium?plan=essential&verified=${l2Verified}&extra=${l2Extra}&domain=${l2Domain}&listings=${l2Listings}`
+                            : `/premium?plan=${tier.id}`
+                      }
+                      className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${
+                        tier.popular 
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md" 
+                          : tier.id.startsWith("elite")
+                            ? "bg-amber-500 text-slate-900 hover:bg-amber-600 font-extrabold shadow-md"
+                            : tier.id === "enterprise" 
+                              ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                              : tier.id === "enterprise_premium"
+                                ? "bg-rose-600 text-white hover:bg-rose-700 shadow-md"
+                                : tier.id === "premium"
+                                  ? "bg-white text-slate-950 hover:bg-slate-100 border border-slate-300"
+                                  : "bg-slate-800 text-white hover:bg-slate-900"
+                      }`}
+                    >
+                      {tier.id === "free" ? "Get Started (Free)" : "Select & Upgrade"}
+                    </a>
+                  )}
                 </div>
               </div>
             ))}
