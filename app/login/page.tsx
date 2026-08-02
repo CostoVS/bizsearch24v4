@@ -516,19 +516,40 @@ export default function LoginPage() {
                                         <span>Extra Directory Area Listing (+R199/mo each)</span>
                                       </label>
                                       {l2Listings && (
-                                        <div className="ml-6 mt-1 flex items-center gap-2 bg-emerald-100/70 p-2 rounded-lg border border-emerald-300">
-                                          <span className="text-[11px] font-extrabold text-emerald-950">Area Listings Quantity:</span>
-                                          <select
-                                            value={l2ListingCount}
-                                            onChange={(e) => setL2ListingCount(Math.max(1, parseInt(e.target.value) || 1))}
-                                            className="text-xs font-bold bg-white border border-emerald-400 rounded px-2 py-1 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
-                                          >
-                                            {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
-                                              <option key={num} value={num}>
-                                                {num} {num === 1 ? 'extra area' : 'extra areas'} (+R{num * 199}/mo)
-                                              </option>
-                                            ))}
-                                          </select>
+                                        <div className="mt-2 p-2.5 bg-emerald-100/70 rounded-xl border border-emerald-300 space-y-2">
+                                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                                            <span className="text-[11px] font-extrabold text-emerald-950">Number of extra area listings:</span>
+                                            <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-emerald-400 shadow-sm">
+                                              <button
+                                                type="button"
+                                                onClick={() => setL2ListingCount(Math.max(1, l2ListingCount - 1))}
+                                                className="w-7 h-7 bg-slate-100 hover:bg-emerald-200 text-slate-900 font-black rounded flex items-center justify-center text-sm transition-colors active:scale-95"
+                                              >
+                                                -
+                                              </button>
+                                              <input
+                                                type="number"
+                                                min={1}
+                                                max={999}
+                                                value={l2ListingCount || 1}
+                                                onChange={(e) => {
+                                                  const val = parseInt(e.target.value);
+                                                  setL2ListingCount(isNaN(val) || val < 1 ? 1 : val);
+                                                }}
+                                                className="w-14 text-center text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 py-0.5"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => setL2ListingCount(l2ListingCount + 1)}
+                                                className="w-7 h-7 bg-slate-100 hover:bg-emerald-200 text-slate-900 font-black rounded flex items-center justify-center text-sm transition-colors active:scale-95"
+                                              >
+                                                +
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div className="text-right text-[11px] font-black text-emerald-800 border-t border-emerald-300/60 pt-1.5">
+                                            Calculated: +R{(199 * (l2ListingCount || 1)).toFixed(2)}/mo ({l2ListingCount || 1} { (l2ListingCount || 1) === 1 ? 'area' : 'areas'} @ R199/mo)
+                                          </div>
                                         </div>
                                       )}
                                     </div>

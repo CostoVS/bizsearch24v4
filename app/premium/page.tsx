@@ -589,19 +589,40 @@ ${signature}
                   </div>
                 </label>
                 {l2Listings && (
-                  <div className="mt-3 pt-2.5 border-t border-emerald-300/80 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-extrabold text-emerald-950">Quantity:</span>
-                    <select
-                      value={l2ListingCount}
-                      onChange={(e) => setL2ListingCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="text-xs font-bold bg-white border border-emerald-400 rounded-lg px-2.5 py-1 text-slate-900 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer"
-                    >
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
-                        <option key={num} value={num}>
-                          {num} {num === 1 ? 'Area' : 'Areas'} (+R{num * 199}/mo)
-                        </option>
-                      ))}
-                    </select>
+                  <div className="mt-3 pt-2.5 border-t border-emerald-300/80 space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] font-extrabold text-emerald-950">Number of extra area listings:</span>
+                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-emerald-400 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setL2ListingCount(Math.max(1, l2ListingCount - 1))}
+                          className="w-7 h-7 bg-slate-100 hover:bg-emerald-200 text-slate-900 font-black rounded flex items-center justify-center text-sm transition-colors active:scale-95"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={999}
+                          value={l2ListingCount || 1}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            setL2ListingCount(isNaN(val) || val < 1 ? 1 : val);
+                          }}
+                          className="w-14 text-center text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 py-0.5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setL2ListingCount(l2ListingCount + 1)}
+                          className="w-7 h-7 bg-slate-100 hover:bg-emerald-200 text-slate-900 font-black rounded flex items-center justify-center text-sm transition-colors active:scale-95"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] font-black text-emerald-800">
+                      Calculated: +R{(199 * (l2ListingCount || 1)).toFixed(2)}/mo ({l2ListingCount || 1} { (l2ListingCount || 1) === 1 ? 'area' : 'areas'} @ R199/mo)
+                    </div>
                   </div>
                 )}
               </div>
