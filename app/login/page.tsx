@@ -30,6 +30,7 @@ export default function LoginPage() {
   const [l2Extra, setL2Extra] = useState(false);
   const [l2Domain, setL2Domain] = useState(false);
   const [l2Listings, setL2Listings] = useState(false);
+  const [l2ListingCount, setL2ListingCount] = useState(1);
 
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -152,6 +153,7 @@ export default function LoginPage() {
             l2Extra: selectedPlan === "ESSENTIAL" ? l2Extra : undefined,
             l2Domain: selectedPlan === "ESSENTIAL" ? l2Domain : undefined,
             l2Listings: selectedPlan === "ESSENTIAL" ? l2Listings : undefined,
+            l2ListingCount: selectedPlan === "ESSENTIAL" && l2Listings ? l2ListingCount : undefined,
           }),
         });
         const data = await res.json();
@@ -436,7 +438,7 @@ export default function LoginPage() {
                         {/* Essential Tier */}
                         {(() => {
                           const hasAny = l2Verified || l2Extra || l2Domain || l2Listings;
-                          const essentialPrice = (l2Verified ? 199.99 : 0) + (l2Extra ? 199.00 : 0) + (l2Listings ? 199.00 : 0);
+                          const essentialPrice = (l2Verified ? 199.99 : 0) + (l2Extra ? 199.00 : 0) + (l2Listings ? 199.00 * l2ListingCount : 0);
                           const essentialPriceStr = hasAny ? `R${essentialPrice.toFixed(2)}${l2Domain ? " + R99/yr" : ""}` : "R0.00";
                           return (
                             <div 
@@ -500,18 +502,36 @@ export default function LoginPage() {
                                       />
                                       <span>Register professional .co.za brand domain (+R99/year)</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={l2Listings} 
-                                        onChange={(e) => {
-                                          setL2Listings(e.target.checked);
-                                          setSelectedPlan("ESSENTIAL");
-                                        }}
-                                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                                      />
-                                      <span>Extra Directory Area Listing (+R199/mo)</span>
-                                    </label>
+                                    <div className="space-y-1">
+                                      <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-bold">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={l2Listings} 
+                                          onChange={(e) => {
+                                            setL2Listings(e.target.checked);
+                                            setSelectedPlan("ESSENTIAL");
+                                          }}
+                                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                        />
+                                        <span>Extra Directory Area Listing (+R199/mo each)</span>
+                                      </label>
+                                      {l2Listings && (
+                                        <div className="ml-6 mt-1 flex items-center gap-2 bg-emerald-100/70 p-2 rounded-lg border border-emerald-300">
+                                          <span className="text-[11px] font-extrabold text-emerald-950">Area Listings Quantity:</span>
+                                          <select
+                                            value={l2ListingCount}
+                                            onChange={(e) => setL2ListingCount(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className="text-xs font-bold bg-white border border-emerald-400 rounded px-2 py-1 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
+                                          >
+                                            {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
+                                              <option key={num} value={num}>
+                                                {num} {num === 1 ? 'extra area' : 'extra areas'} (+R{num * 199}/mo)
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>

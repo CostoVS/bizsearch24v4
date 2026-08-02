@@ -15,13 +15,14 @@ export default function SearchBizServicesPage() {
   const [l2Extra, setL2Extra] = React.useState(false);
   const [l2Domain, setL2Domain] = React.useState(false);
   const [l2Listings, setL2Listings] = React.useState(false);
+  const [l2ListingCount, setL2ListingCount] = React.useState(1);
 
   // Calculate dynamic Level 2 price
   const hasL2Option = l2Verified || l2Extra || l2Domain || l2Listings;
   let l2PriceNum = 0;
   if (l2Verified) l2PriceNum += 199.99;
   if (l2Extra) l2PriceNum += 199.00;
-  if (l2Listings) l2PriceNum += 199.00;
+  if (l2Listings) l2PriceNum += 199.00 * l2ListingCount;
   
   const l2PriceStr = hasL2Option
     ? `R${l2PriceNum.toFixed(2)}${l2Domain ? " + R99/yr" : ""}`
@@ -95,7 +96,7 @@ export default function SearchBizServicesPage() {
         l2Verified ? "✓ Verified Badge & Essential Listing (+R199.99/mo) [SELECTED]" : "Essential Verified Level (+R199.99/mo) [Select option below]",
         l2Extra ? "✓ Add-on extra: Unlimited hosting, email accounts, smart static website (+R199/mo) [SELECTED]" : "Add-on extra: Unlimited hosting & website (+R199/mo)",
         l2Domain ? "✓ Add-on: .co.za domain (+R99/yr) [SELECTED]" : "Add-on: .co.za domain (+R99/yr)",
-        l2Listings ? "✓ Add-on: Extra listings (+R199/area each/mo) [SELECTED]" : "Add-on: Extra listings (+R199/area each/mo)"
+        l2Listings ? `✓ Add-on: ${l2ListingCount} Extra area listing${l2ListingCount > 1 ? 's' : ''} (+R${(199 * l2ListingCount).toFixed(2)}/mo) [SELECTED]` : "Add-on: Extra listings (+R199/area each/mo)"
       ],
       interactive: true,
       popular: true
@@ -353,15 +354,33 @@ export default function SearchBizServicesPage() {
                         />
                         <span>.co.za Domain Setup (+R99/yr)</span>
                       </label>
-                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={l2Listings}
-                          onChange={(e) => setL2Listings(e.target.checked)}
-                          className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                        />
-                        <span>Extra Area Listing (+R199/mo)</span>
-                      </label>
+                      <div className="space-y-1">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={l2Listings}
+                            onChange={(e) => setL2Listings(e.target.checked)}
+                            className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                          />
+                          <span>Extra Area Listing (+R199/mo each)</span>
+                        </label>
+                        {l2Listings && (
+                          <div className="ml-6 mt-1 flex items-center gap-2 bg-emerald-100/70 p-2 rounded-lg border border-emerald-300">
+                            <span className="text-[11px] font-extrabold text-emerald-950">Area Listings Quantity:</span>
+                            <select
+                              value={l2ListingCount}
+                              onChange={(e) => setL2ListingCount(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="text-xs font-bold bg-white border border-emerald-400 rounded px-2 py-1 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
+                            >
+                              {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
+                                <option key={num} value={num}>
+                                  {num} {num === 1 ? 'extra area' : 'extra areas'} (+R{num * 199}/mo)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -390,7 +409,7 @@ export default function SearchBizServicesPage() {
                         tier.id === "free"
                           ? "/create-ad"
                           : tier.id === "essential"
-                            ? `/premium?plan=essential&verified=${l2Verified}&extra=${l2Extra}&domain=${l2Domain}&listings=${l2Listings}`
+                            ? `/premium?plan=essential&verified=${l2Verified}&extra=${l2Extra}&domain=${l2Domain}&listings=${l2Listings}&listingCount=${l2ListingCount}`
                             : `/premium?plan=${tier.id}`
                       }
                       className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${

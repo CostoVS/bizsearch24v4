@@ -98,7 +98,8 @@ export async function POST(req: Request) {
       debitMandate,
       l2Extra,
       l2Domain,
-      l2Listings
+      l2Listings,
+      l2ListingCount
     } = await req.json();
 
     if (!email || !password) {
@@ -266,6 +267,7 @@ export async function POST(req: Request) {
         l2Extra: plan === "ESSENTIAL" ? !!l2Extra : undefined,
         l2Domain: plan === "ESSENTIAL" ? !!l2Domain : undefined,
         l2Listings: plan === "ESSENTIAL" ? !!l2Listings : undefined,
+        l2ListingCount: plan === "ESSENTIAL" && l2Listings ? (Number(l2ListingCount) || 1) : undefined,
       };
 
       applications.push(newApplication);

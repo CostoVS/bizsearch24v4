@@ -41,7 +41,8 @@ export async function POST(req: NextRequest) {
       plan,
       l2Extra,
       l2Domain,
-      l2Listings
+      l2Listings,
+      l2ListingCount
     } = data;
 
     if (!email || !fullName || !idNumber) {
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
       l2Extra: plan === "ESSENTIAL" ? !!l2Extra : undefined,
       l2Domain: plan === "ESSENTIAL" ? !!l2Domain : undefined,
       l2Listings: plan === "ESSENTIAL" ? !!l2Listings : undefined,
+      l2ListingCount: plan === "ESSENTIAL" && l2Listings ? (Number(l2ListingCount) || 1) : undefined,
     };
 
     applications.push(newApplication);

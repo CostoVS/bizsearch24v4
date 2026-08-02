@@ -111,6 +111,7 @@ export default function PremiumPage() {
   const [l2Extra, setL2Extra] = useState(false);
   const [l2Domain, setL2Domain] = useState(false);
   const [l2Listings, setL2Listings] = useState(false);
+  const [l2ListingCount, setL2ListingCount] = useState(1);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -123,6 +124,10 @@ export default function PremiumPage() {
       if (params.get("extra") === "true") setL2Extra(true);
       if (params.get("domain") === "true") setL2Domain(true);
       if (params.get("listings") === "true") setL2Listings(true);
+      const countParam = params.get("listingCount") || params.get("count");
+      if (countParam && !isNaN(parseInt(countParam))) {
+        setL2ListingCount(Math.max(1, parseInt(countParam)));
+      }
     }
   }, []);
 
@@ -271,6 +276,7 @@ ${signature}
           l2Extra: selectedPlan === "essential" ? l2Extra : undefined,
           l2Domain: selectedPlan === "essential" ? l2Domain : undefined,
           l2Listings: selectedPlan === "essential" ? l2Listings : undefined,
+          l2ListingCount: selectedPlan === "essential" && l2Listings ? l2ListingCount : undefined,
         })
       });
 
@@ -336,7 +342,7 @@ ${signature}
     let priceVal = 0;
     if (l2Verified) priceVal += 199.99;
     if (l2Extra) priceVal += 199.00;
-    if (l2Listings) priceVal += 199.00;
+    if (l2Listings) priceVal += 199.00 * l2ListingCount;
     displayPrice = hasAny ? `R${priceVal.toFixed(2)}${l2Domain ? " + R99/yr" : ""}` : "R0.00";
   }
 
@@ -389,7 +395,7 @@ ${signature}
                 l2Verified ? "✓ Verified Level (+R199.99/mo) [SELECTED]" : "Verified Level (+R199.99/mo) [Select option below]",
                 l2Extra ? "✓ Hosting & Web Suite (+R199/mo) [SELECTED]" : "Hosting & Web Suite (+R199/mo)",
                 l2Domain ? "✓ .co.za Domain (+R99/yr) [SELECTED]" : ".co.za Domain (+R99/yr)",
-                l2Listings ? "✓ Extra Listings (+R199/mo) [SELECTED]" : "Extra Listings (+R199/mo)"
+                l2Listings ? `✓ ${l2ListingCount} Extra Listing${l2ListingCount > 1 ? 's' : ''} (+R${(199 * l2ListingCount).toFixed(2)}/mo) [SELECTED]` : "Extra Area Listings (+R199/mo each)"
               ]
             },
             {
@@ -569,18 +575,36 @@ ${signature}
                 </div>
               </label>
 
-              <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer shadow-sm transition-all ${l2Listings ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
-                <input 
-                  type="checkbox" 
-                  checked={l2Listings} 
-                  onChange={(e) => setL2Listings(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
-                />
-                <div>
-                  <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Extra Area Ads</span>
-                  <span className="block text-[10px] text-slate-500 font-medium leading-tight">Add an extra listing in more areas across South Africa (+R199/mo)</span>
-                </div>
-              </label>
+              <div className={`p-4 rounded-xl border transition-all ${l2Listings ? "bg-emerald-100/60 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-white border-slate-200 hover:border-emerald-500"}`}>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={l2Listings} 
+                    onChange={(e) => setL2Listings(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer shrink-0"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold text-slate-900 leading-none mb-1">Extra Area Ads</span>
+                    <span className="block text-[10px] text-slate-500 font-medium leading-tight">Add extra listings in more areas across South Africa (+R199/mo each)</span>
+                  </div>
+                </label>
+                {l2Listings && (
+                  <div className="mt-3 pt-2.5 border-t border-emerald-300/80 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-extrabold text-emerald-950">Quantity:</span>
+                    <select
+                      value={l2ListingCount}
+                      onChange={(e) => setL2ListingCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="text-xs font-bold bg-white border border-emerald-400 rounded-lg px-2.5 py-1 text-slate-900 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer"
+                    >
+                      {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
+                        <option key={num} value={num}>
+                          {num} {num === 1 ? 'Area' : 'Areas'} (+R{num * 199}/mo)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
 
             {!l2Verified && !l2Extra && !l2Domain && !l2Listings && (
