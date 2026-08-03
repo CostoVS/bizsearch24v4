@@ -25,7 +25,8 @@ import {
   Gauge, 
   HelpCircle,
   FileCheck2,
-  Wrench
+  Wrench,
+  Globe
 } from "lucide-react";
 
 export const metadata = {
@@ -809,6 +810,252 @@ export default function HowBusinessWorksPage() {
                 Explore SearchBiz Services
               </Link>
             </div>
+          </div>
+
+        </section>
+
+        {/* SECTION 7: HOW RACISM & HATE AFFECT BUSINESS, COUNTRIES & EMPLOYMENT */}
+        <section id="section-7" className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-10 relative overflow-hidden backdrop-blur-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 font-black text-lg">
+              7
+            </div>
+            <div>
+              <span className="text-xs font-mono uppercase tracking-widest text-rose-400 font-bold block">Socio-Economic Liabilities</span>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                7. How Racism & Hate Effect Business, Countries & Employment
+              </h2>
+            </div>
+          </div>
+
+          <p className="text-slate-300 text-base leading-relaxed mb-8">
+            Racism and hate-driven discrimination are not just moral failures—they are major economic liabilities. Beyond the devastating social and human cost, systematic bias acts as a brake on economic growth, stifles innovation, distorts labor markets, and creates severe financial inefficiencies for nations and businesses alike.
+          </p>
+
+          {/* Sub-block 1: Macroeconomy */}
+          <div className="mb-10 space-y-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Globe className="w-5 h-5 text-rose-400" />
+              1. How Racism & Hate Impact a Country&apos;s Macroeconomy
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              When a country tolerates institutional discrimination or social division, its overall economic stability and global standing take a massive hit:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="font-bold text-rose-400 text-sm mb-1.5 flex items-center gap-2">
+                  <Coins className="w-4 h-4 shrink-0" />
+                  Trillions in Lost GDP
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Systemic racism artificially suppresses gross domestic product (GDP). Major financial institutions and central banks estimate that racial gaps in pay, housing, and education cost major national economies trillions of dollars in lost aggregate output over time. Lower earning potential means reduced consumer spending, which shrinks the entire economic pie.
+                </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="font-bold text-amber-400 text-sm mb-1.5 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 shrink-0" />
+                  FDI & Tourism Drop
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Investors favor politically stable, socially cohesive nations. Social unrest, hate crimes, and discriminatory laws lower country risk ratings, driving capital away. Tourism also plummets when travelers perceive a destination as unsafe or hostile toward specific ethnic or religious groups.
+                </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="font-bold text-indigo-400 text-sm mb-1.5 flex items-center gap-2">
+                  <Activity className="w-4 h-4 shrink-0" />
+                  Increased Public Spending on Crisis Response
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Governments end up spending billions dealing with the symptoms of racial inequality—policing social unrest, healthcare costs associated with discrimination-induced stress, and social safety nets required when underrepresented groups are excluded from the formal economy.
+                </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="font-bold text-purple-400 text-sm mb-1.5 flex items-center gap-2">
+                  <Users className="w-4 h-4 shrink-0" />
+                  Brain Drain (Flight of Talent)
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Highly skilled workers, innovators, and entrepreneurs from marginalized demographics often emigrate to more inclusive countries, draining the home country of essential human capital.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-block 2: Impact on Businesses & Organizations */}
+          <div className="mb-10 space-y-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Building2 className="w-5 h-5 text-indigo-400" />
+              2. Impact on Businesses & Organizations
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              At the firm level, bias directly degrades operational efficiency, market reach, and long-term profitability:
+            </p>
+
+            {/* Impact Table */}
+            <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-slate-900 border-b border-slate-800 text-slate-300 font-mono uppercase text-[11px]">
+                  <tr>
+                    <th className="p-4 font-bold w-1/3 text-emerald-400">Impact Area</th>
+                    <th className="p-4 font-bold text-slate-200">Consequences of Workplace Racism & Bias</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  <tr className="hover:bg-slate-900/50 transition-colors">
+                    <td className="p-4 font-bold text-white align-top">Talent Acquisition</td>
+                    <td className="p-4 leading-relaxed">
+                      <strong className="text-rose-300 font-semibold block mb-1">Shrunk Talent Pool:</strong>
+                      Hiring based on conscious or unconscious bias filters out top-tier talent, leaving companies with less qualified workforces simply because of arbitrary demographics.
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/50 transition-colors">
+                    <td className="p-4 font-bold text-white align-top">Productivity & Turnover</td>
+                    <td className="p-4 leading-relaxed">
+                      Hostile work environments lower employee morale, engagement, and output. Toxic cultures lead to high employee turnover, increasing costly recruitment and retraining cycles.
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/50 transition-colors">
+                    <td className="p-4 font-bold text-white align-top">Brand Reputation</td>
+                    <td className="p-4 leading-relaxed">
+                      Consumers increasingly hold brands accountable. Incidents of hate or discriminatory practices lead to public boycotts, brand erosion, and lost revenue.
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/50 transition-colors">
+                    <td className="p-4 font-bold text-white align-top">Innovation & Problem Solving</td>
+                    <td className="p-4 leading-relaxed">
+                      Studies consistently show that diverse, inclusive teams outperform homogeneous ones in innovation and problem-solving. Homogeneous teams suffer from groupthink.
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-900/50 transition-colors">
+                    <td className="p-4 font-bold text-white align-top">Legal & Compliance Costs</td>
+                    <td className="p-4 leading-relaxed">
+                      Companies face severe financial penalties, litigation expenses, and compliance mandates stemming from discrimination or harassment lawsuits.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Sub-block 3: Impact on Employment & Job Creation */}
+          <div className="mb-10 space-y-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Briefcase className="w-5 h-5 text-teal-400" />
+              3. Impact on Employment & Job Creation
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              Discrimination distorts how labor markets match human capital with available opportunities:
+            </p>
+
+            <div className="space-y-3">
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                <strong className="text-teal-300 font-bold text-sm block mb-1">Inefficient Allocation of Labor</strong>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  When qualified individuals are rejected or overlooked due to race, ethnicity, or background, the market fails to allocate labor to its most efficient use.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                <strong className="text-indigo-300 font-bold text-sm block mb-1">Glass Ceilings & Wage Gaps</strong>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Marginalized groups are often restricted to low-wage, entry-level, or informal sectors, preventing them from climbing to high-impact leadership roles regardless of merit.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                <strong className="text-purple-300 font-bold text-sm block mb-1">Suppressed Entrepreneurship</strong>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Systemic bias in lending (such as discriminatory credit scoring or higher interest rates for minority business owners) starves viable startups of capital. This directly limits local job creation and wealth generation.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-block 4: Driving Structural & Chronic Unemployment */}
+          <div className="mb-10 space-y-6">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              4. Driving Structural & Chronic Unemployment
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              The impact of prejudice on unemployment rates is persistent and structural:
+            </p>
+
+            {/* Flow diagram visual */}
+            <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800">
+              <div className="text-center font-mono text-xs font-bold uppercase tracking-widest text-rose-400 mb-6">
+                STRUCTURAL UNEMPLOYMENT & MARGINALIZATION CYCLE
+              </div>
+
+              <div className="flex flex-col items-center max-w-xl mx-auto space-y-3">
+                <div className="w-full p-3.5 rounded-xl bg-slate-900 border border-rose-500/40 text-center font-bold text-xs text-white shadow-lg">
+                  Racial & Social Bias in Hiring
+                </div>
+                <div className="w-0.5 h-4 bg-rose-500/40"></div>
+                
+                <div className="w-full p-3.5 rounded-xl bg-slate-900 border border-amber-500/40 text-center font-bold text-xs text-white shadow-lg">
+                  Restricted Access to Capital & Quality Education
+                </div>
+                <div className="w-0.5 h-4 bg-amber-500/40"></div>
+
+                <div className="w-full p-3.5 rounded-xl bg-slate-900 border border-indigo-500/40 text-center font-bold text-xs text-white shadow-lg">
+                  Spatially Segregated & Underfunded Communities
+                </div>
+                <div className="w-0.5 h-4 bg-indigo-500/40"></div>
+
+                <div className="w-full p-4 rounded-xl bg-rose-950/80 border border-rose-500/60 text-center font-extrabold text-xs sm:text-sm text-rose-200 shadow-xl">
+                  Sustained 2x–3x Unemployment Gaps Across Economic Cycles
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed structural points */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300">
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <strong className="text-amber-300 font-bold block text-sm">The 2:1 Ratio Phenomenon</strong>
+                <p className="leading-relaxed">
+                  In many nations, unemployment rates for marginalized racial or minority groups remain roughly double those of dominant demographics, even during periods of strong economic expansion and regardless of educational attainment.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <strong className="text-amber-300 font-bold block text-sm">Resume/Callback Disparities</strong>
+                <p className="leading-relaxed">
+                  Audit studies worldwide consistently reveal that job applicants with &quot;minority-sounding&quot; names or addresses must send significantly more resumes than majority candidates to receive a single callback for an interview, even with identical qualifications.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <strong className="text-amber-300 font-bold block text-sm">Hiring Biases in Automated Systems</strong>
+                <p className="leading-relaxed">
+                  Algorithmic hiring tools trained on historical data frequently perpetuate past discriminatory patterns, automatically filtering out qualified applicants from specific groups at scale.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <strong className="text-amber-300 font-bold block text-sm">Intergenerational Poverty Cycles</strong>
+                <p className="leading-relaxed">
+                  Prolonged unemployment deprives families of wealth-building opportunities (homeownership, education savings), cementing structural economic disadvantage for subsequent generations.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* The Bottom Line Summary Box */}
+          <div className="p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-950 border border-emerald-500/40 text-center shadow-2xl">
+            <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-400 block mb-2">
+              THE BOTTOM LINE
+            </span>
+            <h4 className="text-xl sm:text-2xl font-black text-white mb-3">
+              Inclusion is a Prerequisite for Maximum Economic Productivity
+            </h4>
+            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed max-w-3xl mx-auto">
+              Eliminating discrimination is not just a moral imperative—it is a prerequisite for maximum economic productivity. Countries and companies that actively build inclusive, merit-based environments capture greater innovation, attract superior investment, and build significantly more resilient economies.
+            </p>
           </div>
 
         </section>
