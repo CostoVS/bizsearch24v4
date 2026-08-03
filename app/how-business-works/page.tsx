@@ -807,7 +807,7 @@ export default function HowBusinessWorksPage() {
                 href="/services" 
                 className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm px-6 py-3.5 rounded-xl border border-slate-700 transition-all"
               >
-                Explore SearchBiz Services
+                Explore SearchBiz Pricing & Plans
               </Link>
             </div>
           </div>

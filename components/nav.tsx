@@ -108,7 +108,7 @@ export function Navbar() {
                 className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
-                Services
+                Pricing
               </Link>
               <Link
                 href="/news"
@@ -345,7 +345,7 @@ export function Navbar() {
                   >
                     <span className="flex items-center gap-2.5">
                       <Sparkles className="w-4 h-4 text-emerald-600" />
-                      SearchBiz Services
+                      SearchBiz Pricing
                     </span>
                   </Link>
 

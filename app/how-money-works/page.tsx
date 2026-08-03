@@ -835,7 +835,7 @@ export default function HowMoneyWorksPage() {
               href="/services"
               className="px-6 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm tracking-wide transition-all border border-slate-700"
             >
-              Explore SearchBiz Services
+              Explore SearchBiz Pricing & Plans
             </Link>
           </div>
         </section>
