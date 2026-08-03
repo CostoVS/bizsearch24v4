@@ -167,6 +167,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
               <Link href="/google-business-guide" className="block hover:text-emerald-400 transition-colors font-semibold text-emerald-400">Free Google Business Guide</Link>
               <Link href="/cipc-registration-guide" className="block hover:text-indigo-300 transition-colors font-semibold text-indigo-400">CIPC & SARS Guide</Link>
               <Link href="/how-money-works" className="block hover:text-amber-300 transition-colors font-extrabold text-amber-400">💡 How Money Works Guide</Link>
+              <Link href="/how-business-works" className="block hover:text-emerald-300 transition-colors font-extrabold text-emerald-400">🏢 How Business Works Guide</Link>
               <Link href="/qa" className="block hover:text-amber-300 transition-colors font-semibold text-amber-400">System Q&A FAQ</Link>
               <Link href="/support" className="block hover:text-emerald-300 transition-colors font-bold text-emerald-400 pt-1">Support / Help Center</Link>
             </div>

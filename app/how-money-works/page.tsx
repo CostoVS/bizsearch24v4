@@ -817,6 +817,14 @@ export default function HowMoneyWorksPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link 
+              href="/how-business-works"
+              className="px-6 py-3.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-sm tracking-wide transition-all shadow-lg shadow-teal-500/20 flex items-center gap-2"
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Read Guide: How Business Works</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link 
               href="/login?tab=register"
               className="px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm tracking-wide transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
             >

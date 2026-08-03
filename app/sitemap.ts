@@ -19,6 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/sitemap',
     '/google-business-guide',
     '/how-money-works',
+    '/how-business-works',
     '/claim-business',
     '/create-ad',
   ];
