@@ -104,7 +104,7 @@ export function Navbar() {
                 SHOWOFS
               </Link>
               <Link
-                href="/services"
+                href="/pricing"
                 className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Sparkles className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
@@ -340,7 +340,7 @@ export function Navbar() {
                 <div className="space-y-1.5">
                   <Link
                     onClick={() => setMobileMenuOpen(false)}
-                    href="/services"
+                    href="/pricing"
                     className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
                   >
                     <span className="flex items-center gap-2.5">

@@ -17,6 +17,25 @@ export default function SearchBizServicesPage() {
   const [l2Listings, setL2Listings] = React.useState(false);
   const [l2ListingCount, setL2ListingCount] = React.useState(1);
 
+  // Manual Choose vs "Not Choose" Calculator State
+  const [calcChooseCount, setCalcChooseCount] = React.useState<number>(3);
+  const [calcNotChooseCount, setCalcNotChooseCount] = React.useState<number>(1);
+  const [calcIncludeDomain, setCalcIncludeDomain] = React.useState<boolean>(false);
+  const [calcIncludeWebsite, setCalcIncludeWebsite] = React.useState<boolean>(true);
+
+  // Calculate dynamic amounts
+  const unitOptionRate = 199.00;
+  const effectiveChosenCount = Math.max(0, calcChooseCount - calcNotChooseCount);
+  const calcBaseVerifiedFee = 199.99;
+  const calcWebsiteFee = calcIncludeWebsite ? 199.00 : 0;
+  const calcSubtotal = (effectiveChosenCount * unitOptionRate) + calcWebsiteFee + calcBaseVerifiedFee;
+  const calcDomainText = calcIncludeDomain ? " + R99.00/yr (.co.za domain)" : "";
+  const calcTotalStr = `R${calcSubtotal.toFixed(2)}${calcDomainText}`;
+
+  const calcCustomWhatsAppLink = `https://wa.me/27751613007?text=${encodeURIComponent(
+    `Hi SearchBiz.co.za! I calculated a custom plan:\n- Selected Options: ${calcChooseCount}\n- Not Choose Options: ${calcNotChooseCount}\n- Effective Options: ${effectiveChosenCount}\n- Smart Website: ${calcIncludeWebsite ? "Yes (+R199/mo)" : "No"}\n- Domain: ${calcIncludeDomain ? "Yes (+R99/yr)" : "No"}\n- Calculated Amount: ${calcTotalStr}/mo.`
+  )}`;
+
   // Calculate dynamic Level 2 price
   const hasL2Option = l2Verified || l2Extra || l2Domain || l2Listings;
   let l2PriceNum = 0;
@@ -280,6 +299,193 @@ export default function SearchBizServicesPage() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Interactive Custom Option & "Not Choose" Calculator */}
+        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[2.5rem] border-2 border-emerald-500/40 p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden space-y-8">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+            <div>
+              <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 rounded-full text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
+                <Sparkles className="w-3.5 h-3.5" /> DYNAMIC CALCULATOR
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Manual Option & &quot;Not Choose&quot; Custom Calculator
+              </h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-xl">
+                Manually enter how many options you wish to select and how many options you choose NOT to include. The system instantly calculates your exact monthly total!
+              </p>
+            </div>
+
+            <div className="bg-slate-950/80 border border-emerald-500/40 rounded-2xl p-4 sm:p-5 text-right shrink-0">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">System Calculated Amount</span>
+              <p className="text-3xl sm:text-4xl font-black text-emerald-400 font-mono mt-1">{calcTotalStr}</p>
+              <span className="text-[10px] text-slate-400 block mt-0.5 font-medium">Billed monthly via debit mandate</span>
+            </div>
+          </div>
+
+          {/* Calculator Interactive Form Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            
+            {/* Input 1: Choose Options */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-400" /> Options Selected
+                </label>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded">
+                  R199.00 / option
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                How many options/features do you want to select?
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCalcChooseCount(Math.max(1, calcChooseCount - 1))}
+                  className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-xl border border-slate-700 transition"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={calcChooseCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setCalcChooseCount(isNaN(val) || val < 1 ? 1 : val);
+                  }}
+                  className="w-full text-center bg-black/60 border border-slate-700 rounded-xl py-2 font-mono font-black text-lg text-emerald-400 outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCalcChooseCount(calcChooseCount + 1)}
+                  className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-xl border border-slate-700 transition"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Input 2: NOT CHOOSE Options (Manual Entry) */}
+            <div className="bg-slate-900/90 border border-rose-500/30 rounded-2xl p-5 space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-rose-300 uppercase tracking-wide flex items-center gap-1.5">
+                  <HelpCircle className="w-4 h-4 text-rose-400" /> &quot;Not Choose&quot; Options
+                </label>
+                <span className="text-[10px] bg-rose-500/20 text-rose-300 font-mono font-bold px-2 py-0.5 rounded">
+                  Manual Entry
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Enter how many options you manually choose NOT to select:
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCalcNotChooseCount(Math.max(0, calcNotChooseCount - 1))}
+                  className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-xl border border-slate-700 transition"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  max={calcChooseCount}
+                  value={calcNotChooseCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setCalcNotChooseCount(isNaN(val) || val < 0 ? 0 : val);
+                  }}
+                  className="w-full text-center bg-black/60 border border-rose-500/40 rounded-xl py-2 font-mono font-black text-lg text-rose-400 outline-none focus:border-rose-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCalcNotChooseCount(Math.min(calcChooseCount, calcNotChooseCount + 1))}
+                  className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-xl border border-slate-700 transition"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Toggle 3: Website & Hosting */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+              <div>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                  <Laptop className="w-4 h-4 text-indigo-400" /> Smart Static Website
+                </label>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Include custom business card landing page & static hosting.
+                </p>
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <input
+                  type="checkbox"
+                  checked={calcIncludeWebsite}
+                  onChange={(e) => setCalcIncludeWebsite(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-200">Include Website (+R199.00/mo)</span>
+              </label>
+            </div>
+
+            {/* Toggle 4: Domain Name */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+              <div>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                  <Globe className="w-4 h-4 text-teal-400" /> .co.za Domain Setup
+                </label>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Register your official domain name for your business brand.
+                </p>
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <input
+                  type="checkbox"
+                  checked={calcIncludeDomain}
+                  onChange={(e) => setCalcIncludeDomain(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-700 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-200">Include .co.za Domain (+R99/yr)</span>
+              </label>
+            </div>
+
+          </div>
+
+          {/* Breakdown & Order Action Bar */}
+          <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="space-y-1 text-xs text-slate-300 font-medium">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">
+                  {calcChooseCount} Options Selected
+                </span>
+                <span className="text-slate-500">-</span>
+                <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-mono font-bold">
+                  {calcNotChooseCount} Not Choose Options
+                </span>
+                <span className="text-slate-500">=</span>
+                <span className="bg-indigo-500/20 text-indigo-300 px-2.5 py-0.5 rounded font-mono font-bold">
+                  {effectiveChosenCount} Net Effective Options
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 pt-1">
+                Base Essential Verification (R199.99) + ({effectiveChosenCount} options @ R199.00/mo) {calcIncludeWebsite ? "+ Website (R199.00/mo)" : ""} = <strong className="text-white font-mono">{calcTotalStr}</strong>
+              </p>
+            </div>
+
+            <a
+              href={calcCustomWhatsAppLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs px-6 py-3.5 rounded-xl shadow-lg transition-all flex items-center gap-2 shrink-0 uppercase tracking-wide"
+            >
+              <PhoneCall className="w-4 h-4" /> Order Calculated Custom Plan
+            </a>
           </div>
         </div>
 

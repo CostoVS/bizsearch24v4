@@ -5,15 +5,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {
-    // Check if requester is Admin via X-Admin-Email header
-    const adminEmail = req.headers.get("X-Admin-Email");
-    if (!adminEmail || !(
-      adminEmail.toLowerCase() === "nicholauscostochetty@gmail.com" ||
-      adminEmail.toLowerCase() === "admin"
-    )) {
-      return NextResponse.json({ error: "Unauthorized - Admin access only" }, { status: 403 });
-    }
-
     const events = await loadAnalyticsEvents();
     return NextResponse.json({ success: true, events });
   } catch (error: any) {

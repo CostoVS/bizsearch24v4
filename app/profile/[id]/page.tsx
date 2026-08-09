@@ -11,6 +11,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from "@/lib/auth";
 import { getLocalProfile, saveLocalProfile, UserProfile } from '@/lib/profile-utils';
+import { trackCallClick, trackWhatsAppClick } from '@/lib/analytics-utils';
 
 interface Message {
   id: string;
@@ -917,7 +918,7 @@ export default function PublicProfilePage() {
                     )}
 
                     {profile.phoneNumber && showPersonal && (
-                      <a href={`tel:${profile.phoneNumber}`} className="flex items-center gap-3 p-4 bg-white border border-slate-100 hover:border-emerald-200 rounded-2xl text-slate-700 font-semibold transition hover:bg-slate-50 shadow-sm group">
+                      <a href={`tel:${profile.phoneNumber}`} onClick={() => trackCallClick(profile.phoneNumber || "")} className="flex items-center gap-3 p-4 bg-white border border-slate-100 hover:border-emerald-200 rounded-2xl text-slate-700 font-semibold transition hover:bg-slate-50 shadow-sm group">
                         <Phone className="w-4 h-4 text-slate-400 group-hover:text-emerald-600" />
                         <span className="text-xs sm:text-sm truncate">{profile.phoneNumber}</span>
                       </a>
@@ -928,6 +929,7 @@ export default function PublicProfilePage() {
                         href={`https://wa.me/${profile.whatsappNumber.replace(/[^0-9]/g, "")}`}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={() => trackWhatsAppClick(profile.whatsappNumber || "")}
                         className="flex items-center gap-3 p-4 bg-emerald-50/50 border border-emerald-100 hover:bg-emerald-100/60 text-emerald-800 font-bold transition rounded-2xl shadow-sm group"
                       >
                         <MessageSquare className="w-4 h-4 text-emerald-600 fill-emerald-100" />

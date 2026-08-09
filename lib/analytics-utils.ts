@@ -75,7 +75,57 @@ export interface ExternalSiteEvent {
   timestamp: string;
 }
 
-export type AnalyticsEvent = PageViewEvent | SearchEvent | AdClickEvent | UploadEvent | ExternalSiteEvent;
+export interface CallClickEvent {
+  id: string;
+  type: 'callclick';
+  adId?: string;
+  adTitle?: string;
+  phone: string;
+  category?: string;
+  location?: string;
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  browser: string;
+  device: string;
+  timestamp: string;
+}
+
+export interface WhatsAppClickEvent {
+  id: string;
+  type: 'whatsappclick';
+  adId?: string;
+  adTitle?: string;
+  whatsapp: string;
+  category?: string;
+  location?: string;
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  browser: string;
+  device: string;
+  timestamp: string;
+}
+
+export interface AdViewEvent {
+  id: string;
+  type: 'adview';
+  adId: string;
+  adTitle: string;
+  category?: string;
+  location?: string;
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  browser: string;
+  device: string;
+  timestamp: string;
+}
+
+export type AnalyticsEvent = PageViewEvent | SearchEvent | AdClickEvent | UploadEvent | ExternalSiteEvent | CallClickEvent | WhatsAppClickEvent | AdViewEvent;
 
 let ipCache: { ip: string; city: string; region: string; country: string } | null = null;
 
@@ -258,6 +308,86 @@ export async function trackAdClick(adId: string, adTitle: string, category: stri
     category: category || "Business Service",
     province: province || "Unknown Province",
     location: location || "Unknown Area",
+    ip: geo.ip,
+    city: geo.city,
+    region: geo.region,
+    country: geo.country,
+    browser: client.browser,
+    device: client.device,
+    timestamp: new Date().toISOString()
+  };
+  
+  saveEventToStorage(event);
+}
+
+// Track Ad Impression / View
+export async function trackAdView(adId: string, adTitle: string, category?: string, location?: string) {
+  if (typeof window === "undefined" || !adId) return;
+  
+  const geo = await getIpAndGeo();
+  const client = getClientBrowserAndDevice();
+  
+  const event: AdViewEvent = {
+    id: `ev-av-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    type: 'adview',
+    adId,
+    adTitle,
+    category: category || "Business Service",
+    location: location || "South Africa",
+    ip: geo.ip,
+    city: geo.city,
+    region: geo.region,
+    country: geo.country,
+    browser: client.browser,
+    device: client.device,
+    timestamp: new Date().toISOString()
+  };
+  
+  saveEventToStorage(event);
+}
+
+// Track Call Click
+export async function trackCallClick(phone: string, adId?: string, adTitle?: string, category?: string, location?: string) {
+  if (typeof window === "undefined" || !phone) return;
+  
+  const geo = await getIpAndGeo();
+  const client = getClientBrowserAndDevice();
+  
+  const event: CallClickEvent = {
+    id: `ev-cc-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    type: 'callclick',
+    adId,
+    adTitle,
+    phone,
+    category,
+    location,
+    ip: geo.ip,
+    city: geo.city,
+    region: geo.region,
+    country: geo.country,
+    browser: client.browser,
+    device: client.device,
+    timestamp: new Date().toISOString()
+  };
+  
+  saveEventToStorage(event);
+}
+
+// Track WhatsApp Click
+export async function trackWhatsAppClick(whatsapp: string, adId?: string, adTitle?: string, category?: string, location?: string) {
+  if (typeof window === "undefined" || !whatsapp) return;
+  
+  const geo = await getIpAndGeo();
+  const client = getClientBrowserAndDevice();
+  
+  const event: WhatsAppClickEvent = {
+    id: `ev-wa-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    type: 'whatsappclick',
+    adId,
+    adTitle,
+    whatsapp,
+    category,
+    location,
     ip: geo.ip,
     city: geo.city,
     region: geo.region,

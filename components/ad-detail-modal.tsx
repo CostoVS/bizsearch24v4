@@ -32,7 +32,7 @@ import { AdDescription } from "./ad-description";
 
 const AdMap = dynamic(() => import("./map-component"), { ssr: false });
 import { getLocalProfile } from "@/lib/profile-utils";
-import { trackAdClick } from "@/lib/analytics-utils";
+import { trackAdClick, trackAdView, trackCallClick, trackWhatsAppClick } from "@/lib/analytics-utils";
 import { useAuth } from "@/lib/auth";
 import { getStoredAds, saveStoredAds, deleteAd } from "@/lib/data";
 
@@ -187,6 +187,12 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
         ad.title,
         ad.category,
         "South Africa",
+        ad.location || "All Areas",
+      );
+      trackAdView(
+        ad.id,
+        ad.title,
+        ad.category,
         ad.location || "All Areas",
       );
     }
@@ -1670,6 +1676,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                       {ad.phone && ad.showCallOption !== false && (
                         <a
                           href={`tel:${ad.phone}`}
+                          onClick={() => trackCallClick(ad.phone || "", ad.id, ad.title, ad.category, ad.location)}
                           className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
                         >
                           <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
@@ -1710,6 +1717,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                           href={`https://wa.me/${ad.whatsapp.replace(/[^0-9]/g, "")}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackWhatsAppClick(ad.whatsapp || "", ad.id, ad.title, ad.category, ad.location)}
                           className="flex items-center gap-4 p-4 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-2xl transition shadow-sm group"
                         >
                           <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
