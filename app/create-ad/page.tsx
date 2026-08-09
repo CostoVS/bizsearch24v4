@@ -140,6 +140,7 @@ export default function CreateAdPage() {
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [emailField, setEmailField] = useState("");
+  const [website, setWebsite] = useState("");
   const [tiktok, setTiktok] = useState("");
   const [xLink, setXLink] = useState("");
   const [instagram, setInstagram] = useState("");
@@ -328,6 +329,7 @@ export default function CreateAdPage() {
           phone: phone.trim(),
           whatsapp: isPremiumOrAdmin ? whatsapp.trim() : "",
           email: isPremiumOrAdmin ? emailField.trim() : "",
+          website: isPremiumOrAdmin ? website.trim() : "",
           socialTikTok: isPremiumOrAdmin ? tiktok.trim() : "",
           socialX: isPremiumOrAdmin ? xLink.trim() : "",
           socialInstagram: isPremiumOrAdmin ? instagram.trim() : "",
@@ -1099,6 +1101,32 @@ export default function CreateAdPage() {
                             </div>
                           </div>
 
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-500 tracking-wider uppercase mb-1 flex items-center justify-between">
+                              <span>Official Website URL</span>
+                              {!isPremiumOrAdmin && <span className="text-amber-700 font-extrabold text-[10px] bg-amber-100 px-2 py-0.5 rounded">Paid Plan Only (R199/mo)</span>}
+                            </label>
+                            {isPremiumOrAdmin ? (
+                              <input
+                                type="url"
+                                value={website}
+                                onChange={(e) => setWebsite(e.target.value)}
+                                placeholder="e.g. https://www.yourcompany.co.za"
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs outline-none focus:border-emerald-500 bg-white"
+                              />
+                            ) : (
+                              <div className="p-3 bg-amber-50/50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-center justify-between gap-2">
+                                <span>Website URLs are reserved for Paid Premium Members (R199/month).</span>
+                                <Link href="/pricing" className="text-emerald-700 font-extrabold hover:underline shrink-0 text-xs">
+                                  Upgrade Plan →
+                                </Link>
+                              </div>
+                            )}
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              Your website link will be displayed prominently on your directory card and search pin.
+                            </span>
+                          </div>
+
                           <div className="border-t border-slate-100 pt-3">
                             <label className="block text-[11px] font-bold text-slate-500 tracking-wider uppercase mb-2">
                               Social Media Links
@@ -1170,7 +1198,7 @@ export default function CreateAdPage() {
                       ) : (
                         <div className="mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                           <p className="text-xs text-indigo-950 font-medium leading-normal max-w-sm">
-                            Upgrade to Essential to unlock WhatsApp Chat, Business
+                            Upgrade to Essential to unlock Official Website link, WhatsApp Chat, Business
                             Email address and full Social Platform connectivity.
                           </p>
                           <Link

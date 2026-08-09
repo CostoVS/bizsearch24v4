@@ -21,6 +21,7 @@ import {
   MessageCircle,
   AlertCircle,
   Star,
+  Globe,
   Image as ImageIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -49,6 +50,9 @@ interface Ad {
   image: string | null;
   address?: string;
   phone?: string;
+  website?: string;
+  plan?: string;
+  isVerified?: boolean;
   whatsapp?: string;
   email?: string;
   socialTikTok?: string;
@@ -1731,6 +1735,28 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                             </span>
                             <span className="text-sm font-mono font-bold">
                               {ad.whatsapp}
+                            </span>
+                          </div>
+                        </a>
+                      )}
+
+                      {((ad.isPremium || ad.isSponsor || ad.verified || ad.isVerified || isAdmin || ad.plan === 'PREMIUM' || ad.plan === 'SPONSOR' || ad.plan === 'ESSENTIAL') && ad.website) && (
+                        <a
+                          href={ad.website.startsWith('http') ? ad.website : `https://${ad.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => trackAdClick(ad.id, ad.title, ad.category, ad.location, "website_click")}
+                          className="flex items-center gap-4 p-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition shadow-sm group"
+                        >
+                          <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
+                            <Globe className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="overflow-hidden">
+                            <span className="block text-[10px] uppercase font-bold text-indigo-100">
+                              Official Business Website (Paid Member)
+                            </span>
+                            <span className="text-sm font-bold text-white truncate block">
+                              {ad.website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
                             </span>
                           </div>
                         </a>

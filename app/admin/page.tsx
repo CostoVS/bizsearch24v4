@@ -15,6 +15,119 @@ import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
+function parseCsvRowToRecord(headers: string[], values: string[], defaultCategory = "General Business Services", defaultProvince = "gauteng") {
+  const row: Record<string, string> = {};
+  headers.forEach((header, idx) => {
+    if (header) {
+      row[header.trim().toLowerCase()] = (values[idx] || "").trim();
+    }
+  });
+
+  let title = row.title || row.name || row.company || row["company name"] || row.business || row.xxvwce || row["business name"] || row.heading || "";
+  let address = row.address || row.street || row.location || row["full address"] || row["w4efsd 4"] || row.w4efsd4 || row["street address"] || row.vicinity || "";
+  let phone = row.phone || row.telephone || row.contact || row["phone number"] || row.mobile || row.cell || row.usdlk || row["contact number"] || row.tel || "";
+  let email = row.email || row.mail || row["email address"] || "";
+  let category = row.category || row.industry || row.type || row.w4efsd || "";
+  let servicesOffered = row.services || row.description || row.about || row["services offered"] || row.ah5ghc || row.summary || "";
+  let website = row.website || row.url || row.link || row["lcr4fd href"] || row.lcr4fd_href || row["website url"] || "";
+
+  // Detect Google Maps Scraper format (Instant Data Scraper, Web Scraper, Apify, Outscraper)
+  const isMapsScrape = values.length >= 3 && (
+    (values[0] && values[0].startsWith("http")) ||
+    headers.some(h => h.includes("hfpxzc") || h.includes("xxvwce") || h.includes("usdlk") || h.includes("w4efsd") || h.includes("lcr4fd") || h.includes("href") || h.includes("address") || h.includes("phone"))
+  );
+
+  if (isMapsScrape) {
+    if (!title) {
+      if (values[1] && !values[1].startsWith("http")) {
+        title = values[1];
+      } else if (values[0] && !values[0].startsWith("http")) {
+        title = values[0];
+      }
+    }
+
+    if (!category) {
+      for (let c = 2; c < Math.min(6, values.length); c++) {
+        const val = values[c];
+        if (val && !val.startsWith("http") && val !== "·" && val !== "" && val.length < 50 && !/\d/.test(val)) {
+          category = val;
+          break;
+        }
+      }
+    }
+
+    // Street address extraction - check all columns if missing or placeholder
+    if (!address || address === "·" || address === "") {
+      if (values[8] && values[8] !== "·" && values[8] !== "" && !values[8].startsWith("http") && !values[8].toLowerCase().includes("open") && !values[8].toLowerCase().includes("closed")) {
+        address = values[8];
+      } else {
+        for (let c = 0; c < values.length; c++) {
+          const val = values[c];
+          if (val && val !== "·" && val !== "" && !val.startsWith("http") && val.length > 5 &&
+              (/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|estate|park|industrial|suite|unit)\b/i.test(val) || /\d+[\s\w,]+/.test(val))) {
+            address = val;
+            break;
+          }
+        }
+      }
+    }
+
+    // Phone extraction - check all columns for valid South African phone formats or digit sequences
+    if (!phone || phone === "·" || phone === "") {
+      for (let c = 0; c < values.length; c++) {
+        const val = values[c];
+        if (!val) continue;
+        const cleanVal = val.trim().replace(/[\s\-\(\)\.]/g, '');
+        if (/^(\+?27|0)\d{8,11}$/.test(cleanVal) || (cleanVal.length >= 9 && cleanVal.length <= 13 && /^\+?\d+$/.test(cleanVal))) {
+          phone = val.trim();
+          break;
+        }
+      }
+    }
+
+    // Website extraction
+    if (!website) {
+      for (let c = 0; c < values.length; c++) {
+        const val = values[c];
+        if (val && (val.startsWith("http://") || val.startsWith("https://")) && !val.includes("google.com/maps") && !val.includes("gstatic.com") && !val.includes("facebook.com")) {
+          website = val;
+          break;
+        }
+      }
+    }
+
+    // Review / description extraction
+    if (!servicesOffered || servicesOffered.startsWith("http")) {
+      for (let c = 0; c < values.length; c++) {
+        const val = values[c];
+        if (val && val.length > 20 && !val.startsWith("http") && val !== "Website" && val !== "Directions" && !/\b(street|road|avenue)\b/i.test(val)) {
+          servicesOffered = val.replace(/^"|"$/g, '').trim();
+          break;
+        }
+      }
+    }
+  }
+
+  if (address === "·" || address === "") address = "";
+  if (phone === "·" || phone === "") phone = "";
+
+  if (servicesOffered && (servicesOffered.startsWith("http://") || servicesOffered.startsWith("https://") || servicesOffered.startsWith("www."))) {
+    servicesOffered = "";
+  }
+
+  return {
+    title: (title || "").substring(0, 100).trim(),
+    address: (address || "").substring(0, 200).trim(),
+    phone: (phone || "").substring(0, 50).trim(),
+    email: (email || "").substring(0, 100).trim(),
+    category: (category || defaultCategory).trim(),
+    province: (row.province || row.state || defaultProvince).trim(),
+    city: (row.city || row.town || "Johannesburg").trim(),
+    servicesOffered: (servicesOffered || "").substring(0, 500).trim(),
+    website: (website || "").substring(0, 200).trim()
+  };
+}
+
 export default function AdminDashboard() {
   const { user, isLoading, isAdmin } = useAuth();
   const router = useRouter();
@@ -1602,40 +1715,9 @@ export default function AdminDashboard() {
                           for (let i = 1; i < lines.length; i++) {
                             const values = parseCsvRow(lines[i]);
                             if (values.length === 0) continue;
-                            const row: any = {};
-                            headers.forEach((header, idx) => {
-                              row[header] = values[idx] || "";
-                            });
-                            
-                            // Match common variations of CSV column names or fallback to position for scraped Google Maps files
-                            let title = row.title || row.name || row.company || row["company name"] || row.business || "";
-                            let address = row.address || row.street || row.location || row["full address"] || "";
-                            let phone = row.phone || row.telephone || row.contact || row["phone number"] || "";
-                            let email = row.email || row.mail || "";
-                            let category = row.category || row.industry || row.type || "";
-                            let servicesOffered = row.services || row.description || row.about || row.website || "";
-
-                            // Heuristics for DataMiner / Apify generic exports if columns aren't standard
-                            if (!title && values.length > 1) {
-                              // If it looks like a Maps scrape, the second col is usually the title, or the first.
-                              title = values[1] && !values[1].startsWith("http") ? values[1] : values[0];
-                              if (!address && values.length > 6) address = values[6];
-                              if (!phone && values.length > 10) phone = values[10];
-                              if (!category && values.length > 4) category = values[4];
-                              if (!servicesOffered && values.length > 12) servicesOffered = values[12] || values[13];
-                            }
-
-                            if (title) {
-                              parsedRows.push({ 
-                                title: title.substring(0, 100), 
-                                address: address.substring(0, 200), 
-                                phone: phone.substring(0, 50), 
-                                email: email.substring(0, 100), 
-                                category: category || csvDefaultCategory, 
-                                province: row.province || row.state || csvDefaultProvince, 
-                                city: row.city || row.town || "Johannesburg", 
-                                servicesOffered: servicesOffered.substring(0, 500) 
-                              });
+                            const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince);
+                            if (rec.title) {
+                              parsedRows.push(rec);
                             }
                           }
                           setCsvFileParsed(parsedRows);
@@ -1729,6 +1811,7 @@ export default function AdminDashboard() {
                             address: item.address || "",
                             phone: item.phone || "",
                             email: item.email || "",
+                            website: item.website || "",
                             verified: false,
                             isPremium: false,
                             isSponsor: false,
@@ -1786,6 +1869,7 @@ export default function AdminDashboard() {
                         <th className="py-3 px-4 min-w-[130px]">Category</th>
                         <th className="py-3 px-4 min-w-[120px]">Province</th>
                         <th className="py-3 px-4 min-w-[130px]">Email Address</th>
+                        <th className="py-3 px-4 min-w-[150px]">Website URL</th>
                         <th className="py-3 px-4 min-w-[200px]">Services / Description Summary</th>
                         <th className="py-3 px-4 w-16 text-center">Actions</th>
                       </tr>
@@ -1877,6 +1961,18 @@ export default function AdminDashboard() {
                                 setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, email: val } : row));
                               }}
                               className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={item.website || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, website: val } : row));
+                              }}
+                              placeholder="https://..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono focus:bg-white focus:ring-1 focus:ring-emerald-500"
                             />
                           </td>
                           <td className="py-2 px-2">
@@ -2390,27 +2486,21 @@ export default function AdminDashboard() {
                         return result;
                       };
 
+                      const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                       const newAds = [];
                       for (let i = 1; i < lines.length; i++) {
                         const cols = parseCsvRow(lines[i]);
                         if (cols.length < 1 || !cols[0]) continue;
                         
-                        // Default column mapping
-                        let title = cols[0];
-                        let address = cols[1] || "";
-                        let phone = cols[2] || "";
-                        let services = cols[3] || "";
+                        const rec = parseCsvRowToRecord(headers, cols);
+                        let title = rec.title;
+                        let address = rec.address;
+                        let phone = rec.phone;
+                        let services = rec.servicesOffered;
+                        let website = rec.website;
 
-                        // Heuristic for Maps scrape format (Title usually 2nd column, not a URL)
-                        if (cols.length > 4 && cols[0].startsWith("http")) {
-                          title = cols[1];
-                          address = cols[6] || "";
-                          phone = cols[10] || "";
-                          services = cols[4] || cols[13] || "";
-                        }
-
-                        let category = csvDefaultCategory;
-                        let location = csvDefaultProvince;
+                        let category = rec.category || csvDefaultCategory;
+                        let location = rec.province || csvDefaultProvince;
 
                         if (csvAiEnable) {
                           const combinedString = `${title} ${address || ""} ${services || ""}`.toLowerCase();
@@ -2485,6 +2575,7 @@ export default function AdminDashboard() {
                           servicesOffered: services || "",
                           address: address || "",
                           phone: phone || "",
+                          website: website || "",
                           verified: false,
                           isPremium: false,
                           isSponsor: false,
