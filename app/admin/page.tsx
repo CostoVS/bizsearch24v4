@@ -1811,7 +1811,7 @@ export default function AdminDashboard() {
                             address: item.address || "",
                             phone: item.phone || "",
                             email: item.email || "",
-                            website: item.website || "",
+                            website: "", // Unverified CSV listings do not include public website links
                             verified: false,
                             isPremium: false,
                             isSponsor: false,
@@ -2575,7 +2575,7 @@ export default function AdminDashboard() {
                           servicesOffered: services || "",
                           address: address || "",
                           phone: phone || "",
-                          website: website || "",
+                          website: "", // Unverified CSV listings do not include public website links
                           verified: false,
                           isPremium: false,
                           isSponsor: false,

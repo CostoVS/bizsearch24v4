@@ -1740,7 +1740,7 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                         </a>
                       )}
 
-                      {((ad.isPremium || ad.isSponsor || ad.verified || ad.isVerified || isAdmin || ad.plan === 'PREMIUM' || ad.plan === 'SPONSOR' || ad.plan === 'ESSENTIAL') && ad.website) && (
+                      {((ad.isPremium || ad.isSponsor || ad.verified || ad.isVerified || ad.plan === 'PREMIUM' || ad.plan === 'SPONSOR' || ad.plan === 'ESSENTIAL') && ad.website) && (
                         <a
                           href={ad.website.startsWith('http') ? ad.website : `https://${ad.website}`}
                           target="_blank"
