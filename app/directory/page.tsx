@@ -2,6 +2,7 @@
 
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
+import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
 import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'motion/react';
@@ -432,7 +433,7 @@ function DirectoryContent() {
                 <div className="text-slate-500 text-sm flex-grow mb-4 leading-relaxed">
                   <AdDescription description={ad.description} />
                   
-                  {ad.servicesOffered && (
+                  {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
                       <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
                       <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>

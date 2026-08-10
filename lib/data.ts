@@ -11,6 +11,7 @@ import {
   NORTHERN_CAPE_SUBURBS 
 } from './locations';
 import { CATEGORIES as ALL_CATS, CATEGORIES_STRUCTURED as ALL_CATS_STRUCT, isSubcategoryOf as IS_SUB } from './categories';
+import { cleanAdsArray } from './clean-ad';
 
 export const PROVINCES = SA_PROVINCES;
 export const CATEGORIES = ALL_CATS;
@@ -239,7 +240,8 @@ export function getStoredAds(): any[] {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
         const deletedSet = new Set(getDeletedAdIds());
-        return parsed.filter(ad => ad && ad.id && !deletedSet.has(ad.id));
+        const filtered = parsed.filter(ad => ad && ad.id && !deletedSet.has(ad.id));
+        return cleanAdsArray(filtered);
       }
     } catch (e) {
       console.error("Error parsing searchbiz_all_ads:", e);
@@ -272,8 +274,9 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         const localDeleted = getDeletedAdIds();
         const combinedDeleted = new Set([...deletedAdsFromSec, ...localDeleted]);
         
-        // Filter out deleted ads from the server list
-        const finalAds = serverAds.filter((a: any) => a && a.id && !combinedDeleted.has(a.id));
+        // Filter out deleted ads from the server list & clean review garbage
+        const cleanedServerAds = cleanAdsArray(serverAds);
+        const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeleted.has(a.id));
 
         safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds));
         
@@ -301,7 +304,7 @@ export async function fetchAndStoreAds(): Promise<any[]> {
 
 export async function saveStoredAds(ads: any[]): Promise<void> {
   if (typeof window !== "undefined") {
-    const validAds = ads.filter(ad => ad && ad.id);
+    const validAds = cleanAdsArray(ads.filter(ad => ad && ad.id));
 
     safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(validAds));
     

@@ -4,6 +4,7 @@ import { storage } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
+import { cleanAdsArray } from '@/lib/clean-ad';
 
 export const dynamic = 'force-dynamic';
 
@@ -195,7 +196,7 @@ function mergeData(local: any, db: any) {
   const localVal = local || {};
   const dbVal = db || {};
 
-  merged.ads = mergeArrays(localVal.ads, dbVal.ads, 'id');
+  merged.ads = cleanAdsArray(mergeArrays(localVal.ads, dbVal.ads, 'id'));
   merged.banners = mergeArrays(localVal.banners, dbVal.banners, 'id');
   merged.messages = mergeArrays(localVal.messages, dbVal.messages, 'id');
   merged.customPartners = mergeArrays(localVal.customPartners, dbVal.customPartners, 'id');

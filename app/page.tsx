@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import Image from "next/image";
 import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds } from "@/lib/data";
+import { isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 import { TOTAL_SUBURBS_COUNT } from "@/lib/locations";
 import { Search, MapPin, BadgeCheck, Star, Briefcase, Zap, Sparkles, Edit, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -170,7 +171,7 @@ export default function HomePage() {
                     <div className="text-slate-600 text-sm leading-relaxed mt-auto">
                       <AdDescription description={ad.description} />
                       
-                      {ad.servicesOffered && (
+                      {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
                         <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
                           <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
                           <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
@@ -288,7 +289,7 @@ export default function HomePage() {
                     <div className="text-slate-500 text-sm leading-relaxed mt-auto">
                       <AdDescription description={ad.description} />
                       
-                      {ad.servicesOffered && (
+                      {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
                         <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
                           <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
                           <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
@@ -391,7 +392,7 @@ export default function HomePage() {
                   <div className="text-slate-500 text-xs leading-relaxed mt-auto">
                     <AdDescription description={ad.description} />
                     
-                    {ad.servicesOffered && (
+                    {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
                       <div className="mt-2 pt-2 border-t border-slate-100 text-slate-600 text-[10px] leading-relaxed">
                         <span className="font-extrabold uppercase text-[9px] text-emerald-600 tracking-wider block mb-0.5">Services Offered:</span>
                         <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>

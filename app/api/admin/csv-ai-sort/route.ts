@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { SA_PROVINCES } from "@/lib/locations";
+import { cleanAd } from "@/lib/clean-ad";
 
 // Collect all standard subcategories and provinces
 const ALL_SUBCATEGORIES = CATEGORIES_STRUCTURED.flatMap(g => g.subcategories);
@@ -35,6 +36,7 @@ CATEGORIES: ${ALL_SUBCATEGORIES.join(", ")}
 PROVINCES: ${ALL_PROVINCE_NAMES.join(", ")}
 
 Respond ONLY with a valid JSON array of objects. Each object MUST have these exact properties: "index" (number), "category" (string matching a category or "Other"), "province" (string matching a province), "city" (string), "servicesOffered" (string).
+CRITICAL: DO NOT extract customer reviews, review snippets, or ratings into "servicesOffered". "servicesOffered" must ONLY contain actual business services or products. If a field is a review, set "servicesOffered" to "".
 Do not include markdown blocks, just the JSON.
 
 Batch to process:
@@ -93,16 +95,17 @@ ${JSON.stringify(batch, null, 2)}`;
       const category = overrideCategory || classification.category || b.category || "Other";
       const province = overrideProvince || classification.province || b.province || "Gauteng";
       const city = classification.city || b.city || b.town || "Johannesburg";
-      const services = classification.servicesOffered || b.servicesOffered || b.services || b.description || "";
+      const services = classification.servicesOffered || b.servicesOffered || b.services || "";
 
-      return {
+      return cleanAd({
         ...b,
         category,
         province,
         city,
+        description: services ? `Services offered: ${services}` : `${category} business listed in ${city}.`,
         servicesOffered: services,
         isVerified: false // Marked as unverified since they are scraped/CSV imported
-      };
+      });
     });
 
     return NextResponse.json({ businesses: finalBusinesses });

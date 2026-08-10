@@ -10,6 +10,7 @@ import { VerificationBadge, PremiumBadge } from '@/components/ui-extras';
 import AdDetailModal from '@/components/ad-detail-modal';
 import { AdDescription } from '@/components/ad-description';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds } from '@/lib/data';
+import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
 import { Pagination } from '@/components/pagination';
 
 interface Ad {
@@ -190,7 +191,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
                 <div className="text-slate-500 text-sm flex-grow mb-4 leading-relaxed">
                   <AdDescription description={item.description} />
                   
-                  {item.servicesOffered && (
+                  {item.servicesOffered && !isCustomerReviewOrGarbage(item.servicesOffered) && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
                       <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
                       <p className="whitespace-pre-line font-medium text-slate-500">{item.servicesOffered}</p>

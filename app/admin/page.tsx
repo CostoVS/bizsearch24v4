@@ -12,6 +12,7 @@ import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib
 import AdDetailModal from "@/components/ad-detail-modal";
 import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
+import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
@@ -95,24 +96,15 @@ function parseCsvRowToRecord(headers: string[], values: string[], defaultCategor
         }
       }
     }
-
-    // Review / description extraction
-    if (!servicesOffered || servicesOffered.startsWith("http")) {
-      for (let c = 0; c < values.length; c++) {
-        const val = values[c];
-        if (val && val.length > 20 && !val.startsWith("http") && val !== "Website" && val !== "Directions" && !/\b(street|road|avenue)\b/i.test(val)) {
-          servicesOffered = val.replace(/^"|"$/g, '').trim();
-          break;
-        }
-      }
-    }
   }
 
   if (address === "·" || address === "") address = "";
   if (phone === "·" || phone === "") phone = "";
 
-  if (servicesOffered && (servicesOffered.startsWith("http://") || servicesOffered.startsWith("https://") || servicesOffered.startsWith("www."))) {
-    servicesOffered = "";
+  if (servicesOffered) {
+    if (servicesOffered.startsWith("http://") || servicesOffered.startsWith("https://") || servicesOffered.startsWith("www.") || isCustomerReviewOrGarbage(servicesOffered)) {
+      servicesOffered = "";
+    }
   }
 
   return {
@@ -1798,16 +1790,19 @@ export default function AdminDashboard() {
                           const addr = item.address || "";
                           const defaultCity = item.city || item.town || "Johannesburg";
                           const parsedLoc = findSuburbAndTown(prov, addr, defaultCity);
-                          return {
+                          const rawServices = item.servicesOffered || "";
+                          const cat = item.category || "Other";
+                          
+                          return cleanAd({
                             id: `csv-${Date.now()}-${index}-${Math.random().toString(36).substring(2,5)}`,
                             userId: "system",
                             title: item.title || "Unnamed Business",
-                            category: item.category || "Other",
+                            category: cat,
                             province: prov,
                             location: parsedLoc.town,
                             suburb: parsedLoc.suburb,
-                            description: item.servicesOffered ? `Services offered: ${item.servicesOffered}` : "Basic unverified directory listing.",
-                            servicesOffered: item.servicesOffered || "",
+                            description: rawServices ? `Services offered: ${rawServices}` : `${cat} business listed in ${parsedLoc.town}.`,
+                            servicesOffered: rawServices,
                             address: item.address || "",
                             phone: item.phone || "",
                             email: item.email || "",
@@ -1819,7 +1814,7 @@ export default function AdminDashboard() {
                             isGoogleImport: true,
                             image: null,
                             createdAt: new Date().toISOString()
-                          };
+                          });
                         });
 
                         const merged = [...formatted, ...ads];
@@ -2563,7 +2558,7 @@ export default function AdminDashboard() {
 
                         const parsedLoc = findSuburbAndTown(location, address, "Johannesburg");
 
-                        newAds.push({
+                        newAds.push(cleanAd({
                           id: `csv-${Date.now()}-${i}`,
                           userId: "system",
                           title: title || "Unknown Business",
@@ -2571,7 +2566,7 @@ export default function AdminDashboard() {
                           province: location,
                           location: parsedLoc.town,
                           suburb: parsedLoc.suburb,
-                          description: services ? `Services offered: ${services}` : "Basic listing",
+                          description: services ? `Services offered: ${services}` : `${category} business listed in ${parsedLoc.town}.`,
                           servicesOffered: services || "",
                           address: address || "",
                           phone: phone || "",
@@ -2583,7 +2578,7 @@ export default function AdminDashboard() {
                           isGoogleImport: true,
                           image: null,
                           createdAt: new Date().toISOString()
-                        });
+                        }));
                       }
                       if (newAds.length > 0) {
                         const updated = [...newAds, ...ads];

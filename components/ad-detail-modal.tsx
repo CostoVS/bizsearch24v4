@@ -38,6 +38,7 @@ import { getLocalProfile } from "@/lib/profile-utils";
 import { trackAdClick, trackAdView, trackCallClick, trackWhatsAppClick } from "@/lib/analytics-utils";
 import { useAuth } from "@/lib/auth";
 import { getStoredAds, saveStoredAds, deleteAd } from "@/lib/data";
+import { isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 
 interface Ad {
   id: string;
@@ -1073,7 +1074,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                   )}
                 </div>
 
-                {ad.servicesOffered && (
+                {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
                   <div className="space-y-2 mt-6">
                     <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
                       Services Offered
