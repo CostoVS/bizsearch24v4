@@ -12,6 +12,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { VerificationBadge, PremiumBadge } from '@/components/ui-extras';
 import AdDetailModal from '@/components/ad-detail-modal';
 import { AdDescription } from '@/components/ad-description';
+import { Pagination } from '@/components/pagination';
 
 function DirectoryContent() {
   const { isAdmin } = useAuth();
@@ -25,9 +26,11 @@ function DirectoryContent() {
   const [allAds, setAllAds] = useState<any[]>([]);
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setCurrentPage(1);
     if (q || category || town || province || suburb) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLocalLoading(true);
@@ -164,6 +167,7 @@ function DirectoryContent() {
   });
 
   const results = sortAdsWithPositions(filteredResults);
+  const paginatedResults = results.slice((currentPage - 1) * 12, currentPage * 12);
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -174,7 +178,7 @@ function DirectoryContent() {
         </div>
       </div>
 
-      <div ref={resultsRef} className="mb-6">
+      <div ref={resultsRef} className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <p className="text-slate-500 font-medium">Found {results.length} businesses matching your criteria.</p>
       </div>
 
@@ -207,8 +211,21 @@ function DirectoryContent() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {results.map(ad => {
+        <>
+          {/* Top Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={results.length}
+            pageSize={12}
+            onPageChange={(page) => {
+              setCurrentPage(page);
+              resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {paginatedResults.map(ad => {
             const hasCustomBorder = ad.isSponsor || ad.isSpotlight || ad.isBannerPlacement || ad.isVideoPromo || ad.isPremium;
             const borderClass = 
               ad.isSponsor ? 'border-indigo-300 shadow-indigo-100/40 ring-1 ring-indigo-500/10' : 
@@ -341,7 +358,20 @@ function DirectoryContent() {
               </div>
             );
           })}
-        </div>
+          </div>
+
+          {/* Bottom Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={results.length}
+            pageSize={12}
+            onPageChange={(page) => {
+              setCurrentPage(page);
+              resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+          />
+        </>
       )}
 
       {/* Ad Detail popup showing on trigger */}

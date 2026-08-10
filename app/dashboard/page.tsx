@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { getLocalProfile, saveLocalProfile, UserProfile } from "@/lib/profile-utils";
 import { CATEGORIES } from "@/lib/categories";
+import { Pagination } from "@/components/pagination";
 
 interface UploadReport {
   filename: string;
@@ -29,6 +30,7 @@ export default function UserDashboard() {
   // Dashboard Navigation State: "listings" | "profile"
   const [activeTab, setActiveTab] = useState<"listings" | "profile">("listings");
   const [ads, setAds] = useState<any[]>([]);
+  const [myAdsPage, setMyAdsPage] = useState(1);
   
   // Master Profile State
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -381,37 +383,57 @@ export default function UserDashboard() {
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100">
-                  {myAds.map(ad => (
-                    <div key={ad.id} className="p-6 sm:p-8 flex flex-col sm:flex-row sm:justify-between sm:items-center hover:bg-slate-50/30 transition-colors gap-4">
-                      <div className="space-y-1 max-w-[70%]">
-                        <h4 className="font-bold text-slate-900 text-lg leading-tight tracking-tight">{ad.title}</h4>
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                          <span className="flex items-center capitalize"><MapPin className="w-3.5 h-3.5 mr-1 text-emerald-600" /> {ad.location}</span>
-                          <span>•</span>
-                          <span className="uppercase text-[10px] tracking-wider text-slate-500">{ad.category}</span>
+                <div className="p-6">
+                  {/* Top Pagination */}
+                  <Pagination
+                    currentPage={myAdsPage}
+                    totalItems={myAds.length}
+                    pageSize={12}
+                    onPageChange={setMyAdsPage}
+                    className="mb-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-200"
+                  />
+
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+                    {myAds.slice((myAdsPage - 1) * 12, myAdsPage * 12).map(ad => (
+                      <div key={ad.id} className="p-6 sm:p-8 flex flex-col sm:flex-row sm:justify-between sm:items-center hover:bg-slate-50/30 transition-colors gap-4">
+                        <div className="space-y-1 max-w-[70%]">
+                          <h4 className="font-bold text-slate-900 text-lg leading-tight tracking-tight">{ad.title}</h4>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                            <span className="flex items-center capitalize"><MapPin className="w-3.5 h-3.5 mr-1 text-emerald-600" /> {ad.location}</span>
+                            <span>•</span>
+                            <span className="uppercase text-[10px] tracking-wider text-slate-500">{ad.category}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {ad.verified ? (
+                            <span className="inline-flex items-center text-emerald-800 text-xs font-bold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                              <BadgeCheck className="w-3.5 h-3.5 mr-2 text-emerald-500" /> Verified Premium
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center text-slate-500 text-[10px] uppercase font-bold tracking-wider bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                              Standard Listing
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteUserAd(ad.id)}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                            title="Delete Listing"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        {ad.verified ? (
-                          <span className="inline-flex items-center text-emerald-800 text-xs font-bold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                            <BadgeCheck className="w-3.5 h-3.5 mr-2 text-emerald-500" /> Verified Premium
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center text-slate-500 text-[10px] uppercase font-bold tracking-wider bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
-                            Standard Listing
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleDeleteUserAd(ad.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                          title="Delete Listing"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  {/* Bottom Pagination */}
+                  <Pagination
+                    currentPage={myAdsPage}
+                    totalItems={myAds.length}
+                    pageSize={12}
+                    onPageChange={setMyAdsPage}
+                    className="mt-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-200"
+                  />
                 </div>
               )}
             </div>

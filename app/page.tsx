@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import Image from "next/image";
@@ -13,12 +13,19 @@ import { SearchBar } from "@/components/search-bar";
 import { VerificationBadge, PremiumBadge } from "@/components/ui-extras";
 import AdDetailModal from "@/components/ad-detail-modal";
 import { AdDescription } from "@/components/ad-description";
+import { Pagination } from "@/components/pagination";
 
 export default function HomePage() {
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [ads, setAds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [freeAdsPage, setFreeAdsPage] = useState(1);
+  const [premiumAdsPage, setPremiumAdsPage] = useState(1);
+
+  const recentListingsRef = useRef<HTMLDivElement>(null);
+  const premiumListingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Load initial cached local storage ads immediately on mount to keep UI super fast
@@ -56,6 +63,10 @@ export default function HomePage() {
     };
     return score(b) - score(a);
   });
+
+  // Paginated slices for 12 items max
+  const paginatedPremiumAds = premiumAds.slice((premiumAdsPage - 1) * 12, premiumAdsPage * 12);
+  const paginatedFreeAds = freeAds.slice((freeAdsPage - 1) * 12, freeAdsPage * 12);
 
   // Precomputed static count of all suburbs altogether across all 9 provinces
   const totalSuburbsAltogether = TOTAL_SUBURBS_COUNT;
@@ -207,12 +218,25 @@ export default function HomePage() {
 
       {/* Premium Ads Section */}
       {premiumAds.length > 0 && (
-        <section className="w-full max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
-            <h2 className="text-2xl font-bold font-display text-slate-900 mb-8 flex items-center gap-2">
+        <section ref={premiumListingsRef} className="w-full max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
+            <h2 className="text-2xl font-bold font-display text-slate-900 mb-4 flex items-center gap-2">
               <Sparkles className="w-6 h-6 text-emerald-600" /> Verified Premium Placements
             </h2>
+
+            {/* Top Pagination for Premium Ads */}
+            <Pagination
+              currentPage={premiumAdsPage}
+              totalItems={premiumAds.length}
+              pageSize={12}
+              onPageChange={(page) => {
+                setPremiumAdsPage(page);
+                premiumListingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mb-6 bg-slate-50 p-2 rounded-2xl border border-slate-200"
+            />
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {premiumAds.map(ad => {
+              {paginatedPremiumAds.map(ad => {
                 const isSpotlight = ad.isSpotlight;
                 const isBanner = ad.isBannerPlacement;
                 const isVideo = ad.isVideoPromo;
@@ -305,17 +329,44 @@ export default function HomePage() {
                   </div>
                 );
               })}
-          </div>
+            </div>
+
+            {/* Bottom Pagination for Premium Ads */}
+            <Pagination
+              currentPage={premiumAdsPage}
+              totalItems={premiumAds.length}
+              pageSize={12}
+              onPageChange={(page) => {
+                setPremiumAdsPage(page);
+                premiumListingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mt-8 bg-slate-50 p-2 rounded-2xl border border-slate-200"
+            />
         </section>
       )}
 
       {/* Free Ads Section */}
       {freeAds.length > 0 && (
-        <section className="w-full bg-slate-100/50 border-t border-slate-200">
+        <section ref={recentListingsRef} className="w-full bg-slate-100/50 border-t border-slate-200">
           <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
-            <h2 className="text-xl font-bold font-display text-slate-800 mb-8">Recent Listings</h2>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <h2 className="text-xl font-bold font-display text-slate-800">Recent Listings</h2>
+            </div>
+
+            {/* Top Pagination for Recent Listings */}
+            <Pagination
+              currentPage={freeAdsPage}
+              totalItems={freeAds.length}
+              pageSize={12}
+              onPageChange={(page) => {
+                setFreeAdsPage(page);
+                recentListingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {freeAds.map(ad => (
+              {paginatedFreeAds.map(ad => (
                 <div 
                   key={ad.id} 
                   onClick={() => setSelectedAd(ad)}
@@ -381,6 +432,18 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
+
+            {/* Bottom Pagination for Recent Listings */}
+            <Pagination
+              currentPage={freeAdsPage}
+              totalItems={freeAds.length}
+              pageSize={12}
+              onPageChange={(page) => {
+                setFreeAdsPage(page);
+                recentListingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
           </div>
         </section>
       )}

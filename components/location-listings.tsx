@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Star, Edit, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'motion/react';
@@ -10,6 +10,7 @@ import { VerificationBadge, PremiumBadge } from '@/components/ui-extras';
 import AdDetailModal from '@/components/ad-detail-modal';
 import { AdDescription } from '@/components/ad-description';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds } from '@/lib/data';
+import { Pagination } from '@/components/pagination';
 
 interface Ad {
   id: string;
@@ -35,6 +36,12 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
   const [filteredAds, setFilteredAds] = useState<Ad[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const listingsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [properName]);
 
   useEffect(() => {
     const loadAndFilter = async () => {
@@ -84,9 +91,10 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
 
   // Sort them so Positions ("top", "middle", "bottom") and standard Priority are honored
   const sortedAds = sortAdsWithPositions(filteredAds);
+  const paginatedAds = sortedAds.slice((currentPage - 1) * 12, currentPage * 12);
 
   return (
-    <div className="w-full">
+    <div ref={listingsRef} className="w-full">
       {sortedAds.length === 0 ? (
         <div className="text-center py-24 bg-white rounded-xl shadow-sm border border-slate-100">
           <p className="text-slate-500 text-lg mb-4">No businesses listed in this area yet.</p>
@@ -95,8 +103,21 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sortedAds.map(ad => {
+        <>
+          {/* Top Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={sortedAds.length}
+            pageSize={12}
+            onPageChange={(page) => {
+              setCurrentPage(page);
+              listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {paginatedAds.map(ad => {
             const item = ad as any;
             const hasCustomBorder = item.isSponsor || item.isSpotlight || item.isBannerPlacement || item.isVideoPromo || item.isPremium;
             const borderClass = 
@@ -222,7 +243,20 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
               </div>
             );
           })}
-        </div>
+          </div>
+
+          {/* Bottom Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={sortedAds.length}
+            pageSize={12}
+            onPageChange={(page) => {
+              setCurrentPage(page);
+              listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+          />
+        </>
       )}
 
       {/* Detail Modal popups */}
