@@ -717,7 +717,7 @@ export default function LoginPage() {
                             <div className="text-xs text-slate-500 leading-normal space-y-1 mt-1.5 font-medium">
                               <div>• 100 Million Rands Per Month</div>
                               <div>• Everything from essential & premium tiers included, Aggressive Ads</div>
-                              <div>• Tv Commercials (elites) and global market monopolization</div>
+                              <div>• Tv Commercials (elites) and global market expansion</div>
                             </div>
                           </div>
                         </div>

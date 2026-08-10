@@ -478,7 +478,7 @@ ${signature}
               badge: "Elite Enterprise Verified badge",
               price: "R100,000,000.00",
               period: "month",
-              desc: "100 Million Rands Per Month corporate monopolization.",
+              desc: "100 Million Rands Per Month corporate presence and scale.",
               features: [
                 "Everything from essential and premium tier",
                 "Unlimited Ads in Searchbiz 1 per Area",

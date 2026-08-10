@@ -244,7 +244,7 @@ export default function SearchBizServicesPage() {
       badge: "Elite Enterprise Verified badge",
       period: "month",
       color: "border-yellow-400 bg-slate-950 text-yellow-300 ring-2 ring-yellow-400/50",
-      desc: "Total corporate monopolization across all digital, TV, and radio networks.",
+      desc: "Total corporate presence and expansion across all digital, TV, and radio networks.",
       features: [
         "Everything from essential and premium tier",
         "Unlimited Ads in Searchbiz 1 per Area",
