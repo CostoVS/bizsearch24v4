@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { 
   Globe, Mail, ShieldAlert, Sparkles, Key, CheckCircle, 
   ArrowRight, PhoneCall, HelpCircle, HardDrive, Check, Zap, Laptop, Star,
-  Calculator, Plus, Minus
+  Calculator, Plus, Minus, Crown, Rocket, Award, ShieldCheck, Flame
 } from 'lucide-react';
 
 export default function SearchBizServicesPage() {
@@ -18,16 +18,16 @@ export default function SearchBizServicesPage() {
 
   // SearchBiz Pricing Rules from AGENTS.md:
   // Base Premium Plan: R199.00 / month
-  // Extra Listing: +R49.00 / month each
+  // Extra Listing: +R199.00 / month each
   // Domain: +R99.00 / year (.co.za)
   const baseRate = includeBasePlan ? 199.00 : 0;
-  const extraListingsRate = extraListingsCount * 49.00;
+  const extraListingsRate = extraListingsCount * 199.00;
   const monthlyTotal = baseRate + extraListingsRate;
   const domainText = includeDomain ? " + R99.00/yr (.co.za domain)" : "";
   const totalDisplay = `R${monthlyTotal.toFixed(2)}${domainText}`;
 
   const calcCustomWhatsAppLink = `https://wa.me/27751613007?text=${encodeURIComponent(
-    `Hi SearchBiz.co.za! I calculated a subscription plan on SearchBiz:\n- Base Premium Plan (R199.00/mo): ${includeBasePlan ? "Yes" : "No"}\n- Extra Area Listings (${extraListingsCount} @ R49.00/mo): R${extraListingsRate.toFixed(2)}/mo\n- .co.za Domain Registration: ${includeDomain ? "Yes (+R99.00/yr)" : "No"}\n- Total Price: ${totalDisplay}`
+    `Hi SearchBiz.co.za! I calculated a subscription plan on SearchBiz:\n- Base Premium Plan (R199.00/mo): ${includeBasePlan ? "Yes" : "No"}\n- Extra Area Listings (${extraListingsCount} @ R199.00/mo): R${extraListingsRate.toFixed(2)}/mo\n- .co.za Domain Registration: ${includeDomain ? "Yes (+R99.00/yr)" : "No"}\n- Total Price: ${totalDisplay}`
   )}`;
 
   const features = [
@@ -57,18 +57,19 @@ export default function SearchBizServicesPage() {
     }
   ];
 
+  // ALL 8 VERIFIED SUBSCRIPTION LEVELS PRESERVED
   const pricingTiers = [
     {
       id: "free",
-      name: "Level 1: Free Unverified Tier",
+      name: "Level 1: Free Basic",
       price: "R0.00",
       badge: "Not Verified",
       period: "forever",
       color: "border-slate-200 bg-white text-slate-800",
-      desc: "Basic directory listing on SearchBiz index.",
+      desc: "1 Free unverified listing on the SearchBiz directory index.",
       features: [
         "1 Basic listing only",
-        "Business Name & Address",
+        "Business Name & Physical Address",
         "Phone Number",
         "Services Offered",
         "Unverified badge",
@@ -80,12 +81,13 @@ export default function SearchBizServicesPage() {
     },
     {
       id: "essential",
-      name: "Level 2: Base Premium Plan",
+      name: "Level 2: Essential Base Premium",
       price: "R199.00",
+      subText: "R199.00 / mo base rate (+R199/mo extra listings)",
       badge: "Verified Badge",
       period: "month",
-      color: "border-emerald-500 bg-emerald-50/40 text-emerald-950 ring-2 ring-emerald-500/20",
-      desc: "Full verification and complete digital presence on SearchBiz.",
+      color: "border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-2 ring-emerald-500/30",
+      desc: "Full verification, verified badge, direct website links, unlimited hosting & custom domain email accounts.",
       features: [
         "1 Custom directory listing in SearchBiz index",
         "Official Verified Business Badge",
@@ -98,48 +100,118 @@ export default function SearchBizServicesPage() {
         "Design assistance for smart static site"
       ],
       popular: true,
-      cta: "Subscribe Plan (R199/mo)",
+      cta: "Subscribe Essential (R199/mo)",
       link: "/premium?plan=essential"
     },
     {
-      id: "multi_listing",
-      name: "Level 3: Multi-Area Expansion",
-      price: "R199.00",
-      subText: "+ R49.00 / month per extra listing",
-      badge: "Multi-Location Verified",
+      id: "premium",
+      name: "Level 3: Premium Tier",
+      price: "R9,999.00",
+      badge: "Premium Verified",
       period: "month",
-      color: "border-indigo-500 bg-indigo-950 text-indigo-100 ring-2 ring-indigo-500/30",
-      desc: "Expand your presence across multiple cities and provinces in South Africa.",
+      color: "border-indigo-500 bg-indigo-950 text-indigo-50 ring-2 ring-indigo-500/30",
+      desc: "Broad regional South African coverage with priority search placement.",
       features: [
-        "Everything in Base Premium Plan (R199.00/mo)",
-        "Additional directory listings in other areas (+R49.00/mo each)",
-        "Official Verified Badges across all locations",
-        "Direct Website links on all listings",
-        "Priority regional search positioning"
+        "Everything in Essential Tier",
+        "1 Ad listing in all areas across South Africa",
+        "Premium Verified Badge",
+        "Priority Regional Search Placement",
+        "Dedicated Premium SLA Response Support"
       ],
       popular: false,
-      cta: "Configure Multi-Area Plan",
-      link: "/premium?plan=multi"
+      cta: "Subscribe Level 3 (R9.9k/mo)",
+      link: "/premium?plan=premium"
     },
     {
-      id: "domain_bundle",
-      name: "Level 4: .co.za Brand Suite",
-      price: "R199.00",
-      subText: "+ R99.00 / year domain fee",
-      badge: "Complete Brand Suite",
+      id: "enterprise_basic",
+      name: "Level 4: Enterprise Basic",
+      price: "R499,999.00",
+      badge: "Enterprise Verified",
       period: "month",
       color: "border-teal-600 bg-teal-950 text-teal-50 ring-2 ring-teal-500/30",
-      desc: "Get your official .co.za domain registered and configured with custom emails.",
+      desc: "Aggressive multi-channel marketing campaigns across top digital platforms.",
       features: [
-        "Everything in Base Premium Plan (R199.00/mo)",
-        "Official .co.za domain registration (R99.00/yr)",
-        "Custom domain email addresses setup",
-        "DNS management and SSL certificate setup",
-        "Complete ownership and brand protection"
+        "Everything from Level 2 & Level 3",
+        "Unlimited Ads (1 listing per area nationwide)",
+        "Full video, image, and poster media production",
+        "Facebook / TikTok / YouTube / X / Instagram / Google Marketing",
+        "Enterprise Verified Badge"
       ],
       popular: false,
-      cta: "Subscribe Domain Suite",
-      link: "/premium?plan=domain"
+      cta: "Subscribe Level 4 (R500k/mo)",
+      link: "/premium?plan=enterprise_basic"
+    },
+    {
+      id: "enterprise_premium",
+      name: "Level 5: Enterprise Premium",
+      price: "R999,999.00",
+      badge: "Enterprise Premium",
+      period: "month",
+      color: "border-purple-600 bg-purple-950 text-purple-50 ring-2 ring-purple-500/30",
+      desc: "Top priority marketing dominance with full scale multi-media production.",
+      features: [
+        "Everything from Level 4 Enterprise",
+        "Highly Aggressive Ad Campaigns nationwide",
+        "Full Professional Media Production Team",
+        "Enterprise Premium Verified Badge"
+      ],
+      popular: false,
+      cta: "Subscribe Level 5 (R1M/mo)",
+      link: "/premium?plan=enterprise_premium"
+    },
+    {
+      id: "elite_basic",
+      name: "Level 6: Elite Basic",
+      price: "R25,000,000.00",
+      badge: "Elite Basic",
+      period: "month",
+      color: "border-amber-500 bg-amber-950 text-amber-50 ring-2 ring-amber-500/40",
+      desc: "20 Million Rands per month positioning across mass media channels.",
+      features: [
+        "Everything from Level 5 Enterprise",
+        "TV Commercials (basic broadcast package)",
+        "TV / Radio / Press Release media features",
+        "Elite Verified Badge"
+      ],
+      popular: false,
+      cta: "Subscribe Level 6 (R25M/mo)",
+      link: "/premium?plan=elite_basic"
+    },
+    {
+      id: "elite_premium",
+      name: "Level 7: Elite Premium",
+      price: "R50,000,000.00",
+      badge: "Elite Premium",
+      period: "month",
+      color: "border-rose-600 bg-rose-950 text-rose-50 ring-2 ring-rose-500/40",
+      desc: "50 Million Rands per month national media dominance.",
+      features: [
+        "Everything from Level 6 Elite",
+        "TV Commercials (premium primetime broadcast)",
+        "National Broadcast Monopolization",
+        "Elite Premium Verified Badge"
+      ],
+      popular: false,
+      cta: "Subscribe Level 7 (R50M/mo)",
+      link: "/premium?plan=elite_premium"
+    },
+    {
+      id: "elite_enterprise",
+      name: "Level 8: Elite Enterprise",
+      price: "R100,000,000.00",
+      badge: "Elite Enterprise",
+      period: "month",
+      color: "border-yellow-400 bg-slate-950 text-yellow-300 ring-2 ring-yellow-400/50",
+      desc: "100 Million Rands corporate monopolization across all media.",
+      features: [
+        "Everything from Level 7 Elite",
+        "TV Commercials (elite corporate suite)",
+        "Complete Multi-National Corporate Monopoly",
+        "Elite Enterprise Verified Badge"
+      ],
+      popular: false,
+      cta: "Subscribe Level 8 (R100M/mo)",
+      link: "/premium?plan=elite_enterprise"
     }
   ];
 
@@ -147,28 +219,28 @@ export default function SearchBizServicesPage() {
     <div className="min-h-screen bg-slate-50 pt-24 pb-20 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto space-y-12 mb-10">
         
-        {/* Banner Hero Grid Header */}
+        {/* Banner Hero Header */}
         <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 shadow-2xl overflow-hidden relative p-8 sm:p-12 md:p-16 text-center text-white">
           <div className="absolute inset-0 bg-gradient-to-tr from-emerald-600/10 to-transparent pointer-events-none" />
           
-          <div className="max-w-2xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6">
             <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-full text-emerald-400 text-xs font-black uppercase tracking-widest">
               <Sparkles className="w-4 h-4" /> SEARCHBIZ ADVERTISING & SERVICE TIERS
             </div>
 
             <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-none text-white">
-              Launch Your Premium Digital Presence
+              Official SearchBiz Subscription Levels
             </h1>
 
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl mx-auto font-medium">
-              We offer simple, transparent pricing plans designed to help South African businesses thrive. Select the directory tier that fits your growth ambitions perfectly.
+            <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto font-medium">
+              From Level 1 Free Unverified listings to Level 2 Base Premium (R199.00/mo) and high-level corporate enterprise plans, SearchBiz provides complete digital infrastructure for businesses in South Africa.
             </p>
           </div>
         </div>
 
         {/* Features Introduction */}
         <div className="space-y-6">
-          <h2 className="text-lg font-black uppercase text-slate-400 tracking-wider text-center">Premium Infrastructure Built For You</h2>
+          <h2 className="text-lg font-black uppercase text-slate-400 tracking-wider text-center">Included Infrastructure Features</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((f, i) => (
               <div key={i} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition space-y-3">
@@ -196,13 +268,13 @@ export default function SearchBizServicesPage() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
             <div>
               <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 rounded-full text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
-                <Calculator className="w-3.5 h-3.5" /> SEARCHBIZ PLAN CALCULATOR
+                <Calculator className="w-3.5 h-3.5" /> SEARCHBIZ LEVEL 2 PLAN CALCULATOR
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                Calculate Your Custom Subscription Plan
+                Customize Level 2 Base Premium
               </h2>
               <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-xl">
-                Customize your Base Premium Plan with extra area listings and custom domain registration. Get an instant, clear breakdown of your monthly cost.
+                Configure your Level 2 Essential Plan (R199.00/mo) with extra area listings (+R199.00/mo) and .co.za brand domain setup (+R99.00/yr).
               </p>
             </div>
 
@@ -251,7 +323,7 @@ export default function SearchBizServicesPage() {
                   <Sparkles className="w-4 h-4 text-indigo-400" /> Extra Area Listings
                 </label>
                 <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-mono font-bold px-2 py-0.5 rounded">
-                  +R49.00 / mo each
+                  +R199.00 / mo each
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 leading-snug">
@@ -350,11 +422,11 @@ export default function SearchBizServicesPage() {
           </div>
         </div>
 
-        {/* Pricing Tiers Section */}
+        {/* Full 8-Level Pricing Tiers Section */}
         <div className="space-y-6 pt-6">
           <div className="text-center max-w-xl mx-auto">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">SearchBiz Subscription Plans</h2>
-            <p className="text-slate-500 text-sm font-semibold mt-1">Simple and predictable pricing for South African businesses</p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">All 8 SearchBiz Subscription Levels</h2>
+            <p className="text-slate-500 text-sm font-semibold mt-1">Select any tier below to upgrade your business account</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
@@ -374,25 +446,25 @@ export default function SearchBizServicesPage() {
                     <div className="flex justify-between items-start gap-2">
                       <h3 className="font-black text-sm uppercase tracking-wide">{tier.name}</h3>
                     </div>
-                    <span className="inline-block bg-slate-100 text-slate-800 text-[9px] font-bold px-2 py-0.5 rounded-full mt-1 border border-slate-200 uppercase tracking-wider">
+                    <span className="inline-block bg-slate-100/20 text-current text-[9px] font-bold px-2.5 py-0.5 rounded-full mt-1 border border-current/20 uppercase tracking-wider">
                       {tier.badge}
                     </span>
                     <div className="flex items-baseline gap-1 mt-3">
-                      <span className="text-2xl sm:text-3xl font-black">{tier.price}</span>
+                      <span className="text-xl sm:text-2xl font-black tracking-tight">{tier.price}</span>
                       <span className="text-xs font-bold opacity-60">/{tier.period}</span>
                     </div>
                     {tier.subText && (
-                      <div className="text-amber-500 font-extrabold text-[11px] uppercase tracking-wide mt-1">
+                      <div className="text-amber-400 font-extrabold text-[10px] uppercase tracking-wide mt-1">
                         {tier.subText}
                       </div>
                     )}
-                    <p className="text-[11px] leading-relaxed opacity-80 mt-1 font-medium">{tier.desc}</p>
+                    <p className="text-[11px] leading-relaxed opacity-80 mt-1.5 font-medium">{tier.desc}</p>
                   </div>
 
-                  <ul className="space-y-2 border-t border-slate-200/40 pt-4 text-xs font-semibold">
+                  <ul className="space-y-2 border-t border-current/15 pt-4 text-xs font-semibold">
                     {tier.features.map((feature, fIdx) => (
                       <li key={fIdx} className="flex gap-2 items-start">
-                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-90" />
                         <span className="leading-snug">{feature}</span>
                       </li>
                     ))}
@@ -405,11 +477,7 @@ export default function SearchBizServicesPage() {
                     className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-center block transition-all duration-300 ${
                       tier.popular 
                         ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md" 
-                        : tier.id === "multi_listing"
-                          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
-                          : tier.id === "domain_bundle"
-                            ? "bg-teal-600 text-white hover:bg-teal-700 shadow-md"
-                            : "bg-slate-800 text-white hover:bg-slate-900"
+                        : "bg-slate-800 text-white hover:bg-slate-900 border border-slate-700"
                     }`}
                   >
                     {tier.cta}

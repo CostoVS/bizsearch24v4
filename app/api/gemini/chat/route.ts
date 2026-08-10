@@ -53,7 +53,7 @@ ${adsContext}
 
 OFFICIAL SEARCHBIZ SERVICES & PRICING PLANS:
 - Base Premium Plan: R199.00 / month (Billed via South African debit card mandate). Covers: Unlimited hosting for static websites, unlimited domain-branded @yourdomain.co.za emails, design assistance for custom smart static site, elite premium features, and 1 custom directory listing in the index.
-- Add-Ons: +R49.00 / month for each additional listed ad (more listings each).
+- Add-Ons: +R199.00 / month for each additional listed ad (more listings each).
 - co.za Domain Registration: R99.00 / year.
 
 BEHAVIOR RULES:

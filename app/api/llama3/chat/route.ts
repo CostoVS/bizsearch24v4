@@ -60,7 +60,7 @@ VERIFIED CURRENT SEARCHBIZ SERVICES & PRICING PLANS:
   * Elite Premium SearchBiz account features
   * 1 custom directory listing in SearchBiz index
 - Extras & Add-Ons:
-  * +R49.00 / month for each additional listed ad (more listings each)
+  * +R199.00 / month for each additional listed ad (more listings each)
   * .co.za domain registration: R99.00 / year
 
 REAL-TIME SEARCHBIZ VERIFIED DIRECTORY DATASET:
@@ -203,7 +203,7 @@ Please answer the user's inquiry based on this verified dataset.
       normalizedQuery.includes("pay")
     ) {
       return NextResponse.json({
-        text: `The verified pricing structure for SearchBiz directory subscriptions and services is as follows:\n• **Base Premium Plan:** **R199.00 / month** (Billed via South African debit card mandate)\n  * Unlimited hosting for static websites\n  * Unlimited domain-branded email accounts\n  * Custom host/design assistance for a smart static website\n  * Elite Premium SearchBiz account features\n  * 1 custom directory listing in the SearchBiz index\n• **Extras & Add-Ons:**\n  * **+R49.00 / month** for each additional listed ad\n  * **.co.za domain registration:** **R99.00 / year**\nLet me know if you would like me to find a specific registered business or search listings!`
+        text: `The verified pricing structure for SearchBiz directory subscriptions and services is as follows:\n• **Base Premium Plan:** **R199.00 / month** (Billed via South African debit card mandate)\n  * Unlimited hosting for static websites\n  * Unlimited domain-branded email accounts\n  * Custom host/design assistance for a smart static website\n  * Elite Premium SearchBiz account features\n  * 1 custom directory listing in the SearchBiz index\n• **Extras & Add-Ons:**\n  * **+R199.00 / month** for each additional listed ad\n  * **.co.za domain registration:** **R99.00 / year**\nLet me know if you would like me to find a specific registered business or search listings!`
 
       });
     }

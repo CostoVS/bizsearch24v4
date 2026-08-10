@@ -30,5 +30,5 @@ The verified, current service fees and plans for new registrations, claims, and 
   * Elite Premium SearchBiz account features
   * 1 custom directory listing in SearchBiz index
 * **Extras & Add-Ons:**
-  * **+R49.00 / month** for each additional listed ad (more listings each)
+  * **+R199.00 / month** for each additional listed ad (more listings each)
   * **.co.za domain registration:** **R99.00 / year**
