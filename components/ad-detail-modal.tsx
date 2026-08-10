@@ -23,6 +23,8 @@ import {
   Star,
   Globe,
   Image as ImageIcon,
+  Plus,
+  Minus,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
@@ -112,7 +114,30 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   const [claimSenderName, setClaimSenderName] = useState("");
   const [claimSenderPhone, setClaimSenderPhone] = useState("");
   const [claimSenderEmail, setClaimSenderEmail] = useState("");
-  const [claimIntention, setClaimIntention] = useState("premium_base"); // "premium_base", "premium_extra_ad", "premium_custom_domain", "remove_listing"
+  const [claimIntention, setClaimIntention] = useState("level2"); // "level2", "remove_listing"
+  const [claimL2Verified, setClaimL2Verified] = useState(true);
+  const [claimL2Extra, setClaimL2Extra] = useState(false);
+  const [claimL2Domain, setClaimL2Domain] = useState(false);
+  const [claimL2Listings, setClaimL2Listings] = useState(false);
+  const [claimL2ListingCount, setClaimL2ListingCount] = useState(1);
+
+  // Calculated Price for Claim Level 2 Interactive Builder
+  let claimCalculatedMonthly = 0;
+  let claimCalculatedAnnual = 0;
+  if (claimL2Verified) claimCalculatedMonthly += 199.99;
+  if (claimL2Extra) claimCalculatedMonthly += 199;
+  if (claimL2Listings) claimCalculatedMonthly += 199 * claimL2ListingCount;
+  if (claimL2Domain) claimCalculatedAnnual += 99;
+
+  const claimHasSelection = claimL2Verified || claimL2Extra || claimL2Domain || claimL2Listings;
+
+  let claimDisplayPrice = "R0.00";
+  if (claimHasSelection) {
+    const parts = [];
+    if (claimCalculatedMonthly > 0) parts.push(`R${claimCalculatedMonthly.toFixed(2)}/mo`);
+    if (claimCalculatedAnnual > 0) parts.push(`R${claimCalculatedAnnual.toFixed(2)}/yr`);
+    claimDisplayPrice = parts.join(" + ");
+  }
   const [claimRemovalReason, setClaimRemovalReason] = useState("Do not want public directory listing");
   const [claimMessage, setClaimMessage] = useState("");
   const [claimIdDoc, setClaimIdDoc] = useState("");
@@ -1117,119 +1142,162 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 <div className="border-b border-amber-200 pb-3 flex items-center justify-between">
                                   <div className="flex items-center gap-1.5">
                                     <Sparkles className="w-4 h-4 text-amber-600" />
-                                    <h5 className="text-sm font-bold text-amber-900">Step 1 of 2: Select Action / Option</h5>
+                                    <h5 className="text-sm font-bold text-amber-900">Step 1 of 2: Select Action & Customize Level 2 Options</h5>
                                   </div>
                                   <button onClick={() => setIsClaiming(false)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Cancel</button>
                                 </div>
                                 <p className="text-[11px] text-amber-800 leading-tight mb-2">
-                                  If this is your business, select a verified plan to claim full owner control, or request removal of this unverified listing by providing proof of ownership:
+                                  If this is your business, customize your Level 2 Verified options to claim full owner control, or select Request Removal to delete this unverified listing:
                                 </p>
 
                                 <div className="space-y-3">
-                                  {/* Base Premium Plan Card */}
+                                  {/* Level 2 Essential Verified Tier Card with Interactive Checkbox Builder */}
                                   <div
-                                    onClick={() => setClaimIntention("premium_base")}
-                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                                      claimIntention === "premium_base"
-                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
-                                        : "bg-white border-slate-200 hover:border-amber-300"
+                                    onClick={() => setClaimIntention("level2")}
+                                    className={`p-4 rounded-2xl border-2 transition-all ${
+                                      claimIntention !== "remove_listing"
+                                        ? "bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-500/20"
+                                        : "bg-white border-slate-200 hover:border-emerald-300 cursor-pointer"
                                     }`}
                                   >
-                                    <div className="flex items-start justify-between">
+                                    <div className="flex items-start justify-between border-b border-emerald-200/80 pb-3 mb-3">
                                       <div className="flex items-center gap-2">
-                                        <div className="p-1 bg-amber-200 text-amber-800 rounded">
-                                          <Star className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                          <h6 className="text-xs font-bold text-slate-900">Level 2: Essential Verified Tier</h6>
-                                          <span className="text-[10px] text-slate-500 font-semibold">1 Directory Listing Included</span>
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900">R199.00</span>
-                                        <span className="text-[9px] text-slate-500 block">/ month</span>
-                                      </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Unlock the verified badge, business description, WhatsApp, email, official website link, and priority search ranking.
-                                    </p>
-                                  </div>
-
-                                  {/* Premium Plan + Extra Ad Card */}
-                                  <div
-                                    onClick={() => setClaimIntention("premium_extra_ad")}
-                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                                      claimIntention === "premium_extra_ad"
-                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
-                                        : "bg-white border-slate-200 hover:border-amber-300"
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <div className="p-1 bg-indigo-100 text-indigo-800 rounded">
-                                          <Sparkles className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                          <h6 className="text-xs font-bold text-slate-900">Essential + Web Hosting Suite</h6>
-                                          <span className="text-[10px] text-slate-500 font-semibold">Smart Static Website & Hosting</span>
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900">R398.00</span>
-                                        <span className="text-[9px] text-slate-500 block">/ month</span>
-                                      </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Includes the core R199.00 Essential plan plus unlimited hosting, unlimited email accounts, and customized smart static website (+R199.00/month).
-                                    </p>
-                                  </div>
-
-                                  {/* Premium Plan + Custom .co.za Domain Card */}
-                                  <div
-                                    onClick={() => setClaimIntention("premium_custom_domain")}
-                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                                      claimIntention === "premium_custom_domain"
-                                        ? "bg-amber-100/50 border-amber-500 shadow-md"
-                                        : "bg-white border-slate-200 hover:border-amber-300"
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <div className="p-1 bg-emerald-100 text-emerald-800 rounded">
+                                        <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
                                           <BadgeCheck className="w-4 h-4" />
                                         </div>
                                         <div>
-                                          <h6 className="text-xs font-bold text-slate-900">Essential + Brand Domain</h6>
-                                          <span className="text-[10px] text-slate-500 font-semibold">Register .co.za Brand Domain</span>
+                                          <h6 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                                            Level 2: Essential Verified Tier
+                                          </h6>
+                                          <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-full inline-block mt-0.5">
+                                            Verified Badge & Full Listing Control
+                                          </span>
                                         </div>
                                       </div>
                                       <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900 font-bold">R199.00<span className="text-[8px] font-medium text-slate-500"> /mo</span></span>
-                                        <span className="text-[9px] text-slate-500 block">+ R99.00 / year domain</span>
+                                        <span className="text-sm font-black font-mono text-emerald-700">
+                                          {claimHasSelection ? claimDisplayPrice : "R0.00"}
+                                        </span>
+                                        <span className="text-[9px] text-slate-500 block font-semibold">Calculated Total</span>
                                       </div>
                                     </div>
-                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Includes the core R199.00 Essential plan plus professional registration and management of your .co.za brand domain.
+
+                                    {/* CUSTOMIZE LEVEL 2 CHECKBOX BOX */}
+                                    <div 
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="bg-white border border-emerald-200 rounded-xl p-3 space-y-2.5 shadow-sm"
+                                    >
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-900 block border-b border-emerald-100 pb-1.5">
+                                        CUSTOMIZE LEVEL 2 OPTIONS:
+                                      </span>
+                                      
+                                      <label className="flex items-start gap-2.5 cursor-pointer hover:bg-emerald-50/80 p-1.5 rounded-lg transition-colors">
+                                        <input
+                                          type="checkbox"
+                                          checked={claimL2Verified}
+                                          onChange={(e) => {
+                                            setClaimL2Verified(e.target.checked);
+                                            setClaimIntention("level2");
+                                          }}
+                                          className="w-4 h-4 mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                        />
+                                        <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                                          Essential Verified Level <span className="text-emerald-700 font-extrabold">(+R199.99/mo)</span>
+                                        </span>
+                                      </label>
+
+                                      <label className="flex items-start gap-2.5 cursor-pointer hover:bg-emerald-50/80 p-1.5 rounded-lg transition-colors">
+                                        <input
+                                          type="checkbox"
+                                          checked={claimL2Extra}
+                                          onChange={(e) => {
+                                            setClaimL2Extra(e.target.checked);
+                                            setClaimIntention("level2");
+                                          }}
+                                          className="w-4 h-4 mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                        />
+                                        <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                                          Smart Static Site + Hosting <span className="text-emerald-700 font-extrabold">(+R199/mo)</span>
+                                        </span>
+                                      </label>
+
+                                      <label className="flex items-start gap-2.5 cursor-pointer hover:bg-emerald-50/80 p-1.5 rounded-lg transition-colors">
+                                        <input
+                                          type="checkbox"
+                                          checked={claimL2Domain}
+                                          onChange={(e) => {
+                                            setClaimL2Domain(e.target.checked);
+                                            setClaimIntention("level2");
+                                          }}
+                                          className="w-4 h-4 mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                        />
+                                        <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                                          .co.za Domain Setup <span className="text-emerald-700 font-extrabold">(+R99/yr)</span>
+                                        </span>
+                                      </label>
+
+                                      <div className="space-y-1.5">
+                                        <label className="flex items-start gap-2.5 cursor-pointer hover:bg-emerald-50/80 p-1.5 rounded-lg transition-colors">
+                                          <input
+                                            type="checkbox"
+                                            checked={claimL2Listings}
+                                            onChange={(e) => {
+                                              setClaimL2Listings(e.target.checked);
+                                              setClaimIntention("level2");
+                                            }}
+                                            className="w-4 h-4 mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                          />
+                                          <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                                            Extra Area Listing <span className="text-emerald-700 font-extrabold">(+R199/mo each)</span>
+                                          </span>
+                                        </label>
+
+                                        {claimL2Listings && (
+                                          <div className="flex items-center gap-2 pl-6 pt-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => setClaimL2ListingCount(Math.max(1, claimL2ListingCount - 1))}
+                                              className="w-6 h-6 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-black text-xs rounded border border-emerald-300 flex items-center justify-center"
+                                            >
+                                              <Minus className="w-3 h-3" />
+                                            </button>
+                                            <span className="text-[11px] font-mono font-bold text-emerald-950 px-2 py-0.5 bg-emerald-100/80 rounded border border-emerald-200">
+                                              {claimL2ListingCount} {claimL2ListingCount === 1 ? 'area' : 'areas'} (+R{(199 * claimL2ListingCount).toFixed(2)}/mo)
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setClaimL2ListingCount(claimL2ListingCount + 1)}
+                                              className="w-6 h-6 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-black text-xs rounded border border-emerald-300 flex items-center justify-center"
+                                            >
+                                              <Plus className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <p className="text-[10px] text-slate-600 mt-2.5 leading-relaxed pl-1">
+                                      Unlock official verified badge, full business description, phone, WhatsApp, email links, direct website URL, and priority ranking.
                                     </p>
                                   </div>
 
-                                  {/* Option 4: Request Removal / Delete Unverified Listing */}
+                                  {/* Request Removal / Delete Unverified Listing Card */}
                                   <div
                                     onClick={() => setClaimIntention("remove_listing")}
-                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                                       claimIntention === "remove_listing"
-                                        ? "bg-rose-100/60 border-rose-500 shadow-md"
+                                        ? "bg-rose-100/60 border-rose-500 shadow-md ring-2 ring-rose-500/20"
                                         : "bg-white border-slate-200 hover:border-rose-300"
                                     }`}
                                   >
                                     <div className="flex items-start justify-between">
                                       <div className="flex items-center gap-2">
-                                        <div className="p-1 bg-rose-200 text-rose-800 rounded">
+                                        <div className="p-1.5 bg-rose-200 text-rose-800 rounded-lg">
                                           <Trash2 className="w-4 h-4" />
                                         </div>
                                         <div>
                                           <h6 className="text-xs font-bold text-rose-950">Request Removal / Delete Listing</h6>
-                                          <span className="text-[10px] text-rose-700 font-semibold">Remove Unverified Google Maps / CSV Listing</span>
+                                          <span className="text-[10px] text-rose-700 font-semibold">Remove Unverified Listing</span>
                                         </div>
                                       </div>
                                       <div className="text-right">
@@ -1244,14 +1312,23 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 </div>
 
                                 <button
-                                  onClick={() => setClaimStep(2)}
+                                  onClick={() => {
+                                    if (claimIntention !== "remove_listing" && !claimHasSelection) {
+                                      alert("Please select at least 1 option from Level 2 or choose Request Removal.");
+                                      return;
+                                    }
+                                    setClaimStep(2);
+                                  }}
+                                  disabled={claimIntention !== "remove_listing" && !claimHasSelection}
                                   className={`w-full mt-3 py-3 px-4 ${
                                     claimIntention === "remove_listing" 
                                       ? "bg-rose-700 hover:bg-rose-800 text-white" 
-                                      : "bg-slate-900 hover:bg-slate-800 text-white"
+                                      : !claimHasSelection 
+                                        ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
                                   } rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2`}
                                 >
-                                  {claimIntention === "remove_listing" ? "Continue to Removal Request Form →" : "Continue to Verification Form →"}
+                                  {claimIntention === "remove_listing" ? "Continue to Removal Request Form →" : `Continue with ${claimDisplayPrice} Selection →`}
                                 </button>
                               </div>
                             ) : (
@@ -1417,14 +1494,19 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
 
                                     setSubmitting(true);
                                     
-                                    const selectedPlanLabel = 
-                                      isRemoval ? "Request Listing Deletion / Removal" :
-                                      claimIntention === "premium_base" ? "Level 2: Essential Verified Tier" :
-                                      claimIntention === "premium_extra_ad" ? "Essential Verified + Web Hosting Suite" : "Essential Verified + Brand Domain Package";
-                                    const selectedPlanPrice = 
-                                      isRemoval ? "Free Listing Removal Request" :
-                                      claimIntention === "premium_base" ? "R199.00 / month" :
-                                      claimIntention === "premium_extra_ad" ? "R398.00 / month" : "R199.00 / month (+ R99.00 / year)";
+                                    let selectedPlanLabel = "Request Listing Deletion / Removal";
+                                    let selectedPlanPrice = "Free Listing Removal Request";
+
+                                    if (!isRemoval) {
+                                      const selectedOpts: string[] = [];
+                                      if (claimL2Verified) selectedOpts.push("Essential Verified Level (+R199.99/mo)");
+                                      if (claimL2Extra) selectedOpts.push("Smart Static Site & Hosting (+R199.00/mo)");
+                                      if (claimL2Domain) selectedOpts.push(".co.za Domain Setup (+R99.00/yr)");
+                                      if (claimL2Listings) selectedOpts.push(`${claimL2ListingCount} Extra Area Listing(s) (+R${(199 * claimL2ListingCount).toFixed(2)}/mo)`);
+
+                                      selectedPlanLabel = `Level 2 Essential Verified Tier (${selectedOpts.join(", ") || "Custom"})`;
+                                      selectedPlanPrice = claimDisplayPrice;
+                                    }
 
                                     const content = isRemoval ? `[UNVERIFIED LISTING REMOVAL REQUEST]
 Company Name: ${ad?.title}
