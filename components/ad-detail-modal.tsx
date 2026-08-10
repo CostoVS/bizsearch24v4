@@ -112,7 +112,8 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   const [claimSenderName, setClaimSenderName] = useState("");
   const [claimSenderPhone, setClaimSenderPhone] = useState("");
   const [claimSenderEmail, setClaimSenderEmail] = useState("");
-  const [claimIntention, setClaimIntention] = useState("premium_base"); // "premium_base", "premium_extra_ad", "premium_custom_domain"
+  const [claimIntention, setClaimIntention] = useState("premium_base"); // "premium_base", "premium_extra_ad", "premium_custom_domain", "remove_listing"
+  const [claimRemovalReason, setClaimRemovalReason] = useState("Do not want public directory listing");
   const [claimMessage, setClaimMessage] = useState("");
   const [claimIdDoc, setClaimIdDoc] = useState("");
   const [claimCipc, setClaimCipc] = useState("");
@@ -1116,12 +1117,12 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 <div className="border-b border-amber-200 pb-3 flex items-center justify-between">
                                   <div className="flex items-center gap-1.5">
                                     <Sparkles className="w-4 h-4 text-amber-600" />
-                                    <h5 className="text-sm font-bold text-amber-900">Step 1 of 2: Select Subscription Plan</h5>
+                                    <h5 className="text-sm font-bold text-amber-900">Step 1 of 2: Select Action / Option</h5>
                                   </div>
                                   <button onClick={() => setIsClaiming(false)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Cancel</button>
                                 </div>
                                 <p className="text-[11px] text-amber-800 leading-tight mb-2">
-                                  Verification is a paid-only service. Please choose one of our verified subscription packages below to proceed with verification and activation of badges:
+                                  If this is your business, select a verified plan to claim full owner control, or request removal of this unverified listing by providing proof of ownership:
                                 </p>
 
                                 <div className="space-y-3">
@@ -1145,12 +1146,12 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                         </div>
                                       </div>
                                       <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900">R199.99</span>
+                                        <span className="text-xs font-black text-amber-900">R199.00</span>
                                         <span className="text-[9px] text-slate-500 block">/ month</span>
                                       </div>
                                     </div>
                                     <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Unlock the verified badge, business description, WhatsApp, email, links, and dedicated index optimization.
+                                      Unlock the verified badge, business description, WhatsApp, email, official website link, and priority search ranking.
                                     </p>
                                   </div>
 
@@ -1174,12 +1175,12 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                         </div>
                                       </div>
                                       <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900">R398.99</span>
+                                        <span className="text-xs font-black text-amber-900">R398.00</span>
                                         <span className="text-[9px] text-slate-500 block">/ month</span>
                                       </div>
                                     </div>
                                     <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Includes the core R199.99 Essential plan plus unlimited hosting, unlimited email accounts, and customized smart static website (+R199.00/month).
+                                      Includes the core R199.00 Essential plan plus unlimited hosting, unlimited email accounts, and customized smart static website (+R199.00/month).
                                     </p>
                                   </div>
 
@@ -1203,21 +1204,54 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                         </div>
                                       </div>
                                       <div className="text-right">
-                                        <span className="text-xs font-black text-amber-900 font-bold">R199.99<span className="text-[8px] font-medium text-slate-500"> /mo</span></span>
+                                        <span className="text-xs font-black text-amber-900 font-bold">R199.00<span className="text-[8px] font-medium text-slate-500"> /mo</span></span>
                                         <span className="text-[9px] text-slate-500 block">+ R99.00 / year domain</span>
                                       </div>
                                     </div>
                                     <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
-                                      Includes the core R199.99 Essential plan plus professional registration and management of your .co.za brand domain.
+                                      Includes the core R199.00 Essential plan plus professional registration and management of your .co.za brand domain.
+                                    </p>
+                                  </div>
+
+                                  {/* Option 4: Request Removal / Delete Unverified Listing */}
+                                  <div
+                                    onClick={() => setClaimIntention("remove_listing")}
+                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                      claimIntention === "remove_listing"
+                                        ? "bg-rose-100/60 border-rose-500 shadow-md"
+                                        : "bg-white border-slate-200 hover:border-rose-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="p-1 bg-rose-200 text-rose-800 rounded">
+                                          <Trash2 className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                          <h6 className="text-xs font-bold text-rose-950">Request Removal / Delete Listing</h6>
+                                          <span className="text-[10px] text-rose-700 font-semibold">Remove Unverified Google Maps / CSV Listing</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-xs font-black text-rose-800 font-bold">FREE REQUEST</span>
+                                        <span className="text-[9px] text-rose-600 block">Proof required</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 mt-2 leading-relaxed pl-8">
+                                      Are you the official business owner and want this unverified listing deleted from SearchBiz? Submit proof of ownership to request complete removal.
                                     </p>
                                   </div>
                                 </div>
 
                                 <button
                                   onClick={() => setClaimStep(2)}
-                                  className="w-full mt-3 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center"
+                                  className={`w-full mt-3 py-3 px-4 ${
+                                    claimIntention === "remove_listing" 
+                                      ? "bg-rose-700 hover:bg-rose-800 text-white" 
+                                      : "bg-slate-900 hover:bg-slate-800 text-white"
+                                  } rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2`}
                                 >
-                                  Continue to Verification Form
+                                  {claimIntention === "remove_listing" ? "Continue to Removal Request Form →" : "Continue to Verification Form →"}
                                 </button>
                               </div>
                             ) : (
@@ -1225,13 +1259,17 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 <div className="border-b border-amber-200 pb-3 flex items-center justify-between">
                                   <div className="flex items-center gap-1.5">
                                     <ShieldAlert className="w-4 h-4 text-amber-600" />
-                                    <h5 className="text-sm font-bold text-amber-900">Step 2 of 2: Upload Documents</h5>
+                                    <h5 className="text-sm font-bold text-amber-900">
+                                      {claimIntention === "remove_listing" ? "Step 2 of 2: Listing Deletion Details & Ownership Proof" : "Step 2 of 2: Upload Verification Documents"}
+                                    </h5>
                                   </div>
-                                  <button onClick={() => setClaimStep(1)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Back to Plans</button>
+                                  <button onClick={() => setClaimStep(1)} className="text-amber-500 hover:text-amber-700 text-xs font-bold">Back to Options</button>
                                 </div>
                                 
                                 <p className="text-[11px] text-amber-800 leading-tight">
-                                  Please fill out your verified representative contact details and upload the required proof documents. These records go securely and directly to your Admin SearchBiz Chat.
+                                  {claimIntention === "remove_listing"
+                                    ? "Please provide your authorized representative details, reason for removal, and upload proof of business ownership (e.g. CIPC, ID, or Utility Bill) to verify and delete this unverified listing."
+                                    : "Please fill out your verified representative contact details and upload the required proof documents. These records go securely and directly to your Admin SearchBiz Chat."}
                                 </p>
 
                                 <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100">
@@ -1270,32 +1308,60 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                       />
                                     </div>
                                   </div>
+
+                                  {claimIntention === "remove_listing" && (
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-rose-900 uppercase tracking-wider mb-1">Reason for Listing Removal</label>
+                                      <select
+                                        value={claimRemovalReason}
+                                        onChange={(e) => setClaimRemovalReason(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-rose-500 outline-none font-medium"
+                                      >
+                                        <option value="Do not want public directory listing">Do not want public directory listing on SearchBiz</option>
+                                        <option value="Business permanently closed or relocated">Business permanently closed or relocated</option>
+                                        <option value="Duplicate or outdated listing entry">Duplicate or outdated listing entry</option>
+                                        <option value="Incorrect phone or address details">Incorrect phone or address details</option>
+                                        <option value="Other business policy reason">Other business policy reason</option>
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="block text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                                    {claimIntention === "remove_listing" ? "Upload Business Ownership Proof (At least 1 required)" : "Upload Required Verification Documents"}
+                                  </label>
+                                  <p className="text-[10px] text-slate-500">
+                                    {claimIntention === "remove_listing" 
+                                      ? "Upload CIPC certificate, ID document, SARS doc, or utility bill to prove you own or represent this business." 
+                                      : "Please upload all 5 documents to complete official account verification."}
+                                  </p>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
                                     <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">ID Document</label>
-                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimIdDoc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimIdDoc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" />
                                     {claimIdDoc && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
                                   </div>
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
                                     <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">CIPC Registration</label>
-                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimCipc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimCipc)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" />
                                     {claimCipc && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
                                   </div>
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
                                     <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">SARS Document</label>
-                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimSars)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimSars)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" />
                                     {claimSars && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
                                   </div>
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
                                     <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Proof of Address</label>
-                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimProofOfAddress)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimProofOfAddress)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" />
                                     {claimProofOfAddress && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
                                   </div>
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 sm:col-span-2">
-                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Business Bank Statement</label>
-                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimBankStatement)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" required />
+                                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Business Bank Statement / Letterhead</label>
+                                    <input type="file" onChange={(e) => handleSecureDocUpload(e, setClaimBankStatement)} className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200" />
                                     {claimBankStatement && <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Loaded Safely</span>}
                                   </div>
                                 </div>
@@ -1310,21 +1376,21 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                 {scanResultDocs === "clean" && (
                                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4 text-emerald-600" />
-                                    <span className="text-xs font-bold text-emerald-700">Documents scanned and verified clean</span>
+                                    <span className="text-xs font-bold text-emerald-700 font-medium">Documents scanned and verified clean</span>
                                   </div>
                                 )}
                                 
                                 {scanResultDocs === "malware" && (
                                   <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center gap-2">
                                     <AlertCircle className="w-4 h-4 text-rose-600" />
-                                    <span className="text-xs font-bold text-rose-700">Malware signature detected. Upload blocked.</span>
+                                    <span className="text-xs font-bold text-rose-700 font-medium">Malware signature detected. Upload blocked.</span>
                                   </div>
                                 )}
 
                                 <textarea
                                   value={claimMessage}
                                   onChange={(e) => setClaimMessage(e.target.value)}
-                                  placeholder="Any additional messages or instructions for the administrator..."
+                                  placeholder={claimIntention === "remove_listing" ? "Explain why you wish to have this listing deleted..." : "Any additional messages or instructions for the administrator..."}
                                   className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 outline-none resize-none text-slate-800 min-h-[60px]"
                                 />
 
@@ -1334,20 +1400,48 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                                       alert("Please fill in your authorized representative contact details.");
                                       return;
                                     }
-                                    if (!claimIdDoc || !claimCipc || !claimSars || !claimProofOfAddress || !claimBankStatement) {
-                                      alert("Please select and load all 5 required documents to prove ownership.");
-                                      return;
+
+                                    const isRemoval = claimIntention === "remove_listing";
+
+                                    if (isRemoval) {
+                                      if (!claimIdDoc && !claimCipc && !claimSars && !claimProofOfAddress && !claimBankStatement) {
+                                        alert("Please upload at least one proof of business ownership (ID document, CIPC registration, or Proof of Address) to submit your listing removal request.");
+                                        return;
+                                      }
+                                    } else {
+                                      if (!claimIdDoc || !claimCipc || !claimSars || !claimProofOfAddress || !claimBankStatement) {
+                                        alert("Please select and load all 5 required documents to prove ownership for account verification.");
+                                        return;
+                                      }
                                     }
+
                                     setSubmitting(true);
                                     
                                     const selectedPlanLabel = 
+                                      isRemoval ? "Request Listing Deletion / Removal" :
                                       claimIntention === "premium_base" ? "Level 2: Essential Verified Tier" :
                                       claimIntention === "premium_extra_ad" ? "Essential Verified + Web Hosting Suite" : "Essential Verified + Brand Domain Package";
                                     const selectedPlanPrice = 
-                                      claimIntention === "premium_base" ? "R199.99 / month" :
-                                      claimIntention === "premium_extra_ad" ? "R398.99 / month" : "R199.99 / month (+ R99.00 / year)";
+                                      isRemoval ? "Free Listing Removal Request" :
+                                      claimIntention === "premium_base" ? "R199.00 / month" :
+                                      claimIntention === "premium_extra_ad" ? "R398.00 / month" : "R199.00 / month (+ R99.00 / year)";
 
-                                    const content = `[NEW PREMIUM UPGRADE REQUEST]
+                                    const content = isRemoval ? `[UNVERIFIED LISTING REMOVAL REQUEST]
+Company Name: ${ad?.title}
+Listing ID: ${ad?.id}
+Authorized Contact Name: ${claimSenderName}
+Phone Number: ${claimSenderPhone}
+Email Address: ${claimSenderEmail}
+Reason for Removal: ${claimRemovalReason}
+Message / Additional Notes: ${claimMessage || "No additional notes"}
+
+PROOF DOCUMENTS ATTACHED:
+ID Document:${claimIdDoc ? " Attached" : " None"}
+CIPC Registration:${claimCipc ? " Attached" : " None"}
+SARS Document:${claimSars ? " Attached" : " None"}
+Proof of Address:${claimProofOfAddress ? " Attached" : " None"}
+Business Bank Statement:${claimBankStatement ? " Attached" : " None"}
+` : `[NEW PREMIUM UPGRADE REQUEST]
 Company Name: ${ad?.title}
 Full Name: ${claimSenderName}
 Phone Number: ${claimSenderPhone}
@@ -1362,9 +1456,6 @@ CIPC Registration:${claimCipc}
 SARS Document:${claimSars}
 Proof of Address:${claimProofOfAddress}
 Business Bank Statement:${claimBankStatement}
-
-SIGNATURE:
-data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=
 `;
                                     
                                     const finalSenderEmail = claimSenderEmail.toLowerCase();
@@ -1414,14 +1505,14 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                                         adCategory: ad?.category || "Other",
                                         senderEmail: finalSenderEmail,
                                         senderName: claimSenderName,
-                                        intention: "premium",
-                                        message: `Chosen Plan: ${selectedPlanLabel} | ${claimMessage || "No additional message"}`,
+                                        intention: isRemoval ? "removal" : "premium",
+                                        message: isRemoval ? `REMOVAL REQUEST (${claimRemovalReason}) | ${claimMessage || "No message"}` : `Chosen Plan: ${selectedPlanLabel} | ${claimMessage || "No additional message"}`,
                                         documents: {
-                                          idDoc: "Attached",
-                                          cipc: "Attached",
-                                          sars: "Attached",
-                                          proofOfAddress: "Attached",
-                                          bankStatement: "Attached"
+                                          idDoc: claimIdDoc ? "Attached" : "None",
+                                          cipc: claimCipc ? "Attached" : "None",
+                                          sars: claimSars ? "Attached" : "None",
+                                          proofOfAddress: claimProofOfAddress ? "Attached" : "None",
+                                          bankStatement: claimBankStatement ? "Attached" : "None"
                                         },
                                         status: "PENDING",
                                         createdAt: new Date().toISOString()
@@ -1464,9 +1555,13 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
                         ) : (
                           <div className="text-center py-4">
                             <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                            <h5 className="text-sm font-bold text-slate-900">Documents Submitted Successfully</h5>
+                            <h5 className="text-sm font-bold text-slate-900">
+                              {claimIntention === "remove_listing" ? "Removal Request Submitted" : "Documents Submitted Successfully"}
+                            </h5>
                             <p className="text-xs text-slate-600 mt-1 mb-4 leading-relaxed">
-                              Your ownership proof has been submitted securely and dispatched directly to Admin SearchBiz Chat. Our team will verify your business shortly and update your listing badges!
+                              {claimIntention === "remove_listing"
+                                ? "Your listing deletion request and proof of ownership have been submitted securely to SearchBiz Compliance. Our team will review your proof and permanently delete the listing within 24-48 hours."
+                                : "Your ownership proof has been submitted securely and dispatched directly to Admin SearchBiz Chat. Our team will verify your business shortly and update your listing badges!"}
                             </p>
                             <Link
                               href="/messages"
