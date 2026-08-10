@@ -371,26 +371,25 @@ ${signature}
             {
               id: "free",
               name: "Level 1: Free Basic",
-              badge: "not verified badge",
-              price: "R0",
+              badge: "Not Verified",
+              price: "R0.00",
               period: "forever",
-              desc: "1 Free unverified listing.",
+              desc: "1 Free unverified listing on SearchBiz.",
               features: [
-                "1 Listing only",
-                "Business Name",
-                "Address",
-                "Phone",
+                "1 Basic listing only",
+                "Business Name & Address",
+                "Phone Number",
                 "Services Offered",
-                "No Verified Badge"
+                "Unverified badge"
               ]
             },
             {
               id: "essential",
-              name: "Level 2: Essential",
-              badge: "verified badge",
+              name: "Level 2: Essential Verified Tier",
+              badge: "Verified Badge",
               price: (l2Verified || l2Extra || l2Domain || l2Listings) ? displayPrice : "R0.00",
               period: "month",
-              desc: "Complete digital presence with optional extras.",
+              desc: "Official business verification badge with custom add-ons.",
               features: [
                 l2Verified ? "✓ Verified Level (+R199.99/mo) [SELECTED]" : "Verified Level (+R199.99/mo) [Select option below]",
                 l2Extra ? "✓ Hosting & Web Suite (+R199/mo) [SELECTED]" : "Hosting & Web Suite (+R199/mo)",
@@ -400,86 +399,94 @@ ${signature}
             },
             {
               id: "premium",
-              name: "Level 3: Premium",
-              badge: "premium verified",
+              name: "Level 3: Premium Tier",
+              badge: "premium verified badge",
               price: "R9,999.00",
               period: "month",
-              desc: "Broad regional South African coverage.",
+              desc: "Multi-area coverage across all regions.",
               features: [
-                "Everything in Essential Tier",
-                "1 Ad listing in all areas of SA",
-                "Premium Verified Badge",
-                "Priority Regional Display",
-                "Premium SLA Response"
+                "Everything from essential tier",
+                "1 ad listing in all areas",
+                "Premium Verified Badge"
               ]
             },
             {
               id: "enterprise_basic",
-              name: "Level 4: Enterprise Basic",
-              badge: "Enterprise Verified",
+              name: "Level 4: Enterprise Basic Grade Tier",
+              badge: "Enterprise Verified badge",
               price: "R499,999.00",
               period: "month",
-              desc: "Aggressive multi-channel campaigns.",
+              desc: "Multi-channel marketing campaigns.",
               features: [
-                "Everything from Level 2 & 3",
-                "Unlimited Ads (1 per Area)",
-                "Full video/image/poster media",
-                "Facebook/TikTok/YouTube/X/Instagram/Google Marketing",
-                "Enterprise Verified Badge"
+                "Everything from essential and premium tier",
+                "Unlimited Ads in Searchbiz 1 per Area",
+                "Marketing ads, images, posters, videos",
+                "Facebook, TikTok, YouTube, X, Instagram & Google Marketing"
               ]
             },
             {
               id: "enterprise_premium",
-              name: "Level 5: Enterprise Premium",
-              badge: "Enterprise Premium",
+              name: "Level 5: Enterprise Premium Grade Tier",
+              badge: "Enterprise Verified badge",
               price: "R999,999.00",
               period: "month",
-              desc: "Top priority marketing dominance.",
+              desc: "Aggressive marketing campaign dominance.",
               features: [
-                "Everything from Level 4",
-                "Highly Aggressive Ad Campaigns",
-                "Full Media Production",
-                "Enterprise Premium Verified Badge"
+                "Everything from essential and premium tier",
+                "Unlimited Ads in Searchbiz 1 per Area",
+                "Aggressive Marketing",
+                "Marketing ads, images, posters, videos",
+                "Facebook, TikTok, YouTube, X, Instagram & Google Marketing"
               ]
             },
             {
               id: "elite_basic",
-              name: "Level 6: Elite Basic",
-              badge: "Elite Basic",
+              name: "Level 6: Elite Basic Tier",
+              badge: "Elite Verified badge",
               price: "R25,000,000.00",
               period: "month",
               desc: "20 Million Rands Per Month positioning.",
               features: [
-                "Everything from Level 5",
-                "Tv Commercials (basics) included",
-                "Tv / Radio / Press Release features",
-                "Elite Verified Badge"
+                "Everything from essential and premium tier",
+                "Unlimited Ads in Searchbiz 1 per Area",
+                "Marketing ads, images, posters, videos",
+                "Facebook, TikTok, YouTube, X, Instagram & Google Marketing",
+                "Tv Commercials (basics)",
+                "Radio station ads"
               ]
             },
             {
               id: "elite_premium",
-              name: "Level 7: Elite Premium",
-              badge: "Elite Premium",
+              name: "Level 7: Elite Premium Tier",
+              badge: "Elite Premium Verified badge",
               price: "R50,000,000.00",
               period: "month",
               desc: "50 Million Rands Per Month media dominance.",
               features: [
-                "Everything from Level 6",
+                "Everything from essential and premium tier",
+                "Unlimited Ads in Searchbiz 1 per Area",
+                "Aggressive Ads",
+                "Marketing ads, images, posters, videos",
+                "Facebook, TikTok, YouTube, X, Instagram & Google Marketing",
                 "Tv Commercials (premium)",
-                "Elite Premium Verified Badge"
+                "Radio station ads"
               ]
             },
             {
               id: "elite_enterprise",
-              name: "Level 8: Elite Enterprise",
-              badge: "Elite Enterprise",
+              name: "Level 8: Elite Enterprise Grade Tier",
+              badge: "Elite Enterprise Verified badge",
               price: "R100,000,000.00",
               period: "month",
-              desc: "100 Million Rands corporate monopolization.",
+              desc: "100 Million Rands Per Month corporate monopolization.",
               features: [
-                "Everything from Level 7",
+                "Everything from essential and premium tier",
+                "Unlimited Ads in Searchbiz 1 per Area",
+                "Aggressive Ads",
+                "Marketing ads, images, posters, videos",
+                "Facebook, TikTok, YouTube, X, Instagram & Google Marketing",
                 "Tv Commercials (elites)",
-                "Elite Enterprise Verified Badge"
+                "Radio station ads"
               ]
             }
           ].map((plan) => {
