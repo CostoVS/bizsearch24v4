@@ -1,20 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Search, MapPin, Briefcase, Home } from 'lucide-react';
 import { PROVINCES, CATEGORIES, CATEGORIES_STRUCTURED } from '@/lib/data';
 import { KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS } from '@/lib/locations';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { trackSearch } from '@/lib/analytics-utils';
 
-export function SearchBar() {
+function SearchBarForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [selectedProvince, setSelectedProvince] = useState('');
   const [selectedTown, setSelectedTown] = useState('');
   const [suburb, setSuburb] = useState('');
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
+
+  // Sync state from query params on page load or change
+  useEffect(() => {
+    if (searchParams) {
+      const p = searchParams.get('province') || '';
+      const t = searchParams.get('town') || '';
+      const s = searchParams.get('suburb') || '';
+      const c = searchParams.get('category') || '';
+      const q = searchParams.get('q') || '';
+
+      if (p) setSelectedProvince(p);
+      if (t) setSelectedTown(t);
+      if (s) setSuburb(s);
+      if (q) setKeyword(q);
+      if (c) {
+        const isKnown = CATEGORIES_STRUCTURED.some(g => g.subcategories.includes(c));
+        if (isKnown) {
+          setCategory(c);
+        } else {
+          setCategory('Other');
+          setCustomCategory(c);
+        }
+      }
+    }
+  }, [searchParams]);
 
   const towns = PROVINCES.find(p => p.slug === selectedProvince)?.towns || [];
   const provinceSuburbs = selectedProvince === 'kwazulu-natal' 
@@ -194,5 +221,13 @@ export function SearchBar() {
         Search
       </button>
     </div>
+  );
+}
+
+export function SearchBar() {
+  return (
+    <Suspense fallback={<div className="bg-white rounded-3xl p-4 h-16 animate-pulse border border-slate-100" />}>
+      <SearchBarForm />
+    </Suspense>
   );
 }

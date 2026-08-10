@@ -1,8 +1,8 @@
 "use client";
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
-import { BadgeCheck, MapPin, Star, Edit, Trash2 } from 'lucide-react';
+import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'motion/react';
 import Link from 'next/link';
@@ -16,18 +16,59 @@ import { Pagination } from '@/components/pagination';
 
 function DirectoryContent() {
   const { isAdmin } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const q = searchParams?.get('q')?.toLowerCase() || '';
-  const category = searchParams?.get('category')?.toLowerCase() || '';
-  const town = searchParams?.get('town')?.toLowerCase() || '';
-  const province = searchParams?.get('province')?.toLowerCase() || '';
-  const suburb = searchParams?.get('suburb')?.toLowerCase() || '';
+
+  const rawQ = searchParams?.get('q') || '';
+  const rawCategory = searchParams?.get('category') || '';
+  const rawTown = searchParams?.get('town') || '';
+  const rawProvince = searchParams?.get('province') || '';
+  const rawSuburb = searchParams?.get('suburb') || '';
+
+  const q = rawQ.toLowerCase().trim();
+  const category = rawCategory.toLowerCase().trim();
+  const town = rawTown.toLowerCase().trim();
+  const province = rawProvince.toLowerCase().trim();
+  const suburb = rawSuburb.toLowerCase().trim();
 
   const [allAds, setAllAds] = useState<any[]>([]);
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
+
+  const removeFilter = (key: string) => {
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    params.delete(key);
+    const queryString = params.toString();
+    router.push(queryString ? `/directory?${queryString}` : '/directory');
+  };
+
+  const getFilterSummarySentence = () => {
+    if (!hasFilters) return null;
+    const parts: string[] = [];
+
+    const provObj = PROVINCES.find(p => p.slug === province);
+    const provName = provObj ? provObj.name : rawProvince;
+
+    const locItems = [rawSuburb, rawTown, provName].filter(Boolean);
+
+    if (rawCategory) {
+      parts.push(`Category "${rawCategory}"`);
+    }
+
+    if (locItems.length > 0) {
+      parts.push(`Location "${locItems.join(', ')}"`);
+    }
+
+    if (rawQ) {
+      parts.push(`Keyword "${rawQ}"`);
+    }
+
+    return parts.join(' • ');
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -176,6 +217,108 @@ function DirectoryContent() {
         <div className="w-full max-w-5xl">
             <SearchBar />
         </div>
+
+        {hasFilters && (
+          <div className="mt-6 bg-[#052e22] text-white border border-emerald-800/80 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-emerald-800/80">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shadow-lg shadow-emerald-400/50" />
+                <h2 className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                  Search Wordings & Active Criteria
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push('/directory')}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-300 hover:text-white bg-rose-900/40 hover:bg-rose-900/70 border border-rose-700/50 px-3.5 py-1.5 rounded-xl transition active:scale-95 self-start sm:self-auto cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Clear All Filters</span>
+              </button>
+            </div>
+
+            <div className="text-emerald-100 text-sm font-semibold mb-4 leading-relaxed">
+              Showing search results for: <span className="text-amber-300 font-extrabold">{getFilterSummarySentence()}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {rawProvince && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-700/80 rounded-xl text-xs font-bold shadow-sm">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Province: <strong className="text-white">{PROVINCES.find(p => p.slug === province)?.name || rawProvince}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter('province')}
+                    className="ml-1 p-0.5 rounded-full hover:bg-emerald-800 text-emerald-300 hover:text-white transition cursor-pointer"
+                    title="Remove province filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+
+              {rawTown && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-700/80 rounded-xl text-xs font-bold shadow-sm">
+                  <MapPin className="w-3.5 h-3.5 text-sky-400" />
+                  <span>City / Town: <strong className="text-white">{rawTown}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter('town')}
+                    className="ml-1 p-0.5 rounded-full hover:bg-emerald-800 text-emerald-300 hover:text-white transition cursor-pointer"
+                    title="Remove town filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+
+              {rawSuburb && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-700/80 rounded-xl text-xs font-bold shadow-sm">
+                  <Home className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Suburb: <strong className="text-white">{rawSuburb}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter('suburb')}
+                    className="ml-1 p-0.5 rounded-full hover:bg-emerald-800 text-emerald-300 hover:text-white transition cursor-pointer"
+                    title="Remove suburb filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+
+              {rawCategory && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-700/80 rounded-xl text-xs font-bold shadow-sm">
+                  <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Category: <strong className="text-white">{rawCategory}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter('category')}
+                    className="ml-1 p-0.5 rounded-full hover:bg-emerald-800 text-emerald-300 hover:text-white transition cursor-pointer"
+                    title="Remove category filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+
+              {rawQ && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/80 text-emerald-100 border border-emerald-700/80 rounded-xl text-xs font-bold shadow-sm">
+                  <Search className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Keywords: <strong className="text-white">"{rawQ}"</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter('q')}
+                    className="ml-1 p-0.5 rounded-full hover:bg-emerald-800 text-emerald-300 hover:text-white transition cursor-pointer"
+                    title="Remove keywords filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div ref={resultsRef} className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
