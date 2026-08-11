@@ -150,6 +150,147 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   const [isScanningDocs, setIsScanningDocs] = useState(false);
   const [scanResultDocs, setScanResultDocs] = useState<"clean" | "malware" | null>(null);
 
+  // Report Ad State
+  const [isReportingAd, setIsReportingAd] = useState(false);
+  const [reportReason, setReportReason] = useState("Business permanently closed or stopped operating");
+  const [reportComments, setReportComments] = useState("");
+  const [reporterName, setReporterName] = useState("");
+  const [reporterEmail, setReporterEmail] = useState("");
+  const [reporterPhone, setReporterPhone] = useState("");
+  const [reportSuccess, setReportSuccess] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && isReportingAd) {
+      const session = localStorage.getItem("searchbiz_session");
+      if (session) {
+        try {
+          const parsed = JSON.parse(session);
+          if (parsed.email) {
+            setReporterEmail(parsed.email);
+            setReporterName(parsed.fullName || parsed.email.split("@")[0]);
+            if (parsed.phone) setReporterPhone(parsed.phone);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [isReportingAd]);
+
+  const handleSendAdReport = async () => {
+    if (!reporterName || !reporterEmail) {
+      alert("Please provide your name and email address to submit the report.");
+      return;
+    }
+
+    if (!ad) return;
+
+    setIsSubmittingReport(true);
+
+    const reportContent = `[UNVERIFIED AD REPORT / CLOSED BUSINESS]
+--------------------------------------------------
+🚨 REPORT SUMMARY:
+• Ad ID Number: ${ad.id}
+• Listing Title: ${ad.title}
+• Industry Sector: ${ad.category}
+• Primary Region: ${ad.location} ${ad.suburb ? `(${ad.suburb})` : ''}
+• Physical Address: ${ad.address || "N/A"}
+• Phone Number: ${ad.phone || "N/A"}
+• Email Address: ${ad.email || "N/A"}
+• Verification Status: ${ad.isVerified || ad.verified ? "Verified" : "Unverified / Unclaimed Listing"}
+
+--------------------------------------------------
+📋 REPORT REASON:
+${reportReason}
+
+👤 REPORTER DETAILS:
+• Name: ${reporterName}
+• Email: ${reporterEmail}
+• Contact Phone: ${reporterPhone || "N/A"}
+
+💬 REPORTER COMMENTS:
+${reportComments || "No additional comments provided."}
+--------------------------------------------------
+ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect, update, or remove this listing.`;
+
+    const finalReporterEmail = reporterEmail.toLowerCase().trim();
+    const reportMessageObj = {
+      id: `msg_${Date.now()}_report`,
+      threadId: [finalReporterEmail, "admin", ad.id].sort().join("_"),
+      adId: ad.id,
+      adTitle: ad.title,
+      senderEmail: finalReporterEmail,
+      senderName: reporterName,
+      recipientEmail: "admin",
+      content: reportContent,
+      timestamp: new Date().toLocaleString(),
+      read: false,
+      reported: true,
+      reportedBy: reporterName,
+      reportReason: reportReason,
+    };
+
+    if (typeof window !== "undefined") {
+      const storedStr = localStorage.getItem("searchbiz_messages_v1");
+      let existing = [];
+      if (storedStr) {
+        try {
+          existing = JSON.parse(storedStr);
+        } catch (e) {}
+      }
+      existing.push(reportMessageObj);
+      localStorage.setItem("searchbiz_messages_v1", JSON.stringify(existing));
+      window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+    }
+
+    try {
+      const storageRes = await fetch("/api/storage");
+      let currentStorage = { claimRequests: [], messages: [] };
+      if (storageRes.ok) {
+        currentStorage = await storageRes.json();
+      }
+
+      const reportStorageObj = {
+        id: `report_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        adId: ad.id,
+        adTitle: ad.title,
+        adCity: ad.address || ad.location || "Unknown",
+        adProvince: ad.location || "Gauteng",
+        adCategory: ad.category || "Other",
+        senderEmail: finalReporterEmail,
+        senderName: reporterName,
+        intention: "report_ad",
+        message: `REPORT REASON: ${reportReason} | ${reportComments || "No comments"}`,
+        documents: {},
+        status: "PENDING",
+        createdAt: new Date().toISOString()
+      };
+
+      const updatedClaimRequests = [
+        ...(Array.isArray(currentStorage.claimRequests) ? currentStorage.claimRequests : []),
+        reportStorageObj
+      ];
+
+      const updatedMessages = [
+        ...(Array.isArray(currentStorage.messages) ? currentStorage.messages : []),
+        reportMessageObj
+      ];
+
+      await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          claimRequests: updatedClaimRequests,
+          messages: updatedMessages
+        })
+      });
+    } catch (err) {
+      console.error("Failed to post report to server storage:", err);
+    }
+
+    setIsSubmittingReport(false);
+    setReportSuccess(true);
+  };
+
   useEffect(() => {
     if (typeof window !== "undefined" && isClaiming) {
       const session = localStorage.getItem("searchbiz_session");
@@ -1103,7 +1244,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                        {ad.isClaimed === false ? "Manage Listing" : "Direct Verified Channels"}
+                        {ad.isClaimed === false ? "Manage & Contact Listing" : "Direct Verified Channels"}
                       </h4>
                       {ad.preferredContact && ad.isClaimed !== false && (
                         <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
@@ -1111,6 +1252,30 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
                         </span>
                       )}
                     </div>
+
+                    {/* PHONE SUPPORT MOVED ABOVE CLAIM AD PART */}
+                    {ad.phone && ad.showCallOption !== false && (
+                      <a
+                        href={`tel:${ad.phone}`}
+                        onClick={() => trackCallClick(ad.phone || "", ad.id, ad.title, ad.category, ad.location)}
+                        className="flex items-center gap-4 p-4 bg-emerald-50 hover:bg-emerald-100 text-slate-800 hover:text-emerald-900 rounded-2xl transition border border-emerald-200/80 shadow-sm group"
+                      >
+                        <div className="bg-emerald-600 p-2.5 rounded-xl shadow-sm group-hover:scale-105 transition shrink-0 text-white">
+                          <Phone className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <span className="block text-[10px] uppercase font-black text-emerald-800 tracking-wider">
+                            Phone Support / Direct Call
+                          </span>
+                          <span className="text-base font-bold font-mono text-slate-900">
+                            {ad.phone}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl group-hover:bg-emerald-700 transition">
+                          Call Now
+                        </span>
+                      </a>
+                    )}
 
                     {ad.isClaimed === false ? (
                       <div className="bg-amber-50 rounded-2xl p-5 border border-amber-200">
@@ -1837,6 +2002,175 @@ Business Bank Statement:${claimBankStatement}
                       </div>
                     )}
 
+                    {/* REPORT AD OPTION FOR NON-VERIFIED / UNCLAIMED ADS */}
+                    {((!ad.isVerified && !ad.verified) || ad.isClaimed === false) && (
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 shadow-sm transition-all">
+                        {!isReportingAd ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-rose-100 text-rose-700 rounded-xl">
+                                <ShieldAlert className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h5 className="text-xs font-bold text-slate-900">Is this business closed or info wrong?</h5>
+                                <p className="text-[10px] text-slate-500">Report inaccuracy directly to Admin SearchBiz Chat with Ad ID #{ad.id}</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setIsReportingAd(true);
+                                setReportSuccess(false);
+                              }}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5"
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                              Report Ad
+                            </button>
+                          </div>
+                        ) : reportSuccess ? (
+                          <div className="text-center py-4 space-y-2">
+                            <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
+                            <h5 className="text-xs font-bold text-slate-900">Report Sent to Admin SearchBiz Chat!</h5>
+                            <p className="text-[11px] text-slate-600 max-w-md mx-auto leading-relaxed">
+                              Thank you! Your report for <strong>Ad ID #{ad.id}</strong> ({ad.title}) has been sent directly to the SearchBiz Admin team with full details. We will inspect and update or remove this listing shortly.
+                            </p>
+                            <div className="flex items-center justify-center gap-2 pt-2">
+                              <Link
+                                href="/messages"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                View Admin Chat
+                              </Link>
+                              <button
+                                onClick={() => setIsReportingAd(false)}
+                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            className="space-y-3"
+                          >
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <ShieldAlert className="w-4 h-4 text-rose-600" />
+                                <h5 className="text-xs font-black uppercase text-rose-950 tracking-wider">
+                                  Report Ad / Business Status (Ad ID: #{ad.id})
+                                </h5>
+                              </div>
+                              <button
+                                onClick={() => setIsReportingAd(false)}
+                                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+
+                            <div className="bg-white p-3 rounded-xl border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                              <div className="font-bold text-slate-900">{ad.title}</div>
+                              <div className="text-slate-500 flex flex-wrap gap-x-3">
+                                <span><strong>Ad ID:</strong> {ad.id}</span>
+                                <span><strong>Category:</strong> {ad.category}</span>
+                                <span><strong>Region:</strong> {ad.location}</span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                                Reason for Reporting
+                              </label>
+                              <select
+                                value={reportReason}
+                                onChange={(e) => setReportReason(e.target.value)}
+                                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                              >
+                                <option value="Business permanently closed or stopped operating">
+                                  🏢 Business permanently closed or stopped operating
+                                </option>
+                                <option value="Phone number / contact details not working">
+                                  📞 Phone number / contact details disconnected or wrong
+                                </option>
+                                <option value="Wrong physical address or relocated">
+                                  📍 Relocated / wrong physical address
+                                </option>
+                                <option value="Inaccurate services or misleading listing information">
+                                  ⚠️ Inaccurate services or misleading details
+                                </option>
+                                <option value="Other issue / request deletion">
+                                  ❌ Other issue / general deletion request
+                                </option>
+                              </select>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                  Your Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  value={reporterName}
+                                  onChange={(e) => setReporterName(e.target.value)}
+                                  placeholder="Full Name"
+                                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                  Your Email Address *
+                                </label>
+                                <input
+                                  type="email"
+                                  value={reporterEmail}
+                                  onChange={(e) => setReporterEmail(e.target.value)}
+                                  placeholder="your.email@example.com"
+                                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                Your Phone Number (Optional)
+                              </label>
+                              <input
+                                type="tel"
+                                value={reporterPhone}
+                                onChange={(e) => setReporterPhone(e.target.value)}
+                                placeholder="e.g. 082 123 4567"
+                                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                Additional Report Comments
+                              </label>
+                              <textarea
+                                value={reportComments}
+                                onChange={(e) => setReportComments(e.target.value)}
+                                placeholder="Provide any additional details (e.g., tried calling number, shop is vacant, new owners)..."
+                                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-rose-500 min-h-[60px] resize-none"
+                              />
+                            </div>
+
+                            <button
+                              onClick={handleSendAdReport}
+                              disabled={isSubmittingReport || !reporterName || !reporterEmail}
+                              className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {isSubmittingReport ? "Sending Report to Admin Chat..." : "Send Report Direct to Admin Chat →"}
+                            </button>
+                          </motion.div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="space-y-3">
                       <Link
                         href={`/profile/${ad.userId}`}
@@ -1854,26 +2188,6 @@ Business Bank Statement:${claimBankStatement}
                           </span>
                         </div>
                       </Link>
-
-                      {ad.phone && ad.showCallOption !== false && (
-                        <a
-                          href={`tel:${ad.phone}`}
-                          onClick={() => trackCallClick(ad.phone || "", ad.id, ad.title, ad.category, ad.location)}
-                          className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
-                        >
-                          <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
-                            <Phone className="w-5 h-5 text-slate-500 group-hover:text-emerald-600" />
-                          </div>
-                          <div>
-                            <span className="block text-[10px] uppercase font-bold text-slate-400">
-                              Phone Support
-                            </span>
-                            <span className="text-sm font-bold font-mono">
-                              {ad.phone}
-                            </span>
-                          </div>
-                        </a>
-                      )}
 
                       {!isEmailHidden && ad.email && (
                         <a
