@@ -671,6 +671,9 @@ export default function CreateAdPage() {
                       )}
                       {CATEGORIES_STRUCTURED.map((group) => (
                         <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-white">
+                          <option value={group.name} className="font-extrabold text-emerald-900 bg-emerald-50">
+                            📂 ALL {group.name}
+                          </option>
                           {group.subcategories.map((sub) => (
                             <option key={sub} value={sub} className="font-normal text-slate-700">
                               {sub}
