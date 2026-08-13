@@ -567,7 +567,7 @@ function SearchBarForm() {
         </button>
 
         {openDropdown === 'category' && (
-          <div className="absolute top-full right-0 mt-2 z-50 bg-white rounded-2xl border border-slate-200/90 shadow-2xl shadow-emerald-950/20 p-2 min-w-[280px] md:min-w-[340px] max-w-full animate-in fade-in-50 zoom-in-95 duration-150">
+          <div className="absolute top-full left-0 right-0 md:left-auto md:right-0 mt-2 z-50 bg-white rounded-2xl border border-slate-200/90 shadow-2xl shadow-emerald-950/20 p-2.5 w-full md:w-[380px] max-w-[calc(100vw-1.5rem)] animate-in fade-in-50 zoom-in-95 duration-150">
             <div className="relative mb-2">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -617,20 +617,20 @@ function SearchBarForm() {
                           setCustomCategory('');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-xl font-extrabold text-[11px] uppercase tracking-wider flex items-center justify-between transition ${
+                        className={`w-full text-left px-2.5 py-2 rounded-xl font-extrabold text-[11px] uppercase tracking-wider flex items-center justify-between gap-2 transition ${
                           isGroupSelected
                             ? 'bg-emerald-600 text-white shadow-sm'
                             : 'text-slate-900 hover:bg-emerald-100/70 hover:text-emerald-950'
                         }`}
                       >
-                        <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="flex items-center gap-1.5 min-w-0 flex-1">
                           <span className={isGroupSelected ? 'text-white' : 'text-emerald-600 font-bold'}>📂</span>
-                          <span className="truncate">{group.name}</span>
+                          <span className="leading-tight break-words">{group.name}</span>
                         </span>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-normal flex-shrink-0 ${
+                        <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-normal flex-shrink-0 ${
                           isGroupSelected ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                         }`}>
-                          {isGroupSelected ? 'Selected ✓' : 'Select Main Category'}
+                          {isGroupSelected ? 'Selected ✓' : 'Select Main'}
                         </span>
                       </button>
                     </div>
