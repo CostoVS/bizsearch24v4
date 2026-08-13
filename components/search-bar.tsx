@@ -609,7 +609,7 @@ function SearchBarForm() {
                 return (
                   <div key={group.name} className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-2 space-y-1">
                     {/* SELECTABLE PARENT CATEGORY HEADER */}
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between">
                       <button
                         type="button"
                         onClick={() => {
@@ -617,21 +617,22 @@ function SearchBarForm() {
                           setCustomCategory('');
                           setOpenDropdown(null);
                         }}
-                        className={`w-full text-left px-2.5 py-2 rounded-xl font-extrabold text-[11px] uppercase tracking-wider flex items-center justify-between gap-2 transition ${
+                        className={`w-full text-left px-3 py-2 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-between gap-2 transition ${
                           isGroupSelected
                             ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'text-slate-900 hover:bg-emerald-100/70 hover:text-emerald-950'
+                            : 'text-slate-900 hover:bg-emerald-100/80 hover:text-emerald-950'
                         }`}
                       >
-                        <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <span className={isGroupSelected ? 'text-white' : 'text-emerald-600 font-bold'}>📂</span>
-                          <span className="leading-tight break-words">{group.name}</span>
+                        <span className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className={isGroupSelected ? 'text-white text-sm' : 'text-emerald-600 font-bold text-sm'}>📂</span>
+                          <span className="leading-snug break-words">{group.name}</span>
                         </span>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-normal flex-shrink-0 ${
-                          isGroupSelected ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {isGroupSelected ? 'Selected ✓' : 'Select Main'}
-                        </span>
+                        {isGroupSelected && (
+                          <span className="flex items-center gap-1 text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-md font-bold uppercase flex-shrink-0">
+                            <Check className="w-3 h-3 text-white" />
+                            <span>Active</span>
+                          </span>
+                        )}
                       </button>
                     </div>
 
@@ -654,8 +655,8 @@ function SearchBarForm() {
                                 : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-900'
                             }`}
                           >
-                            <span className="truncate">{sub}</span>
-                            {isSubSelected && <Check className="w-3.5 h-3.5 text-white flex-shrink-0" />}
+                            <span className="leading-normal break-words">{sub}</span>
+                            {isSubSelected && <Check className="w-3.5 h-3.5 text-white flex-shrink-0 ml-2" />}
                           </button>
                         );
                       })}
