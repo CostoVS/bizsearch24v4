@@ -371,16 +371,16 @@ ${signature}
             {
               id: "free",
               name: "Level 1: Free Basic",
-              badge: "Not Verified",
+              badge: "Unclaimed Listing",
               price: "R0.00",
               period: "forever",
-              desc: "1 Free unverified listing on SearchBiz.",
+              desc: "1 Free unclaimed listing on SearchBiz.",
               features: [
                 "1 Basic listing only",
                 "Business Name & Address",
                 "Phone Number",
                 "Services Offered",
-                "Unverified badge"
+                "Unclaimed Listing badge"
               ]
             },
             {

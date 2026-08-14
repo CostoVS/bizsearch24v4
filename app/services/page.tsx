@@ -78,16 +78,16 @@ export default function SearchBizServicesPage() {
       id: "free",
       name: "Level 1: Free Basic",
       price: "R0.00",
-      badge: "Not Verified",
+      badge: "Unclaimed Listing",
       period: "forever",
       color: "border-slate-200 bg-white text-slate-800",
-      desc: "1 Free unverified listing on the SearchBiz directory index.",
+      desc: "1 Free unclaimed listing on the SearchBiz directory index.",
       features: [
         "1 Basic listing only",
         "Business Name & Address",
         "Phone Number",
         "Services Offered",
-        "Unverified badge"
+        "Unclaimed Listing badge"
       ],
       popular: false,
       cta: "Get Started Free",

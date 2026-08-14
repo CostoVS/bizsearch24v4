@@ -27,37 +27,22 @@ export const VerificationBadge = ({ verified, isGoogleImport }: { verified: bool
     );
   }
 
-  if (isGoogleImport) {
-    return (
-      <motion.div 
-        animate={{ scale: [1, 1.02, 1] }}
-        transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
-        className="flex items-center text-red-600 bg-red-500/10 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-red-500/25 shadow-sm shrink-0"
-        title="Unverified SearchBiz.co.za Listing"
-      >
-        <div className="relative mr-1.5 flex items-center justify-center text-red-500">
-          <AlertCircle className="w-3.5 h-3.5 z-10" />
-        </div>
-        <span>Not Verified</span>
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div 
-      animate={{ scale: [1, 1.05, 1], opacity: [0.9, 1, 0.9] }}
+      animate={{ scale: [1, 1.04, 1], opacity: [0.8, 1, 0.8] }}
       transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-      className="flex items-center text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-rose-100 shadow-sm shrink-0"
+      className="flex items-center text-slate-600 bg-slate-100/90 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-300 shadow-sm shrink-0"
+      title="Unclaimed SearchBiz.co.za Listing"
     >
-      <div className="relative mr-1.5 flex items-center justify-center">
-        <AlertCircle className="w-4 h-4 z-10" />
+      <div className="relative mr-1.5 flex items-center justify-center text-slate-500">
+        <AlertCircle className="w-3.5 h-3.5 z-10" />
         <motion.div 
-          animate={{ scale: [1, 1.5, 1], opacity: [0.2, 0.5, 0.2] }}
+          animate={{ scale: [1, 1.6, 1], opacity: [0.2, 0.55, 0.2] }}
           transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-          className="absolute inset-0 bg-rose-400 rounded-full blur-[2px]"
+          className="absolute inset-0 bg-slate-400 rounded-full blur-[2px]"
         ></motion.div>
       </div>
-      Not Verified
+      <span>Unclaimed Listing</span>
     </motion.div>
   );
 };
