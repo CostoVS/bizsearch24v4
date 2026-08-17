@@ -7,9 +7,10 @@ import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
 import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus } from "lucide-react";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
+import AdminDuplicateManager from "@/components/admin-duplicate-manager";
 import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
@@ -1061,6 +1062,7 @@ export default function AdminDashboard() {
               {[
                 { id: 'overview', label: 'User Intelligence', icon: Users, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'ads', label: 'Advertisement Control', icon: Database, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
+                { id: 'duplicates', label: 'Duplicate & Multi-Ads', icon: Copy, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'csv_uploads', label: `CSV Upload & Claims (${claimRequests.filter(c => c?.status === 'PENDING').length})`, icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'slugs', label: `Custom URL Slugs (${customSlugs.length})`, icon: Sparkles, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'premium', label: `Premium Review (${premiumApps.filter(a => a.status === 'PENDING').length})`, icon: ShieldAlert, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
@@ -1098,6 +1100,18 @@ export default function AdminDashboard() {
 
         {/* Tab contents right-hand column */}
         <div className="lg:col-span-4 space-y-8 min-w-0 w-full overflow-hidden">
+
+      {activeTab === 'duplicates' && (
+        <AdminDuplicateManager
+          ads={ads}
+          onUpdateAds={(updated) => {
+            setAds(updated);
+            saveStoredAds(updated);
+          }}
+          onViewAd={(ad) => setSelectedAd(ad)}
+          users={users}
+        />
+      )}
 
       {activeTab === 'banners' && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
