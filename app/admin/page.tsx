@@ -1885,6 +1885,27 @@ export default function AdminDashboard() {
                           const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                           const parsedRows = [];
                           let skippedNoPhone = 0;
+                          let skippedDuplicates = 0;
+
+                          // Helper normalizers for 3-point exact match comparison
+                          const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
+                          const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                          // Track signatures seen in current upload batch and existing directory ads
+                          const seenCsvKeys = new Set<string>();
+
+                          // Existing directory keys
+                          const existingDbKeys = new Set<string>();
+                          ads.forEach(ad => {
+                            const nt = normTitle(ad.title);
+                            const np = normPhone(ad.phone);
+                            const na = normAddr(ad.address);
+                            if (nt && np && na) {
+                              existingDbKeys.add(`${nt}|${np}|${na}`);
+                            }
+                          });
+
                           for (let i = 1; i < lines.length; i++) {
                             const values = parseCsvRow(lines[i]);
                             if (values.length === 0) continue;
@@ -1895,15 +1916,38 @@ export default function AdminDashboard() {
                               continue; // STRICT REQUIREMENT: DO NOT UPLOAD LISTINGS WITHOUT PHONE NUMBER
                             }
                             if (rec.title) {
+                              const nT = normTitle(rec.title);
+                              const nP = normPhone(rec.phone);
+                              const nA = normAddr(rec.address);
+                              
+                              // Check if exact duplicate match across Name + Phone + Address in existing ads or in this CSV batch
+                              if (nT && nP && nA) {
+                                const tripletKey = `${nT}|${nP}|${nA}`;
+                                if (existingDbKeys.has(tripletKey) || seenCsvKeys.has(tripletKey)) {
+                                  skippedDuplicates++;
+                                  continue; // DO NOT UPLOAD: EXACT DUPLICATE (Same Name + Same Phone + Same Address)
+                                }
+                                seenCsvKeys.add(tripletKey);
+                              }
+
                               parsedRows.push(rec);
                             }
                           }
                           setCsvFileParsed(parsedRows);
-                          if (skippedNoPhone > 0) {
-                            alert(`Loaded ${parsedRows.length} business records from CSV (${skippedNoPhone} rows without a valid contact number were automatically excluded from directory).`);
+                          
+                          const messages = [];
+                          if (parsedRows.length > 0) {
+                            messages.push(`Loaded ${parsedRows.length} valid business records.`);
                           } else {
-                            alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let AI sort them.`);
+                            messages.push(`No new records loaded.`);
                           }
+                          if (skippedDuplicates > 0) {
+                            messages.push(`${skippedDuplicates} exact duplicate row(s) (matching same name, phone & address) were blocked.`);
+                          }
+                          if (skippedNoPhone > 0) {
+                            messages.push(`${skippedNoPhone} row(s) without valid contact phone numbers were skipped.`);
+                          }
+                          alert(messages.join(" "));
                         }
                       };
                       reader.readAsText(file);
@@ -1911,7 +1955,7 @@ export default function AdminDashboard() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full bg-slate-50 border-2 border-dashed border-slate-250 rounded-xl px-4 py-2 text-xs font-bold text-slate-650 flex items-center justify-center gap-2 hover:bg-slate-100 hover:border-emerald-500 transition-colors">
-                     📁 Click or Drag to Parse Directory CSV (Listings without phone numbers will be filtered out)
+                     📁 Click or Drag to Parse Directory CSV (Auto-filters duplicates by Name + Phone + Address & missing phones)
                   </div>
                 </div>
               </div>
@@ -1973,18 +2017,50 @@ export default function AdminDashboard() {
                     onClick={async () => {
                       if (csvFileParsed.length === 0) return;
                       
-                      // Strict filter check
+                      // Helper normalizers for 3-point exact match comparison
+                      const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                      const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
+                      const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                      const existingDbKeys = new Set<string>();
+                      ads.forEach(ad => {
+                        const nt = normTitle(ad.title);
+                        const np = normPhone(ad.phone);
+                        const na = normAddr(ad.address);
+                        if (nt && np && na) {
+                          existingDbKeys.add(`${nt}|${np}|${na}`);
+                        }
+                      });
+
+                      const seenCommitKeys = new Set<string>();
+                      let commitDuplicates = 0;
+
+                      // Strict filter check (Valid phone + No exact 3-way duplicates with existing ads or within batch)
                       const validWithPhone = csvFileParsed.filter(item => {
                         const cleanPhone = (item.phone || "").replace(/[\s\-\(\)\.]/g, '');
-                        return cleanPhone && cleanPhone !== "·" && cleanPhone !== "" && cleanPhone.length >= 7;
+                        if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                          return false;
+                        }
+                        const nt = normTitle(item.title);
+                        const np = normPhone(item.phone);
+                        const na = normAddr(item.address);
+                        if (nt && np && na) {
+                          const key = `${nt}|${np}|${na}`;
+                          if (existingDbKeys.has(key) || seenCommitKeys.has(key)) {
+                            commitDuplicates++;
+                            return false;
+                          }
+                          seenCommitKeys.add(key);
+                        }
+                        return true;
                       });
 
                       if (validWithPhone.length === 0) {
-                        alert("Cannot publish: No listings with valid contact numbers found.");
+                        alert(`Cannot publish: No unique listings with valid contact numbers found.${commitDuplicates > 0 ? ` (${commitDuplicates} exact duplicate matches with existing ads were skipped)` : ''}`);
                         return;
                       }
 
-                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length} listing(s) directly to sitemaps and live indexes?`)) return;
+                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length} listing(s) directly to sitemaps and live indexes?${commitDuplicates > 0 ? ` (${commitDuplicates} exact duplicate matches were automatically excluded)` : ''}`)) return;
                       
                       try {
                         const formatted = validWithPhone.map((item, index) => {
@@ -2689,6 +2765,25 @@ export default function AdminDashboard() {
                       const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                       const newAds = [];
                       let skippedNoPhone = 0;
+                      let skippedDuplicates = 0;
+
+                      // Helper normalizers for 3-point exact match comparison
+                      const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                      const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
+                      const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                      // Track signatures in current batch and existing DB
+                      const seenBatchKeys = new Set<string>();
+                      const existingDbKeys = new Set<string>();
+                      ads.forEach(ad => {
+                        const nt = normTitle(ad.title);
+                        const np = normPhone(ad.phone);
+                        const na = normAddr(ad.address);
+                        if (nt && np && na) {
+                          existingDbKeys.add(`${nt}|${np}|${na}`);
+                        }
+                      });
+
                       for (let i = 1; i < lines.length; i++) {
                         const cols = parseCsvRow(lines[i]);
                         if (cols.length < 1 || !cols[0]) continue;
@@ -2705,6 +2800,19 @@ export default function AdminDashboard() {
                         if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
                           skippedNoPhone++;
                           continue; // SKIP rows with missing phone numbers
+                        }
+
+                        // Strict check: Exact duplicate match (Same Name + Same Phone + Same Address)
+                        const nT = normTitle(title);
+                        const nP = normPhone(phone);
+                        const nA = normAddr(address);
+                        if (nT && nP && nA) {
+                          const tripletKey = `${nT}|${nP}|${nA}`;
+                          if (existingDbKeys.has(tripletKey) || seenBatchKeys.has(tripletKey)) {
+                            skippedDuplicates++;
+                            continue; // DO NOT UPLOAD: EXACT DUPLICATE
+                          }
+                          seenBatchKeys.add(tripletKey);
                         }
 
                         let category = rec.category || csvDefaultCategory;
@@ -2793,14 +2901,25 @@ export default function AdminDashboard() {
                           createdAt: new Date().toISOString()
                         }));
                       }
+                      const feedbackParts = [];
+                      if (newAds.length > 0) {
+                        feedbackParts.push(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!`);
+                      } else {
+                        feedbackParts.push("No new listings were imported.");
+                      }
+                      if (skippedDuplicates > 0) {
+                        feedbackParts.push(`${skippedDuplicates} exact duplicate listing(s) (matching same name, phone & address) were blocked.`);
+                      }
+                      if (skippedNoPhone > 0) {
+                        feedbackParts.push(`${skippedNoPhone} row(s) without valid phone numbers were excluded.`);
+                      }
+
                       if (newAds.length > 0) {
                         const updated = [...newAds, ...ads];
                         setAds(updated);
                         saveStoredAds(updated);
-                        alert(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!${skippedNoPhone > 0 ? ` (${skippedNoPhone} rows without a valid phone number were automatically skipped)` : ''}`);
-                      } else {
-                        alert(`No valid entries with phone numbers detected in CSV.${skippedNoPhone > 0 ? ` (${skippedNoPhone} rows without contact numbers were excluded)` : ''}`);
                       }
+                      alert(feedbackParts.join(" "));
                       e.target.value = "";
                     };
                     reader.readAsText(file);
