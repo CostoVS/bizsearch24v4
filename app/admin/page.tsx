@@ -1884,16 +1884,26 @@ export default function AdminDashboard() {
 
                           const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                           const parsedRows = [];
+                          let skippedNoPhone = 0;
                           for (let i = 1; i < lines.length; i++) {
                             const values = parseCsvRow(lines[i]);
                             if (values.length === 0) continue;
                             const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince);
+                            const cleanPhone = (rec.phone || "").replace(/[\s\-\(\)\.]/g, '');
+                            if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                              skippedNoPhone++;
+                              continue; // STRICT REQUIREMENT: DO NOT UPLOAD LISTINGS WITHOUT PHONE NUMBER
+                            }
                             if (rec.title) {
                               parsedRows.push(rec);
                             }
                           }
                           setCsvFileParsed(parsedRows);
-                          alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let AI sort them.`);
+                          if (skippedNoPhone > 0) {
+                            alert(`Loaded ${parsedRows.length} business records from CSV (${skippedNoPhone} rows without a valid contact number were automatically excluded from directory).`);
+                          } else {
+                            alert(`Loaded ${parsedRows.length} business records from CSV! Customize, double-check, or let AI sort them.`);
+                          }
                         }
                       };
                       reader.readAsText(file);
@@ -1901,7 +1911,7 @@ export default function AdminDashboard() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full bg-slate-50 border-2 border-dashed border-slate-250 rounded-xl px-4 py-2 text-xs font-bold text-slate-650 flex items-center justify-center gap-2 hover:bg-slate-100 hover:border-emerald-500 transition-colors">
-                     📁 Click or Drag to Parse Directory CSV
+                     📁 Click or Drag to Parse Directory CSV (Listings without phone numbers will be filtered out)
                   </div>
                 </div>
               </div>
@@ -1916,7 +1926,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">Workspace populated with {csvFileParsed.length} pending listing(s)</h4>
-                    <p className="text-xs text-slate-500 font-medium">Verify categorization and location coordinates below before locking them into sitemaps.</p>
+                    <p className="text-xs text-slate-500 font-medium">All listings verified to include contact phone numbers. Review categorization and location before publishing.</p>
                   </div>
                 </div>
                 <div className="flex gap-2.5 w-full md:w-auto shrink-0">
@@ -1962,10 +1972,22 @@ export default function AdminDashboard() {
                   <button
                     onClick={async () => {
                       if (csvFileParsed.length === 0) return;
-                      if (!confirm(`Are you sure you want to commit these ${csvFileParsed.length} listing(s) directly to sitemaps and live indexes?`)) return;
+                      
+                      // Strict filter check
+                      const validWithPhone = csvFileParsed.filter(item => {
+                        const cleanPhone = (item.phone || "").replace(/[\s\-\(\)\.]/g, '');
+                        return cleanPhone && cleanPhone !== "·" && cleanPhone !== "" && cleanPhone.length >= 7;
+                      });
+
+                      if (validWithPhone.length === 0) {
+                        alert("Cannot publish: No listings with valid contact numbers found.");
+                        return;
+                      }
+
+                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length} listing(s) directly to sitemaps and live indexes?`)) return;
                       
                       try {
-                        const formatted = csvFileParsed.map((item, index) => {
+                        const formatted = validWithPhone.map((item, index) => {
                           const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
                           const addr = item.address || "";
                           const defaultCity = item.city || item.town || "Johannesburg";
@@ -2666,6 +2688,7 @@ export default function AdminDashboard() {
 
                       const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
                       const newAds = [];
+                      let skippedNoPhone = 0;
                       for (let i = 1; i < lines.length; i++) {
                         const cols = parseCsvRow(lines[i]);
                         if (cols.length < 1 || !cols[0]) continue;
@@ -2676,6 +2699,13 @@ export default function AdminDashboard() {
                         let phone = rec.phone;
                         let services = rec.servicesOffered;
                         let website = rec.website;
+
+                        // Strict check: Must have a phone number
+                        const cleanPhone = (phone || "").replace(/[\s\-\(\)\.]/g, '');
+                        if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                          skippedNoPhone++;
+                          continue; // SKIP rows with missing phone numbers
+                        }
 
                         let category = rec.category || csvDefaultCategory;
                         let location = rec.province || csvDefaultProvince;
@@ -2767,9 +2797,9 @@ export default function AdminDashboard() {
                         const updated = [...newAds, ...ads];
                         setAds(updated);
                         saveStoredAds(updated);
-                        alert(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!`);
+                        alert(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!${skippedNoPhone > 0 ? ` (${skippedNoPhone} rows without a valid phone number were automatically skipped)` : ''}`);
                       } else {
-                        alert("No valid entries detected in CSV.");
+                        alert(`No valid entries with phone numbers detected in CSV.${skippedNoPhone > 0 ? ` (${skippedNoPhone} rows without contact numbers were excluded)` : ''}`);
                       }
                       e.target.value = "";
                     };
