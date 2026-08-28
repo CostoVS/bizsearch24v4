@@ -105,9 +105,16 @@ function DirectoryContent() {
     const handleUpdate = () => {
       setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
     };
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
+        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+      }
+    };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);
+    window.addEventListener("storage", handleStorageChange);
     return () => {
       window.removeEventListener("searchbiz_ads_updated", handleUpdate);
+      window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
 

@@ -348,10 +348,29 @@ export async function POST(req: Request) {
       if (!deletedAds.includes(body.deleteAdId)) {
         newData.deletedAds = [...deletedAds, body.deleteAdId];
       }
+    } else if (body.forceSyncAds && Array.isArray(body.ads)) {
+      // Client is sending authoritative ad collection (e.g. from Admin, deduplication, or saved state)
+      const incomingAds = cleanAdsArray(body.ads.filter((a: any) => a && a.id));
+      const incomingIdSet = new Set(incomingAds.map((a: any) => a.id));
+      
+      // Any ads currently in database that are missing in the incoming list are marked deleted
+      const currentAds = Array.isArray(currentData.ads) ? currentData.ads : [];
+      const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
+      const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
+      
+      const missingIds = currentAds
+        .filter((a: any) => a && a.id && !incomingIdSet.has(a.id))
+        .map((a: any) => a.id);
+        
+      const allDeletedSet = new Set([...currentDeleted, ...clientDeleted, ...missingIds]);
+      newData.deletedAds = Array.from(allDeletedSet);
+      newData.ads = incomingAds.filter((a: any) => !allDeletedSet.has(a.id));
     } else if (body.ads) {
       const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
-      const deletedSet = new Set(deletedAds);
+      const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
+      const deletedSet = new Set([...deletedAds, ...clientDeleted]);
       const mergedAds = mergeData({ ads: currentData.ads }, { ads: body.ads }).ads;
+      newData.deletedAds = Array.from(deletedSet);
       newData.ads = mergedAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
     } else {
       Object.assign(newData, body);

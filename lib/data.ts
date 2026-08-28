@@ -262,26 +262,37 @@ export async function fetchAndStoreAds(): Promise<any[]> {
       const data = await res.json();
       if (data && Array.isArray(data.ads)) {
         const serverAds = data.ads.filter((a: any) => a && a.id);
-        const deletedAdsFromSec = Array.isArray(data.deletedAds) ? data.deletedAds : [];
-        
-        // Sync server deleted ads back to client local storage so they are immediately filtered
-        if (deletedAdsFromSec.length > 0) {
-          const localDeleted = getDeletedAdIds();
-          const mergedDeleted = Array.from(new Set([...localDeleted, ...deletedAdsFromSec]));
-          safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(mergedDeleted));
-        }
-
+        const serverDeleted = Array.isArray(data.deletedAds) ? data.deletedAds : [];
         const localDeleted = getDeletedAdIds();
-        const combinedDeleted = new Set([...deletedAdsFromSec, ...localDeleted]);
         
+        // Merge deleted IDs from server and local client
+        const combinedDeletedSet = new Set([...serverDeleted, ...localDeleted]);
+        const combinedDeleted = Array.from(combinedDeletedSet);
+        
+        safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(combinedDeleted));
+
         // Filter out deleted ads from the server list & clean review garbage
         const cleanedServerAds = cleanAdsArray(serverAds);
-        const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeleted.has(a.id));
+        const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
         safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds));
         
         if (data.customPartners) {
           safeLocalStorage.setItem("searchbiz_custom_partners", JSON.stringify(data.customPartners));
+        }
+
+        // If local had deleted ads not yet on server, notify server non-blockingly
+        const unsyncedDeleted = localDeleted.filter(id => !serverDeleted.includes(id));
+        if (unsyncedDeleted.length > 0) {
+          fetch('/api/storage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              ads: finalAds,
+              deletedAds: combinedDeleted,
+              forceSyncAds: true
+            })
+          }).catch(() => {});
         }
 
         window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
@@ -326,6 +337,7 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             ads: validAds,
+            deletedAds: getDeletedAdIds(),
             forceSyncAds: true
           })
         });
@@ -334,6 +346,9 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
           const res = await r.json();
           if (res.data && Array.isArray(res.data.ads)) {
             safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(res.data.ads));
+            if (Array.isArray(res.data.deletedAds)) {
+              safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(res.data.deletedAds));
+            }
             window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
           }
         } else {

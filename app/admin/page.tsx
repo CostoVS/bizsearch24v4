@@ -584,6 +584,23 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
+    const handleUpdate = () => {
+      setAds(getStoredAds());
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
+        setAds(getStoredAds());
+      }
+    };
+    window.addEventListener("searchbiz_ads_updated", handleUpdate);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("searchbiz_ads_updated", handleUpdate);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isLoading) {
       if (!user || !isAdmin) {
         router.push("/");
