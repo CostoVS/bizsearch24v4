@@ -1210,6 +1210,21 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div className="flex items-center space-x-3 text-sm">
+          <button
+            onClick={() => {
+              setActiveTab('ads');
+              setDeleteScope("all");
+              setDeletePasswordInput("");
+              setDeletePasswordError("");
+              setIsDeleteModalOpen(true);
+            }}
+            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-rose-600/25 flex items-center gap-2 cursor-pointer"
+            id="top-header-purge-btn"
+            title="Open Master Deletion & Database Cleanup Tool"
+          >
+            <Trash2 className="w-4 h-4 text-white" />
+            <span>Delete / Purge Ads</span>
+          </button>
           <div className="flex flex-col items-end">
             <span className="px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-medium font-mono text-xs shadow-inner">
                AUTH_LVL: ROOT_ADMIN
@@ -1266,6 +1281,23 @@ export default function AdminDashboard() {
                 <Globe className="w-4 h-4 shrink-0 text-indigo-500" />
                 <span className="truncate text-left">Matomo Analytics</span>
               </button>
+
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setActiveTab('ads');
+                    setDeleteScope("all");
+                    setDeletePasswordInput("");
+                    setDeletePasswordError("");
+                    setIsDeleteModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all shadow-sm cursor-pointer"
+                  id="sidebar-purge-ads-btn"
+                >
+                  <Trash2 className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span className="truncate text-left font-bold">Delete / Purge Ads</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1944,6 +1976,18 @@ export default function AdminDashboard() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
+                <button
+                  onClick={() => {
+                    setDeleteScope("csv");
+                    setDeletePasswordInput("");
+                    setDeletePasswordError("");
+                    setIsDeleteModalOpen(true);
+                  }}
+                  className="px-4 py-2 border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  title="Purge existing scraped or CSV imported listings"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" /> Purge / Wipe CSV Ads
+                </button>
                 <button
                   onClick={handleAddCsvRow}
                   className="px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5"
