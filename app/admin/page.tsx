@@ -6,14 +6,15 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
-import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw } from "lucide-react";
+import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
 import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
+import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
@@ -21,80 +22,101 @@ function parseCsvRowToRecord(headers: string[], values: string[], defaultCategor
   const row: Record<string, string> = {};
   headers.forEach((header, idx) => {
     if (header) {
+      const cleanHeader = header.trim().toLowerCase().replace(/[\_\-\.]/g, ' ');
+      row[cleanHeader] = (values[idx] || "").trim();
+      // Also preserve exact header key
       row[header.trim().toLowerCase()] = (values[idx] || "").trim();
     }
   });
 
-  let title = row.title || row.name || row.company || row["company name"] || row.business || row.xxvwce || row["business name"] || row.heading || "";
-  let address = row.address || row.street || row.location || row["full address"] || row["w4efsd 4"] || row.w4efsd4 || row["street address"] || row.vicinity || "";
-  let phone = row.phone || row.telephone || row.contact || row["phone number"] || row.mobile || row.cell || row.usdlk || row["contact number"] || row.tel || "";
-  let email = row.email || row.mail || row["email address"] || "";
-  let category = row.category || row.industry || row.type || row.w4efsd || "";
-  let servicesOffered = row.services || row.description || row.about || row["services offered"] || row.ah5ghc || row.summary || "";
-  let website = row.website || row.url || row.link || row["lcr4fd href"] || row.lcr4fd_href || row["website url"] || "";
-
-  // Detect Google Maps Scraper format (Instant Data Scraper, Web Scraper, Apify, Outscraper)
-  const isMapsScrape = values.length >= 3 && (
-    (values[0] && values[0].startsWith("http")) ||
-    headers.some(h => h.includes("hfpxzc") || h.includes("xxvwce") || h.includes("usdlk") || h.includes("w4efsd") || h.includes("lcr4fd") || h.includes("href") || h.includes("address") || h.includes("phone"))
-  );
-
-  if (isMapsScrape) {
-    if (!title) {
-      if (values[1] && !values[1].startsWith("http")) {
-        title = values[1];
-      } else if (values[0] && !values[0].startsWith("http")) {
-        title = values[0];
+  // Helper to find first non-empty value by matching candidate header keys
+  const getFieldByHeaders = (candidates: string[]) => {
+    for (const key of candidates) {
+      if (row[key] && row[key] !== "·" && row[key] !== "") {
+        return row[key];
       }
     }
-
-    if (!category) {
-      for (let c = 2; c < Math.min(6, values.length); c++) {
-        const val = values[c];
-        if (val && !val.startsWith("http") && val !== "·" && val !== "" && val.length < 50 && !/\d/.test(val)) {
-          category = val;
-          break;
+    for (const [k, v] of Object.entries(row)) {
+      if (v && v !== "·" && v !== "") {
+        if (candidates.some(c => k === c || k.startsWith(c + " ") || k.endsWith(" " + c) || k.includes(c))) {
+          return v;
         }
       }
     }
+    return "";
+  };
 
-    // Street address extraction - check all columns if missing or placeholder
-    if (!address || address === "·" || address === "") {
-      if (values[8] && values[8] !== "·" && values[8] !== "" && !values[8].startsWith("http") && !values[8].toLowerCase().includes("open") && !values[8].toLowerCase().includes("closed")) {
-        address = values[8];
-      } else {
-        for (let c = 0; c < values.length; c++) {
-          const val = values[c];
-          if (val && val !== "·" && val !== "" && !val.startsWith("http") && val.length > 5 &&
-              (/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|estate|park|industrial|suite|unit)\b/i.test(val) || /\d+[\s\w,]+/.test(val))) {
-            address = val;
-            break;
-          }
-        }
+  // 1. Business Name / Title
+  let title = getFieldByHeaders([
+    "title", "name", "business name", "company name", "company", "business", 
+    "trade name", "trading as", "shop name", "store name", "listing title", 
+    "organization", "firm", "heading", "xxvwce"
+  ]);
+
+  // 2. Address
+  let address = getFieldByHeaders([
+    "address", "street address", "full address", "physical address", "street", 
+    "location", "site address", "address line 1", "address line", "formatted address", 
+    "vicinity", "w4efsd 4", "w4efsd4"
+  ]);
+
+  // 3. Phone Number
+  let phone = getFieldByHeaders([
+    "phone", "telephone", "phone number", "tel number", "tel", "cell", "mobile", 
+    "contact number", "contact", "cellphone", "cell phone", "telephone number", "usdlk"
+  ]);
+
+  // 4. Email
+  let email = getFieldByHeaders([
+    "email", "email address", "e-mail", "contact email", "mail"
+  ]);
+
+  // 6. Category
+  let category = getFieldByHeaders([
+    "category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"
+  ]);
+
+  // 7. Province & City
+  let province = getFieldByHeaders(["province", "state", "region"]);
+  let city = getFieldByHeaders(["city", "town", "suburb", "municipality", "area"]);
+
+  // 8. Services / Description
+  let servicesOffered = getFieldByHeaders([
+    "services", "services offered", "description", "about", "summary", "details", "products", "overview", "ah5ghc"
+  ]);
+
+  // Fallback for Scraper/Unlabeled CSV rows if specific headers were missing:
+  // ONLY if title is completely empty:
+  if (!title) {
+    if (values[1] && !values[1].startsWith("http") && !values[1].includes("@") && values[1].length < 100) {
+      title = values[1];
+    } else if (values[0] && !values[0].startsWith("http") && !values[0].includes("@") && values[0].length < 100) {
+      title = values[0];
+    }
+  }
+
+  // ONLY if address is completely empty:
+  if (!address) {
+    for (let c = 0; c < values.length; c++) {
+      const val = (values[c] || "").trim();
+      if (!val || val === "·" || val === "" || val.startsWith("http") || val.includes("@") || val.length < 6) continue;
+      if (/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|estate|park|industrial|suite|unit|lane|highway)\b/i.test(val)) {
+        address = val;
+        break;
       }
     }
+  }
 
-    // Phone extraction - check all columns for valid South African phone formats or digit sequences
-    if (!phone || phone === "·" || phone === "") {
-      for (let c = 0; c < values.length; c++) {
-        const val = values[c];
-        if (!val) continue;
-        const cleanVal = val.trim().replace(/[\s\-\(\)\.]/g, '');
-        if (/^(\+?27|0)\d{8,11}$/.test(cleanVal) || (cleanVal.length >= 9 && cleanVal.length <= 13 && /^\+?\d+$/.test(cleanVal))) {
-          phone = val.trim();
-          break;
-        }
-      }
-    }
-
-    // Website extraction
-    if (!website) {
-      for (let c = 0; c < values.length; c++) {
-        const val = values[c];
-        if (val && (val.startsWith("http://") || val.startsWith("https://")) && !val.includes("google.com/maps") && !val.includes("gstatic.com") && !val.includes("facebook.com")) {
-          website = val;
-          break;
-        }
+  // ONLY if phone is completely empty:
+  if (!phone) {
+    for (let c = 0; c < values.length; c++) {
+      const val = (values[c] || "").trim();
+      if (!val || val === "·" || val === "") continue;
+      const cleanDigits = val.replace(/[^0-9]/g, '');
+      if ((cleanDigits.startsWith("27") && cleanDigits.length >= 11 && cleanDigits.length <= 13) ||
+          (cleanDigits.startsWith("0") && cleanDigits.length >= 10 && cleanDigits.length <= 11)) {
+        phone = val;
+        break;
       }
     }
   }
@@ -108,16 +130,19 @@ function parseCsvRowToRecord(headers: string[], values: string[], defaultCategor
     }
   }
 
+  // Location heuristic for SA provinces and cities
+  const locDetection = detectLocationFromPhoneAndText(phone || "", `${address || ""} ${city || ""} ${province || ""}`, defaultProvince);
+
   return {
-    title: (title || "").substring(0, 100).trim(),
-    address: (address || "").substring(0, 200).trim(),
+    title: (title || "").substring(0, 150).trim(),
+    address: (address || "").substring(0, 250).trim(),
     phone: (phone || "").substring(0, 50).trim(),
     email: (email || "").substring(0, 100).trim(),
-    category: (category || defaultCategory).trim(),
-    province: (row.province || row.state || defaultProvince).trim(),
-    city: (row.city || row.town || "Johannesburg").trim(),
+    category: (category || defaultCategory || "General Business Services").trim(),
+    province: (province || locDetection.province || defaultProvince || "gauteng").trim(),
+    city: (city || locDetection.city || "Johannesburg").trim(),
     servicesOffered: (servicesOffered || "").substring(0, 500).trim(),
-    website: (website || "").substring(0, 200).trim()
+    website: "" // Excluded for unresolved CSV listings
   };
 }
 
@@ -259,6 +284,18 @@ export default function AdminDashboard() {
   const [isSyncingAds, setIsSyncingAds] = useState(false);
   const [adPage, setAdPage] = useState(1);
   const ITEMS_PER_PAGE = 12;
+
+  // Master Bulk Delete & Purge Control State
+  const REQUIRED_DELETE_PASSWORD = "Delete6604211989!?";
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteScope, setDeleteScope] = useState<"all" | "province" | "category" | "csv" | "unclaimed" | "filtered" | "selected">("all");
+  const [deleteSelectedProvince, setDeleteSelectedProvince] = useState("gauteng");
+  const [deleteSelectedCategory, setDeleteSelectedCategory] = useState(CATEGORIES[0] || "Other");
+  const [deletePasswordInput, setDeletePasswordInput] = useState("");
+  const [deletePasswordError, setDeletePasswordError] = useState("");
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [selectedAdIds, setSelectedAdIds] = useState<string[]>([]);
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
 
   useEffect(() => {
     setAdPage(1);
@@ -862,6 +899,115 @@ export default function AdminDashboard() {
 
       return true;
     });
+  };
+
+  const getAdsToPurge = () => {
+    switch (deleteScope) {
+      case "all":
+        return ads;
+      case "province": {
+        const selectedProvObj = SA_PROVINCES.find(
+          (p) => p.slug === deleteSelectedProvince || p.name.toLowerCase() === deleteSelectedProvince.toLowerCase()
+        );
+        if (!selectedProvObj) return [];
+        const targetSlug = selectedProvObj.slug.toLowerCase();
+        const targetName = selectedProvObj.name.toLowerCase();
+        const norm = (s: string) => s.replace(/[^a-z0-9]/g, "");
+
+        return ads.filter(ad => {
+          const adProv = (ad.province || "").toLowerCase();
+          const adLoc = (ad.location || "").toLowerCase();
+          const adAddr = (ad.address || "").toLowerCase();
+          const adSub = (ad.suburb || "").toLowerCase();
+
+          const directProvMatch =
+            adProv === targetSlug ||
+            adProv === targetName ||
+            (adProv && norm(adProv) === norm(targetSlug)) ||
+            (adProv && norm(adProv) === norm(targetName));
+
+          const directLocMatch =
+            adLoc === targetName ||
+            adLoc === targetSlug ||
+            (adLoc && norm(adLoc) === norm(targetSlug)) ||
+            (adLoc && norm(adLoc) === norm(targetName));
+
+          const addrMatch =
+            adAddr.includes(targetName) ||
+            adAddr.includes(targetSlug) ||
+            (targetSlug !== "national" && norm(adAddr).includes(norm(targetName)));
+
+          const townMatch =
+            selectedProvObj.towns &&
+            selectedProvObj.towns.length > 0 &&
+            selectedProvObj.towns.some((t) => {
+              const tLower = t.toLowerCase();
+              if (tLower === "all locations") return false;
+              return adLoc === tLower || adSub === tLower || adAddr.includes(tLower);
+            });
+
+          return directProvMatch || directLocMatch || addrMatch || townMatch;
+        });
+      }
+      case "category": {
+        const targetCat = deleteSelectedCategory.trim().toLowerCase();
+        const normTarget = targetCat.replace(/[^a-z0-9]/g, "");
+        return ads.filter(ad => {
+          const adCat = (ad.category || "").trim().toLowerCase();
+          const adSubCat = (ad.subcategory || "").trim().toLowerCase();
+          const normAdCat = adCat.replace(/[^a-z0-9]/g, "");
+          return (
+            adCat === targetCat ||
+            adSubCat === targetCat ||
+            (normAdCat && normTarget && (normAdCat.includes(normTarget) || normTarget.includes(normAdCat)))
+          );
+        });
+      }
+      case "csv":
+        return ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-"));
+      case "unclaimed":
+        return ads.filter(a => a.isClaimed !== true && !a.verified);
+      case "filtered":
+        return getFilteredAds();
+      case "selected":
+        return ads.filter(a => selectedAdIds.includes(a.id));
+      default:
+        return [];
+    }
+  };
+
+  const handleExecuteBulkPurge = async () => {
+    setDeletePasswordError("");
+    if (!deletePasswordInput.trim()) {
+      setDeletePasswordError("Please enter the master authorization password.");
+      return;
+    }
+    if (deletePasswordInput.trim() !== REQUIRED_DELETE_PASSWORD) {
+      setDeletePasswordError("Invalid master authorization password. Purge operation declined.");
+      return;
+    }
+
+    const targetedAds = getAdsToPurge();
+    if (targetedAds.length === 0) {
+      alert("No advertisements matched the selected deletion criteria.");
+      return;
+    }
+
+    const targetIds = targetedAds.map(a => a.id);
+    setIsDeletingBulk(true);
+    try {
+      const remaining = await purgeStoredAdsBulk(targetIds);
+      setAds(remaining);
+      setSelectedAdIds(prev => prev.filter(id => !targetIds.includes(id)));
+      setIsDeleteModalOpen(false);
+      setDeletePasswordInput("");
+      setDeletePasswordError("");
+      alert(`Operation Complete: Successfully deleted and purged ${targetIds.length} listing(s) from SearchBiz database. Remaining live ads: ${remaining.length}`);
+    } catch (e: any) {
+      alert(`Error executing purge: ${e?.message || "Server issue occurred."}`);
+    } finally {
+      setIsDeletingBulk(false);
+    }
   };
 
   const changeAdTier = (adId: string, value: string) => {
@@ -2110,7 +2256,7 @@ export default function AdminDashboard() {
                             address: item.address || "",
                             phone: item.phone || "",
                             email: item.email || "",
-                            website: "", // Unverified CSV listings do not include public website links
+                            website: "", // Unresolved CSV listings do not include website links
                             verified: false,
                             isPremium: false,
                             isSponsor: false,
@@ -2168,7 +2314,6 @@ export default function AdminDashboard() {
                         <th className="py-3 px-4 min-w-[130px]">Category</th>
                         <th className="py-3 px-4 min-w-[120px]">Province</th>
                         <th className="py-3 px-4 min-w-[130px]">Email Address</th>
-                        <th className="py-3 px-4 min-w-[150px]">Website URL</th>
                         <th className="py-3 px-4 min-w-[200px]">Services / Description Summary</th>
                         <th className="py-3 px-4 w-16 text-center">Actions</th>
                       </tr>
@@ -2263,18 +2408,6 @@ export default function AdminDashboard() {
                                 setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, email: val } : row));
                               }}
                               className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={item.website || ""}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, website: val } : row));
-                              }}
-                              placeholder="https://..."
-                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono focus:bg-white focus:ring-1 focus:ring-emerald-500"
                             />
                           </td>
                           <td className="py-2 px-2">
@@ -2988,6 +3121,20 @@ export default function AdminDashboard() {
                    <RefreshCw className={`w-4 h-4 ${isSyncingAds ? 'animate-spin text-emerald-600' : 'text-slate-600'}`} />
                    <span>{isSyncingAds ? 'Syncing...' : `Sync DB (${ads.length})`}</span>
                  </button>
+                 <button
+                   onClick={() => {
+                     setDeleteScope("all");
+                     setDeletePasswordInput("");
+                     setDeletePasswordError("");
+                     setIsDeleteModalOpen(true);
+                   }}
+                   className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-2.5 rounded-xl font-bold text-sm transition flex items-center gap-2 cursor-pointer shadow-sm"
+                   id="purge-ads-btn"
+                   title="Open master listing purge and deletion tool"
+                 >
+                   <Trash2 className="w-4 h-4 text-rose-600" />
+                   <span>Delete / Purge Ads</span>
+                 </button>
                  <button onClick={() => router.push("/create-ad")} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20 w-full sm:w-auto text-center cursor-pointer" id="create-ad-btn">Provision New Advertisement</button>
                </div>
             </div>
@@ -3158,22 +3305,94 @@ export default function AdminDashboard() {
                 <>
                   {renderAdPaginationControls("top")}
 
+                  {/* Multi-Select Action Banner */}
+                  {selectedAdIds.length > 0 && (
+                    <div className="bg-rose-50 border-y border-rose-200 px-8 py-3 flex flex-wrap items-center justify-between gap-3 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-3">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                        <span className="text-xs font-bold text-rose-950">
+                          <strong>{selectedAdIds.length}</strong> listing{selectedAdIds.length > 1 ? "s" : ""} selected for bulk action
+                        </span>
+                        <button
+                          onClick={() => {
+                            const allFilteredIds = allFilteredAds.map(a => a.id);
+                            setSelectedAdIds(allFilteredIds);
+                          }}
+                          className="text-[11px] font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer ml-2"
+                        >
+                          Select All {allFilteredAds.length} Filtered Listings
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setDeleteScope("selected");
+                            setDeletePasswordInput("");
+                            setDeletePasswordError("");
+                            setIsDeleteModalOpen(true);
+                          }}
+                          className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-1.5 rounded-xl font-bold text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete Selected ({selectedAdIds.length})</span>
+                        </button>
+                        <button
+                          onClick={() => setSelectedAdIds([])}
+                          className="bg-white hover:bg-rose-100/50 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                        >
+                          Clear Selection
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto w-full max-w-full block relative z-0 max-h-[70vh] overflow-y-auto border-t border-b border-slate-200">
                     <table className="min-w-full divide-y divide-slate-100">
                       <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                         <tr>
-                          <th className="px-8 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Creative / Title</th>
-                          <th className="px-8 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Metadata</th>
-                          <th className="px-8 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Tiering</th>
-                          <th className="px-8 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Global State</th>
-                          <th className="px-8 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</th>
+                          <th className="px-4 py-4 w-12 text-center">
+                            <input
+                              type="checkbox"
+                              checked={paginatedAdsList.length > 0 && paginatedAdsList.every((a: any) => selectedAdIds.includes(a.id))}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const newIds = Array.from(new Set([...selectedAdIds, ...paginatedAdsList.map((a: any) => a.id)]));
+                                  setSelectedAdIds(newIds);
+                                } else {
+                                  const pageIds = new Set(paginatedAdsList.map((a: any) => a.id));
+                                  setSelectedAdIds(selectedAdIds.filter(id => !pageIds.has(id)));
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              title="Select all on this page"
+                            />
+                          </th>
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Creative / Title</th>
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Metadata</th>
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Tiering</th>
+                          <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Global State</th>
+                          <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
                         {paginatedAdsList.length > 0 ? (
                           paginatedAdsList.map((ad: any) => (
-                            <tr key={ad.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-8 py-5">
+                            <tr key={ad.id} className={`hover:bg-slate-50/50 transition-colors ${selectedAdIds.includes(ad.id) ? "bg-rose-50/30" : ""}`}>
+                              <td className="px-4 py-5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedAdIds.includes(ad.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedAdIds([...selectedAdIds, ad.id]);
+                                    } else {
+                                      setSelectedAdIds(selectedAdIds.filter(id => id !== ad.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-6 py-5">
                                 <div className="flex items-center">
                                    {ad.image && (
                                      <div className="w-12 h-12 rounded-lg overflow-hidden mr-4 border border-slate-100 flex-shrink-0">
@@ -3338,7 +3557,7 @@ export default function AdminDashboard() {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="px-8 py-12 text-center text-slate-400 text-sm">
+                            <td colSpan={6} className="px-8 py-12 text-center text-slate-400 text-sm">
                               No advertisements matched your current filter criteria. Try expanding your search queries.
                             </td>
                           </tr>
@@ -3873,6 +4092,387 @@ export default function AdminDashboard() {
              )}
           </div>
         </div>
+      )}
+
+      {/* MASTER AD DELETION & DATABASE PURGE MODAL */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-8">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-slate-900 px-6 py-6 text-white relative">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isDeletingBulk) {
+                    setIsDeleteModalOpen(false);
+                    setDeletePasswordInput("");
+                    setDeletePasswordError("");
+                  }
+                }}
+                disabled={isDeletingBulk}
+                className="absolute right-5 top-5 text-white/70 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-600/30 border border-rose-400/30 flex items-center justify-center text-rose-300 shrink-0">
+                  <ShieldAlert className="w-6 h-6 text-rose-300" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold font-display text-white">
+                    Listing Purge & Database Cleanup Control
+                  </h3>
+                  <p className="text-xs text-rose-200/80 mt-0.5">
+                    Authorized bulk deletion tool for directory listings and database records
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Step 1: Select Deletion Scope */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5">
+                  1. Select Target Deletion Scope
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Option: Delete ALL */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("all")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "all"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Trash2 className="w-4 h-4 text-rose-600" /> Delete ALL Listings
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                        {ads.length} total
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Wipes the entire directory database clean to allow re-uploading from scratch.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete by Province */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("province")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "province"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Globe className="w-4 h-4 text-emerald-600" /> Delete by Province
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
+                        RSA Regions
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Target and wipe all advertisements belonging to a specific South African province.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete by Category */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("category")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "category"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-indigo-600" /> Delete by Category
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
+                        Trade / Sector
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Remove all listings filed under a specific industry or service category.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete CSV Uploads Only */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("csv")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "csv"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Database className="w-4 h-4 text-amber-600" /> CSV Uploads Only
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-900">
+                        {ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-")).length} ads
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Purges only batch-imported CSV listings, keeping preference/manual ads safe.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete Unclaimed / Unverified Only */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("unclaimed")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "unclaimed"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-slate-600" /> Unclaimed Ads Only
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
+                        {ads.filter(a => a.isClaimed !== true && !a.verified).length} ads
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Purge unverified directory placeholders while preserving paying or claimed businesses.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete Filtered Search Results */}
+                  <button
+                    type="button"
+                    onClick={() => setDeleteScope("filtered")}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      deleteScope === "filtered"
+                        ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                        : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Filter className="w-4 h-4 text-purple-600" /> Current Filtered Results
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-100 text-purple-900">
+                        {getFilteredAds().length} ads
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Delete the exact set of listings currently matched by your active search filters.
+                    </p>
+                  </button>
+
+                  {/* Option: Delete Selected Only (if items selected) */}
+                  {selectedAdIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteScope("selected")}
+                      className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between sm:col-span-2 cursor-pointer ${
+                        deleteScope === "selected"
+                          ? "border-rose-600 bg-rose-50/70 ring-2 ring-rose-500/20"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <CheckSquare className="w-4 h-4 text-rose-600" /> Individually Selected Listings
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-600 text-white">
+                          {selectedAdIds.length} checked
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Delete only the specific items checked in the table view.
+                      </p>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Province Parameter Dropdown */}
+              {deleteScope === "province" && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Choose Target Province:
+                  </label>
+                  <select
+                    value={deleteSelectedProvince}
+                    onChange={(e) => setDeleteSelectedProvince(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  >
+                    {SA_PROVINCES.map((prov) => {
+                      const count = ads.filter(a => {
+                        const p = (a.province || "").toLowerCase();
+                        const l = (a.location || "").toLowerCase();
+                        return p === prov.slug || p === prov.name.toLowerCase() || l.includes(prov.name.toLowerCase());
+                      }).length;
+                      return (
+                        <option key={prov.slug} value={prov.slug}>
+                          {prov.name} ({count} listings in database)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Category Parameter Dropdown */}
+              {deleteScope === "category" && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Choose Target Category:
+                  </label>
+                  <select
+                    value={deleteSelectedCategory}
+                    onChange={(e) => setDeleteSelectedCategory(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  >
+                    {CATEGORIES.map((cat) => {
+                      const count = ads.filter(a => (a.category || "").toLowerCase() === cat.toLowerCase()).length;
+                      return (
+                        <option key={cat} value={cat}>
+                          {cat} ({count} listings in database)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Target Impact Summary Banner */}
+              {(() => {
+                const targetList = getAdsToPurge();
+                return (
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="text-xs space-y-1">
+                        <p className="font-bold text-rose-950">
+                          {targetList.length === 0
+                            ? "No advertisements match the chosen deletion filter."
+                            : `Warning: This operation will permanently delete and purge ${targetList.length} listing(s).`}
+                        </p>
+                        {targetList.length > 0 && (
+                          <div className="text-[11px] text-rose-850 font-medium">
+                            <span className="text-slate-600">Sample of targeted businesses: </span>
+                            <strong>
+                              {targetList.slice(0, 4).map(a => a.title).join(", ")}
+                              {targetList.length > 4 ? ` + ${targetList.length - 4} more` : ""}
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Step 2: Password Security Confirmation */}
+              <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-400" />
+                    <span>2. Enter Master Authorization Password</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">Security Gate</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  To prevent unauthorized or accidental directory wipes, enter the master administrator deletion password:
+                </p>
+                <div className="relative">
+                  <input
+                    type={showDeletePassword ? "text" : "password"}
+                    placeholder="Enter deletion password (Delete6604211989!?)"
+                    value={deletePasswordInput}
+                    onChange={(e) => {
+                      setDeletePasswordInput(e.target.value);
+                      if (deletePasswordError) setDeletePasswordError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleExecuteBulkPurge();
+                      }
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-500 rounded-xl px-4 py-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-rose-500/50 pr-16"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDeletePassword(!showDeletePassword)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-200 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    {showDeletePassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+
+                {deletePasswordError && (
+                  <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 text-xs font-bold flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{deletePasswordError}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isDeletingBulk) {
+                    setIsDeleteModalOpen(false);
+                    setDeletePasswordInput("");
+                    setDeletePasswordError("");
+                  }
+                }}
+                disabled={isDeletingBulk}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancel & Keep Listings
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteBulkPurge}
+                disabled={isDeletingBulk || getAdsToPurge().length === 0}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeletingBulk ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Purging from Central Storage...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 text-white" />
+                    <span>Authorize & Permanently Delete ({getAdsToPurge().length} Ads)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ad Detail / Edit Modal */}
+      {selectedAd && (
+        <AdDetailModal
+          ad={selectedAd}
+          onClose={() => setSelectedAd(null)}
+        />
       )}
         </div>
       </div>

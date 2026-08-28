@@ -400,6 +400,45 @@ export function deleteAd(id: string): void {
   }).catch(console.error);
 }
 
+export async function purgeStoredAdsBulk(idsToDelete: string[]): Promise<any[]> {
+  if (typeof window === "undefined") return [];
+  const current = getStoredAds();
+  const idSet = new Set(idsToDelete);
+  const updated = current.filter(ad => ad && ad.id && !idSet.has(ad.id));
+  
+  // Track deleted IDs
+  const localDeleted = getDeletedAdIds();
+  const combinedDeleted = Array.from(new Set([...localDeleted, ...idsToDelete]));
+  safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(combinedDeleted));
+  safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(updated));
+  safeLocalStorage.setItem("searchbiz_custom_ads", JSON.stringify(updated.filter(ad => ad.id.startsWith("custom_") || !ad.id.startsWith("ad"))));
+  window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+
+  // Send to server with forceSyncAds
+  try {
+    const res = await fetch('/api/storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ads: updated,
+        deletedAds: combinedDeleted,
+        forceSyncAds: true
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.data && Array.isArray(data.data.ads)) {
+        safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(data.data.ads));
+        return data.data.ads;
+      }
+    }
+  } catch (e) {
+    console.error("Server purge sync failed:", e);
+  }
+  return updated;
+}
+
+
 
 export function sortAdsWithPositions(ads: any[]): any[] {
   const topAds = ads.filter(a => a.fixedPosition === 'top');
