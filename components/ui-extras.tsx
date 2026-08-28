@@ -28,22 +28,19 @@ export const VerificationBadge = ({ verified, isGoogleImport }: { verified: bool
   }
 
   return (
-    <motion.div 
-      animate={{ scale: [1, 1.04, 1], opacity: [0.8, 1, 0.8] }}
-      transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-      className="flex items-center text-slate-600 bg-slate-100/90 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-300 shadow-sm shrink-0"
+    <div 
+      className="flex items-center text-slate-600 bg-slate-100/95 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-300 shadow-sm shrink-0 animate-pulse"
       title="Unclaimed SearchBiz.co.za Listing"
     >
       <div className="relative mr-1.5 flex items-center justify-center text-slate-500">
+        <span className="relative flex h-2 w-2 mr-1">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
+        </span>
         <AlertCircle className="w-3.5 h-3.5 z-10" />
-        <motion.div 
-          animate={{ scale: [1, 1.6, 1], opacity: [0.2, 0.55, 0.2] }}
-          transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-          className="absolute inset-0 bg-slate-400 rounded-full blur-[2px]"
-        ></motion.div>
       </div>
       <span>Unclaimed Listing</span>
-    </motion.div>
+    </div>
   );
 };
 

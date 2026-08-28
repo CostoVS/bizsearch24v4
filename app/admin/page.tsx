@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
-import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers } from "lucide-react";
+import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
@@ -255,7 +255,8 @@ export default function AdminDashboard() {
   const [adSearchCity, setAdSearchCity] = useState("");
   const [adSearchCategory, setAdSearchCategory] = useState("all");
   const [adSourceFilter, setAdSourceFilter] = useState<"all" | "preference" | "csv">("all");
-  const [adTypeFilter, setAdTypeFilter] = useState<"all" | "free" | "premium" | "sponsor" | "claimed" | "remove" | "claimed_free">("all");
+  const [adTypeFilter, setAdTypeFilter] = useState<"all" | "free" | "premium" | "sponsor" | "claimed" | "unclaimed" | "remove" | "claimed_free">("all");
+  const [isSyncingAds, setIsSyncingAds] = useState(false);
   const [adPage, setAdPage] = useState(1);
   const ITEMS_PER_PAGE = 12;
 
@@ -526,8 +527,14 @@ export default function AdminDashboard() {
           setEvents(combined);
         }
 
-        // Load unified ads from master store
-        setAds(getStoredAds());
+        // Load unified ads from master store & fetch fresh from server
+        const currentLocal = getStoredAds();
+        setAds(currentLocal);
+        fetchAndStoreAds().then((freshAds) => {
+          if (freshAds && Array.isArray(freshAds) && freshAds.length > 0) {
+            setAds(freshAds);
+          }
+        }).catch(console.error);
 
         // Auto-load custom slugs and premium documents
         loadCustomSlugs();
@@ -819,7 +826,7 @@ export default function AdminDashboard() {
         }
       }
 
-      // 6. Type filter: free, premium, sponsor, claimed, removal request, claimed free
+      // 6. Type filter: free, premium, sponsor, claimed, unclaimed, removal request, claimed free
       if (adTypeFilter === "free") {
         if (ad.isPremium || ad.isSponsor) return false;
       } else if (adTypeFilter === "premium") {
@@ -828,6 +835,8 @@ export default function AdminDashboard() {
         if (!ad.isSponsor) return false;
       } else if (adTypeFilter === "claimed") {
         if (ad.isClaimed !== true) return false;
+      } else if (adTypeFilter === "unclaimed") {
+        if (ad.isClaimed === true || ad.verified) return false;
       } else if (adTypeFilter === "remove") {
         if (ad.claimIntention !== "remove") return false;
       } else if (adTypeFilter === "claimed_free") {
@@ -2936,8 +2945,33 @@ export default function AdminDashboard() {
                  <h2 className="font-bold text-xl text-slate-900 font-display">Ad Placement Lifecycle</h2>
                  <p className="text-sm text-slate-500 mt-1">Directly modify advertisements, change tiering, or remove listings.</p>
                </div>
-               <div>
-                 <button onClick={() => router.push("/create-ad")} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20 w-full sm:w-auto text-center" id="create-ad-btn">Provision New Advertisement</button>
+               <div className="flex flex-wrap items-center gap-3">
+                 <button 
+                   onClick={async () => {
+                     setIsSyncingAds(true);
+                     try {
+                       const fresh = await fetchAndStoreAds();
+                       if (fresh && Array.isArray(fresh) && fresh.length > 0) {
+                         setAds(fresh);
+                         alert(`Synced successfully with server database! Live listing count: ${fresh.length}`);
+                       } else {
+                         alert("Database synced. Total ads: " + ads.length);
+                       }
+                     } catch (err: any) {
+                       alert("Sync error: " + (err?.message || "Could not fetch central data"));
+                     } finally {
+                       setIsSyncingAds(false);
+                     }
+                   }} 
+                   disabled={isSyncingAds}
+                   className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-xl font-bold text-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-60" 
+                   id="sync-db-btn"
+                   title="Force refresh listings from central cloud database"
+                 >
+                   <RefreshCw className={`w-4 h-4 ${isSyncingAds ? 'animate-spin text-emerald-600' : 'text-slate-600'}`} />
+                   <span>{isSyncingAds ? 'Syncing...' : `Sync DB (${ads.length})`}</span>
+                 </button>
+                 <button onClick={() => router.push("/create-ad")} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20 w-full sm:w-auto text-center cursor-pointer" id="create-ad-btn">Provision New Advertisement</button>
                </div>
             </div>
 
@@ -2986,6 +3020,7 @@ export default function AdminDashboard() {
                     { id: "premium", label: "Premium Verified", color: "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100", count: ads.filter(a => a.isPremium && !a.isSponsor).length },
                     { id: "sponsor", label: "Featured Sponsor", color: "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-100", count: ads.filter(a => a.isSponsor).length },
                     { id: "claimed", label: "Claimed Listings", color: "bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-100", count: ads.filter(a => a.isClaimed === true).length },
+                    { id: "unclaimed", label: "Unclaimed Listings", color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300", count: ads.filter(a => a.isClaimed !== true && !a.verified).length },
                     { id: "remove", label: "Removal Requests ⚠", color: "bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-100", count: ads.filter(a => a.claimIntention === "remove").length },
                     { id: "claimed_free", label: "Claimed & Request Free", color: "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-100", count: ads.filter(a => a.isClaimed === true && a.claimIntention === "free").length },
                   ].map((btn) => (
