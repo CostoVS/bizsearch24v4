@@ -3,17 +3,20 @@
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
 import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
-import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search } from 'lucide-react';
+import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search, MessageSquare, AlertCircle, Compass, Send, CheckCircle2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { SearchBar } from '@/components/search-bar';
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { VerificationBadge, PremiumBadge } from '@/components/ui-extras';
 import AdDetailModal from '@/components/ad-detail-modal';
 import { AdDescription } from '@/components/ad-description';
 import { Pagination } from '@/components/pagination';
+import { resolveLocationDetails, LocationMatchResult } from '@/lib/location-resolver';
+import { AreaMappingModal } from '@/components/area-mapping-modal';
+import { AreaRequestCard } from '@/components/area-request-card';
 
 function DirectoryContent() {
   const { isAdmin } = useAuth();
@@ -36,9 +39,19 @@ function DirectoryContent() {
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
+
+  const locationInfo: LocationMatchResult = useMemo(() => {
+    return resolveLocationDetails({
+      query: rawQ,
+      province: rawProvince,
+      town: rawTown,
+      suburb: rawSuburb
+    });
+  }, [rawQ, rawProvince, rawTown, rawSuburb]);
 
   const removeFilter = (key: string) => {
     const params = new URLSearchParams(searchParams?.toString() || '');
@@ -325,6 +338,95 @@ function DirectoryContent() {
                 </span>
               )}
             </div>
+
+            {/* LOCATION MAPPING STATUS BANNER */}
+            {locationInfo.isMapped ? (
+              <div className="mt-4 pt-3 border-t border-emerald-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-950/70 p-3.5 rounded-2xl border border-emerald-700/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 shrink-0">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div className="text-xs space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold text-white text-sm">
+                        {locationInfo.name || locationInfo.town || locationInfo.province}
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 border border-emerald-400/40">
+                        ✓ Mapped Location
+                      </span>
+                    </div>
+                    <div className="text-emerald-200/90 text-xs flex flex-wrap items-center gap-x-4 gap-y-1">
+                      {locationInfo.province && (
+                        <span>Province: <strong className="text-white">{locationInfo.province}</strong></span>
+                      )}
+                      {(locationInfo.town || locationInfo.city) && (
+                        <span>City / Town: <strong className="text-white">{locationInfo.town || locationInfo.city}</strong></span>
+                      )}
+                      {locationInfo.suburb && (
+                        <span>Suburb: <strong className="text-white">{locationInfo.suburb}</strong></span>
+                      )}
+                      {locationInfo.postalCode && (
+                        <span>Postal Code: <strong className="text-amber-300 font-mono font-black">{locationInfo.postalCode}</strong></span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMappingModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl border border-emerald-400/40 transition shadow-sm self-start sm:self-auto cursor-pointer"
+                  title="Request more business listings mapped for this location"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Request Area Mapping</span>
+                </button>
+              </div>
+            ) : (rawQ || rawTown || rawSuburb) ? (
+              <div className="mt-4 pt-3 border-t border-rose-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-rose-950/70 p-4 rounded-2xl border border-rose-800/80">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-300 shrink-0 mt-0.5">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-extrabold text-rose-200 text-sm">
+                        Not in list of places mapped
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-900/90 text-rose-300 border border-rose-700/60">
+                        Unmapped Area
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-100/90 leading-relaxed">
+                      The search term or area <strong className="text-white">"{rawQ || rawTown || rawSuburb}"</strong> is not currently in our list of mapped places or has no active listings.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1 sm:pt-0 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsMappingModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-black bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-2.5 rounded-xl transition shadow-md active:scale-95 cursor-pointer"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Request to map businesses for this area</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaultMsg = encodeURIComponent(
+                        `Hi Admin, I would like to request mapping businesses and adding directory listings for the area: "${rawQ || rawTown || rawSuburb}".`
+                      );
+                      router.push(`/messages?to=admin&msg=${defaultMsg}`);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 text-white px-3.5 py-2.5 rounded-xl border border-white/20 transition cursor-pointer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Chat with Admin</span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
@@ -355,11 +457,13 @@ function DirectoryContent() {
           <p className="mt-4 text-emerald-800 font-display font-semibold text-sm tracking-wide animate-pulse">Filtering directory...</p>
         </div>
       ) : results.length === 0 ? (
-        <div className="text-center py-24 bg-white rounded-3xl shadow-sm border border-slate-100">
-          <p className="text-slate-500 text-lg mb-4">No businesses found matching your criteria.</p>
-          <Link href="/dashboard" className="text-emerald-600 font-medium hover:underline">
-            Be the first to list a business for this search!
-          </Link>
+        <div className="space-y-6">
+          <AreaRequestCard
+            areaName={locationInfo.name || rawQ || rawTown || rawSuburb || ''}
+            province={locationInfo.province || rawProvince || ''}
+            postalCode={locationInfo.postalCode || ''}
+            isUnmapped={!locationInfo.isMapped && Boolean(rawQ || rawTown || rawSuburb)}
+          />
         </div>
       ) : (
         <>
@@ -527,6 +631,15 @@ function DirectoryContent() {
 
       {/* Ad Detail popup showing on trigger */}
       <AdDetailModal ad={selectedAd} onClose={() => setSelectedAd(null)} />
+
+      {/* Area Mapping Request Modal */}
+      <AreaMappingModal
+        isOpen={isMappingModalOpen}
+        onClose={() => setIsMappingModalOpen(false)}
+        initialArea={rawQ || rawTown || rawSuburb || ''}
+        initialProvince={locationInfo.province || rawProvince || ''}
+        initialPostalCode={locationInfo.postalCode || ''}
+      />
     </div>
   );
 }

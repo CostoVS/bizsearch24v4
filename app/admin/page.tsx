@@ -7,10 +7,11 @@ import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
 import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check } from "lucide-react";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, MapPin, MessageSquare, Phone, BellRing } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
+import { formatWhatsAppLink } from "@/components/area-request-card";
 import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
@@ -273,6 +274,48 @@ export default function AdminDashboard() {
   // Claim & Removal requests States
   const [claimRequests, setClaimRequests] = useState<any[]>([]);
   const [isClaimsLoading, setIsClaimsLoading] = useState(false);
+
+  // Area Mapping Requests State
+  const [mappingRequests, setMappingRequests] = useState<any[]>([]);
+
+  const loadMappingRequests = () => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("searchbiz_area_mapping_requests");
+      if (stored) {
+        try {
+          setMappingRequests(JSON.parse(stored));
+        } catch (e) {}
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadMappingRequests();
+    window.addEventListener("searchbiz_mapping_requests_updated", loadMappingRequests);
+    return () => {
+      window.removeEventListener("searchbiz_mapping_requests_updated", loadMappingRequests);
+    };
+  }, []);
+
+  const handleUpdateMappingRequestStatus = (id: string, newStatus: 'PENDING' | 'IN_PROGRESS' | 'MAPPED' | 'REJECTED') => {
+    if (typeof window !== "undefined") {
+      const updated = mappingRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
+      setMappingRequests(updated);
+      localStorage.setItem("searchbiz_area_mapping_requests", JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent("searchbiz_mapping_requests_updated"));
+    }
+  };
+
+  const handleDeleteMappingRequest = (id: string) => {
+    if (confirm("Are you sure you want to remove this mapping request?")) {
+      if (typeof window !== "undefined") {
+        const updated = mappingRequests.filter(r => r.id !== id);
+        setMappingRequests(updated);
+        localStorage.setItem("searchbiz_area_mapping_requests", JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent("searchbiz_mapping_requests_updated"));
+      }
+    }
+  };
 
   // Ad and search filtering states
   const [adSearchTerm, setAdSearchTerm] = useState("");
@@ -1249,6 +1292,7 @@ export default function AdminDashboard() {
               {[
                 { id: 'overview', label: 'User Intelligence', icon: Users, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'ads', label: 'Advertisement Control', icon: Database, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
+                { id: 'mapping_requests', label: `Area Mapping Requests (${mappingRequests.filter(r => r.status === 'PENDING').length})`, icon: MapPin, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'duplicates', label: 'Duplicate & Multi-Ads', icon: Copy, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'csv_uploads', label: `CSV Upload & Claims (${claimRequests.filter(c => c?.status === 'PENDING').length})`, icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'slugs', label: `Custom URL Slugs (${customSlugs.length})`, icon: Sparkles, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
@@ -1304,6 +1348,180 @@ export default function AdminDashboard() {
 
         {/* Tab contents right-hand column */}
         <div className="lg:col-span-4 space-y-8 min-w-0 w-full overflow-hidden">
+
+      {activeTab === 'mapping_requests' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 shadow-sm">
+                  <MapPin className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 font-display">
+                    Regional Area Mapping Requests
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500">
+                    User submissions for unmapped towns, suburbs, and requested regional onboarding.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold">
+                  {mappingRequests.filter(r => r.status === 'PENDING').length} Pending
+                </span>
+                <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-xs font-bold">
+                  {mappingRequests.filter(r => r.status === 'MAPPED').length} Mapped
+                </span>
+              </div>
+            </div>
+
+            {mappingRequests.length === 0 ? (
+              <div className="text-center py-16 text-slate-400 space-y-3">
+                <MapPin className="w-12 h-12 mx-auto text-slate-300 stroke-1" />
+                <p className="text-sm font-medium">No area mapping requests received yet.</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  When visitors search for unmapped locations, their requests will appear here for onboarding and review.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-4">
+                {mappingRequests.map((req) => {
+                  const isPending = req.status === 'PENDING';
+                  const isMapped = req.status === 'MAPPED';
+                  const isInProgress = req.status === 'IN_PROGRESS';
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="border border-slate-200 rounded-2xl p-5 hover:border-slate-300 transition bg-white shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-5"
+                    >
+                      <div className="space-y-2 flex-1">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="text-base font-bold text-slate-900 font-display">
+                            📍 {req.areaName}
+                          </span>
+                          {req.province && (
+                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium border border-slate-200">
+                              {req.province}
+                            </span>
+                          )}
+                          {req.postalCode && (
+                            <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-lg text-xs font-mono font-bold border border-amber-200">
+                              Postal Code: {req.postalCode}
+                            </span>
+                          )}
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            isPending ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            isMapped ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                            isInProgress ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                            'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+
+                        {req.businessTypes && (
+                          <p className="text-xs text-slate-700">
+                            <strong>Requested Businesses:</strong> {req.businessTypes}
+                          </p>
+                        )}
+
+                        {req.notes && (
+                          <p className="text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                            "{req.notes}"
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-1">
+                          <span>Requester: <strong className="text-slate-700">{req.requesterName}</strong></span>
+                          {req.requesterPhone && (
+                            <span className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md font-semibold border border-emerald-200">
+                              <Phone className="w-3 h-3 text-emerald-600" /> WhatsApp: {req.requesterPhone}
+                            </span>
+                          )}
+                          {req.requesterEmail && (
+                            <span>Email: <strong className="text-slate-700">{req.requesterEmail}</strong></span>
+                          )}
+                          {req.notifyOnListing && (
+                            <span className="flex items-center gap-1 text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md font-bold border border-amber-200 text-[11px]">
+                              <BellRing className="w-3 h-3 text-amber-600" /> Contact when listed
+                            </span>
+                          )}
+                          <span className="text-slate-400">
+                            {new Date(req.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Action Controls */}
+                      <div className="flex flex-wrap lg:flex-col items-stretch gap-2 shrink-0 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
+                        {req.requesterPhone && (
+                          <a
+                            href={formatWhatsAppLink(
+                              req.requesterPhone,
+                              `Hello ${req.requesterName}, this is SearchBiz Admin regarding your request to map businesses in "${req.areaName}". We are updating our directory for your area!`
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#25D366] hover:bg-[#1EBE5D] text-slate-950 font-black rounded-xl text-xs transition shadow-sm"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>WhatsApp User</span>
+                          </a>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const chatMsg = encodeURIComponent(
+                              `Hello ${req.requesterName}, regarding your request to map businesses in "${req.areaName}": `
+                            );
+                            router.push(`/messages?to=${encodeURIComponent(req.requesterEmail || req.requesterPhone)}&msg=${chatMsg}`);
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Admin Portal Chat</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          {isPending && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateMappingRequestStatus(req.id, 'IN_PROGRESS')}
+                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                              Set In Progress
+                            </button>
+                          )}
+                          {!isMapped && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateMappingRequestStatus(req.id, 'MAPPED')}
+                              className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                              Mark Mapped
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMappingRequest(req.id)}
+                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition cursor-pointer"
+                            title="Delete Request"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeTab === 'duplicates' && (
         <AdminDuplicateManager

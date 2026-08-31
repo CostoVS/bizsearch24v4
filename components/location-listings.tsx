@@ -12,6 +12,7 @@ import { AdDescription } from '@/components/ad-description';
 import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds } from '@/lib/data';
 import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
 import { Pagination } from '@/components/pagination';
+import { AreaRequestCard } from '@/components/area-request-card';
 
 interface Ad {
   id: string;
@@ -97,11 +98,11 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
   return (
     <div ref={listingsRef} className="w-full">
       {sortedAds.length === 0 ? (
-        <div className="text-center py-24 bg-white rounded-xl shadow-sm border border-slate-100">
-          <p className="text-slate-500 text-lg mb-4">No businesses listed in this area yet.</p>
-          <Link href="/dashboard" className="text-emerald-600 font-medium hover:underline">
-            Be the first to list your business in {properName}!
-          </Link>
+        <div className="space-y-6">
+          <AreaRequestCard
+            areaName={properName}
+            isUnmapped={false}
+          />
         </div>
       ) : (
         <>

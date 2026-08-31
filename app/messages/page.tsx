@@ -209,9 +209,12 @@ function DirectChatContent() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/");
+      const toParam = searchParams.get("to");
+      if (!toParam) {
+        router.push("/");
+      }
     }
-  }, [user, isLoading, router]);
+  }, [user, isLoading, router, searchParams]);
 
   useEffect(() => {
     loadMessagesFromStorage();
@@ -229,12 +232,17 @@ function DirectChatContent() {
     };
   }, []);
 
-  // Check URL query param for target contact email (e.g. /messages?to=someone@example.com)
+  // Check URL query param for target contact email & pre-filled message (e.g. /messages?to=admin&msg=...)
   useEffect(() => {
     const toParam = searchParams.get("to");
     if (toParam) {
       const cleanTo = toParam.toLowerCase().trim();
       setActiveContactEmail(cleanTo);
+    }
+
+    const msgParam = searchParams.get("msg") || searchParams.get("initialMessage") || searchParams.get("subject") || searchParams.get("text");
+    if (msgParam) {
+      setInputText(decodeURIComponent(msgParam));
     }
   }, [searchParams]);
 
