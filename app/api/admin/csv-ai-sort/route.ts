@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
-import { SA_PROVINCES } from "@/lib/locations";
 import { cleanAd } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
+import { isScraperStatusOrGarbage, isLikelyStreetAddress } from "@/lib/csv-parser";
 
 // All categories list for categorization
 const ALL_SUBCATEGORIES = CATEGORIES_STRUCTURED.flatMap(g => g.subcategories);
@@ -15,9 +15,11 @@ function detectCategoryFromText(text: string): string {
   if (t.includes("solar") || t.includes("inverter") || t.includes("battery") || t.includes("backup power") || t.includes("photovoltaic")) return "Solar Power Installers";
   if (t.includes("plumb") || t.includes("drain") || t.includes("geyser") || t.includes("pipe leak") || t.includes("unblock")) return "Plumbers";
   if (t.includes("electric") || t.includes("wiring") || t.includes("db board") || t.includes("certificate of compliance") || t.includes("coc")) return "Electricians";
-  if (t.includes("mechanic") || t.includes("auto repair") || t.includes("automotive") || t.includes("car repair") || t.includes("panel beat") || t.includes("gearbox") || t.includes("brake")) return "Auto Repairs & Mechanics";
+  if (t.includes("auto parts") || t.includes("motor spares") || t.includes("used spares") || t.includes("car spares") || t.includes("truck and auto") || t.includes("spare parts") || t.includes("truck parts") || t.includes("accessories")) return "Parts & Accessories";
+  if (t.includes("mechanic") || t.includes("auto repair") || t.includes("automotive") || t.includes("car repair") || t.includes("panel beat") || t.includes("gearbox") || t.includes("brake") || t.includes("auto electrical")) return "Auto Body & Repair Shops";
+  if (t.includes("car sales") || t.includes("dealership") || t.includes("used cars") || t.includes("motor dealer")) return "Dealerships (New & Used)";
   if (t.includes("attorney") || t.includes("lawyer") || t.includes("advocate") || t.includes("legal") || t.includes("conveyanc") || t.includes("notary")) return "Attorneys & Lawyers";
-  if (t.includes("account") || t.includes("bookkeep") || t.includes("tax") || t.includes("audit") || t.includes("sars")) return "Accounting";
+  if (t.includes("account") || t.includes("bookkeep") || t.includes("tax") || t.includes("audit") || t.includes("sars")) return "Accounting & Bookkeeping";
   if (t.includes("doctor") || t.includes("medical") || t.includes("clinic") || t.includes("physio") || t.includes("gp") || t.includes("health")) return "Doctors & Medical";
   if (t.includes("dentist") || t.includes("dental") || t.includes("orthodont")) return "Dentists";
   if (t.includes("clean") || t.includes("maid") || t.includes("janitor") || t.includes("carpet clean")) return "Cleaning Services";
@@ -29,7 +31,7 @@ function detectCategoryFromText(text: string): string {
   if (t.includes("restaurant") || t.includes("cafe") || t.includes("coffee") || t.includes("bistro") || t.includes("dining") || t.includes("food")) return "Restaurants & Cafes";
   if (t.includes("estate agent") || t.includes("property") || t.includes("realtor") || t.includes("letting")) return "Real Estate";
   if (t.includes("gym") || t.includes("fitness") || t.includes("personal trainer") || t.includes("crossfit")) return "Gyms & Fitness";
-  if (t.includes("hair") || t.includes("salon") || t.includes("barber") || t.includes("beauty") || t.includes("spa") || t.includes("nails")) return "Beauty & Salons";
+  if (t.includes("hair") || t.includes("salon") || t.includes("barber") || t.includes("beauty") || t.includes("spa") || t.includes("nails")) return "Barbershops & Hair Salons";
   if (t.includes("veterinar") || t.includes("vet") || t.includes("animal hospital") || t.includes("pet clinic")) return "Veterinarians";
   if (t.includes("courier") || t.includes("logistics") || t.includes("freight") || t.includes("transport") || t.includes("moving")) return "Logistics & Couriers";
 
@@ -40,7 +42,7 @@ function detectCategoryFromText(text: string): string {
     }
   }
 
-  return "Other";
+  return "General Business Services";
 }
 
 export async function POST(req: NextRequest) {
@@ -73,20 +75,20 @@ export async function POST(req: NextRequest) {
         for (const batch of batches) {
           const prompt = `You are a South African business directory classification engine.
 Given the following list of businesses, analyze their title, address, phone number, and services to determine:
-1. "category": Pick the single most accurate South African industry/trade category from: ${ALL_SUBCATEGORIES.slice(0, 80).join(", ")}. If none match, use "Other".
+1. "category": Pick the single most accurate South African industry/trade category from: ${ALL_SUBCATEGORIES.slice(0, 80).join(", ")}. If none match, use "General Business Services".
 2. "province": South African province slug: "gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", or "northern-cape".
-3. "city": The primary town/city (e.g. "Johannesburg", "Durban", "Cape Town", "Pretoria", "Gqeberha", "Bloemfontein", "Mbombela", "Polokwane", "Rustenburg", "Kimberley", etc.).
+3. "city": The primary town/city (e.g. "Johannesburg", "Durban", "Cape Town", "Pretoria", "Gqeberha", "Bloemfontein", "Mbombela", "Polokwane", "Rustenburg", "Kimberley", "Umzinto", "Isipingo", "Pinetown", "Scottburgh", etc.).
 4. "servicesOffered": A concise list of 2-5 actual services offered based ONLY on the business type and text. DO NOT include customer reviews, ratings, or reviewer quotes.
 
-IMPORTANT RULES:
-- DO NOT alter or modify the original business name, address, or phone number.
-- Respond with a STRICT JSON array of objects with keys: "index" (number), "category" (string), "province" (string), "city" (string), "servicesOffered" (string).
+CRITICAL INSTRUCTIONS:
+- DO NOT alter, overwrite, or fabricate the original business name, street address, or phone number.
+- Output a valid JSON array of objects with keys: "index" (number), "category" (string), "province" (string), "city" (string), "servicesOffered" (string).
 
 Batch to classify:
 ${JSON.stringify(batch, null, 2)}`;
 
           const response = await ai.models.generateContent({
-            model: "gemini-3.7-flash",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: {
               responseMimeType: "application/json"
@@ -123,15 +125,15 @@ ${JSON.stringify(batch, null, 2)}`;
 
       // Determine category: Priority -> Explicit Override -> AI Classification -> Existing Valid Category -> Heuristic -> Fallback
       let category = b.category && b.category !== "Other" && b.category !== "General Business Services" ? b.category : "";
-      if (overrideCategory && overrideCategory !== "Other") {
+      if (overrideCategory && overrideCategory !== "Other" && overrideCategory !== "General Business Services") {
         category = overrideCategory;
-      } else if (ai?.category && ai.category !== "Other") {
+      } else if (ai?.category && ai.category !== "Other" && ai.category !== "General Business Services") {
         category = ai.category;
       } else if (!category) {
         category = heuristicCategory || "General Business Services";
       }
 
-      // Determine province: Priority -> AI detected from address -> Heuristic detected from address & phone -> Existing -> Fallback
+      // Determine province: Priority -> AI detected from address/phone -> Heuristic detected from address & phone -> Existing -> Fallback
       let province = b.province;
       if (ai?.province && ["gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", "northern-cape"].includes(ai.province.toLowerCase())) {
         province = ai.province.toLowerCase();
@@ -155,12 +157,20 @@ ${JSON.stringify(batch, null, 2)}`;
         services = ai.servicesOffered.trim();
       }
 
-      // Build cleaned ad, strictly keeping b.title, b.address, b.phone, b.email intact without website
+      // Clean raw address if it contains garbage or double commas
+      let cleanAddress = (b.address || "").trim();
+      if (isScraperStatusOrGarbage(cleanAddress)) {
+        cleanAddress = "";
+      } else {
+        cleanAddress = cleanAddress.replace(/,\s*,+/g, ',').trim();
+      }
+
+      // Build cleaned ad, strictly keeping b.title, cleanAddress, b.phone, b.email intact without website
       return cleanAd({
         ...b,
         // MUST NEVER MUTATE ACTUAL BUSINESS CORE DATA:
         title: (b.title || "").trim(),
-        address: (b.address || "").trim(),
+        address: cleanAddress,
         phone: (b.phone || "").trim(),
         email: (b.email || "").trim(),
         website: "", // No website links on unpaid/unresolved CSV listings
@@ -181,4 +191,3 @@ ${JSON.stringify(batch, null, 2)}`;
     return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
   }
 }
-

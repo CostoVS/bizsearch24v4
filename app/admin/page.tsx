@@ -16,136 +16,9 @@ import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/loc
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
+import { parseCsvLine, parseCsvRowToRecord, ParsedCsvBusinessRecord } from "@/lib/csv-parser";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
-
-function parseCsvRowToRecord(headers: string[], values: string[], defaultCategory = "General Business Services", defaultProvince = "gauteng") {
-  const row: Record<string, string> = {};
-  headers.forEach((header, idx) => {
-    if (header) {
-      const cleanHeader = header.trim().toLowerCase().replace(/[\_\-\.]/g, ' ');
-      row[cleanHeader] = (values[idx] || "").trim();
-      // Also preserve exact header key
-      row[header.trim().toLowerCase()] = (values[idx] || "").trim();
-    }
-  });
-
-  // Helper to find first non-empty value by matching candidate header keys
-  const getFieldByHeaders = (candidates: string[]) => {
-    for (const key of candidates) {
-      if (row[key] && row[key] !== "·" && row[key] !== "") {
-        return row[key];
-      }
-    }
-    for (const [k, v] of Object.entries(row)) {
-      if (v && v !== "·" && v !== "") {
-        if (candidates.some(c => k === c || k.startsWith(c + " ") || k.endsWith(" " + c) || k.includes(c))) {
-          return v;
-        }
-      }
-    }
-    return "";
-  };
-
-  // 1. Business Name / Title
-  let title = getFieldByHeaders([
-    "title", "name", "business name", "company name", "company", "business", 
-    "trade name", "trading as", "shop name", "store name", "listing title", 
-    "organization", "firm", "heading", "xxvwce"
-  ]);
-
-  // 2. Address
-  let address = getFieldByHeaders([
-    "address", "street address", "full address", "physical address", "street", 
-    "location", "site address", "address line 1", "address line", "formatted address", 
-    "vicinity", "w4efsd 4", "w4efsd4"
-  ]);
-
-  // 3. Phone Number
-  let phone = getFieldByHeaders([
-    "phone", "telephone", "phone number", "tel number", "tel", "cell", "mobile", 
-    "contact number", "contact", "cellphone", "cell phone", "telephone number", "usdlk"
-  ]);
-
-  // 4. Email
-  let email = getFieldByHeaders([
-    "email", "email address", "e-mail", "contact email", "mail"
-  ]);
-
-  // 6. Category
-  let category = getFieldByHeaders([
-    "category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"
-  ]);
-
-  // 7. Province & City
-  let province = getFieldByHeaders(["province", "state", "region"]);
-  let city = getFieldByHeaders(["city", "town", "suburb", "municipality", "area"]);
-
-  // 8. Services / Description
-  let servicesOffered = getFieldByHeaders([
-    "services", "services offered", "description", "about", "summary", "details", "products", "overview", "ah5ghc"
-  ]);
-
-  // Fallback for Scraper/Unlabeled CSV rows if specific headers were missing:
-  // ONLY if title is completely empty:
-  if (!title) {
-    if (values[1] && !values[1].startsWith("http") && !values[1].includes("@") && values[1].length < 100) {
-      title = values[1];
-    } else if (values[0] && !values[0].startsWith("http") && !values[0].includes("@") && values[0].length < 100) {
-      title = values[0];
-    }
-  }
-
-  // ONLY if address is completely empty:
-  if (!address) {
-    for (let c = 0; c < values.length; c++) {
-      const val = (values[c] || "").trim();
-      if (!val || val === "·" || val === "" || val.startsWith("http") || val.includes("@") || val.length < 6) continue;
-      if (/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|estate|park|industrial|suite|unit|lane|highway)\b/i.test(val)) {
-        address = val;
-        break;
-      }
-    }
-  }
-
-  // ONLY if phone is completely empty:
-  if (!phone) {
-    for (let c = 0; c < values.length; c++) {
-      const val = (values[c] || "").trim();
-      if (!val || val === "·" || val === "") continue;
-      const cleanDigits = val.replace(/[^0-9]/g, '');
-      if ((cleanDigits.startsWith("27") && cleanDigits.length >= 11 && cleanDigits.length <= 13) ||
-          (cleanDigits.startsWith("0") && cleanDigits.length >= 10 && cleanDigits.length <= 11)) {
-        phone = val;
-        break;
-      }
-    }
-  }
-
-  if (address === "·" || address === "") address = "";
-  if (phone === "·" || phone === "") phone = "";
-
-  if (servicesOffered) {
-    if (servicesOffered.startsWith("http://") || servicesOffered.startsWith("https://") || servicesOffered.startsWith("www.") || isCustomerReviewOrGarbage(servicesOffered)) {
-      servicesOffered = "";
-    }
-  }
-
-  // Location heuristic for SA provinces and cities
-  const locDetection = detectLocationFromPhoneAndText(phone || "", `${address || ""} ${city || ""} ${province || ""}`, defaultProvince);
-
-  return {
-    title: (title || "").substring(0, 150).trim(),
-    address: (address || "").substring(0, 250).trim(),
-    phone: (phone || "").substring(0, 50).trim(),
-    email: (email || "").substring(0, 100).trim(),
-    category: (category || defaultCategory || "General Business Services").trim(),
-    province: (province || locDetection.province || defaultProvince || "gauteng").trim(),
-    city: (city || locDetection.city || "Johannesburg").trim(),
-    servicesOffered: (servicesOffered || "").substring(0, 500).trim(),
-    website: "" // Excluded for unresolved CSV listings
-  };
-}
 
 export default function AdminDashboard() {
   const { user, isLoading, isAdmin } = useAuth();
@@ -2292,31 +2165,7 @@ export default function AdminDashboard() {
                             return;
                           }
 
-                          const parseCsvRow = (line: string) => {
-                            const result = [];
-                            let current = '';
-                            let inQuotes = false;
-                            for (let i = 0; i < line.length; i++) {
-                              const char = line[i];
-                              if (char === '"') {
-                                if (inQuotes && line[i + 1] === '"') {
-                                  current += '"';
-                                  i++;
-                                } else {
-                                  inQuotes = !inQuotes;
-                                }
-                              } else if (char === ',' && !inQuotes) {
-                                result.push(current.trim());
-                                current = '';
-                              } else {
-                                current += char;
-                              }
-                            }
-                            result.push(current.trim());
-                            return result;
-                          };
-
-                          const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
+                          const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase());
                           const parsedRows = [];
                           let skippedNoPhone = 0;
                           let skippedDuplicates = 0;
@@ -2341,8 +2190,8 @@ export default function AdminDashboard() {
                           });
 
                           for (let i = 1; i < lines.length; i++) {
-                            const values = parseCsvRow(lines[i]);
-                            if (values.length === 0) continue;
+                            const values = parseCsvLine(lines[i]);
+                            if (values.length === 0 || values.every(v => !v)) continue;
                             const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince);
                             const cleanPhone = (rec.phone || "").replace(/[\s\-\(\)\.]/g, '');
                             if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
@@ -3159,31 +3008,7 @@ export default function AdminDashboard() {
                         return;
                       }
 
-                      const parseCsvRow = (line: string) => {
-                        const result = [];
-                        let current = '';
-                        let inQuotes = false;
-                        for (let i = 0; i < line.length; i++) {
-                          const char = line[i];
-                          if (char === '"') {
-                            if (inQuotes && line[i + 1] === '"') {
-                              current += '"';
-                              i++;
-                            } else {
-                              inQuotes = !inQuotes;
-                            }
-                          } else if (char === ',' && !inQuotes) {
-                            result.push(current.trim());
-                            current = '';
-                          } else {
-                            current += char;
-                          }
-                        }
-                        result.push(current.trim());
-                        return result;
-                      };
-
-                      const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase());
+                      const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase());
                       const newAds = [];
                       let skippedNoPhone = 0;
                       let skippedDuplicates = 0;
@@ -3206,8 +3031,8 @@ export default function AdminDashboard() {
                       });
 
                       for (let i = 1; i < lines.length; i++) {
-                        const cols = parseCsvRow(lines[i]);
-                        if (cols.length < 1 || !cols[0]) continue;
+                        const cols = parseCsvLine(lines[i]);
+                        if (cols.length < 1 || cols.every(c => !c)) continue;
                         
                         const rec = parseCsvRowToRecord(headers, cols);
                         let title = rec.title;

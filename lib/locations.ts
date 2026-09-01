@@ -31043,33 +31043,56 @@ export function getProvinceSuburbs(provinceSlug: string): Record<string, SuburbI
 
 export function findSuburbAndTown(provinceSlug: string, address: string, defaultTown: string = "Johannesburg"): { town: string; suburb: string } {
   const addrLower = (address || "").toLowerCase().trim();
-  if (!addrLower) {
-    return { town: defaultTown, suburb: "" };
+  const subMap = getProvinceSuburbs(provinceSlug);
+  const provObj = SA_PROVINCES.find(p => p.slug === provinceSlug);
+
+  let matchedTown = "";
+  let matchedSuburb = "";
+
+  // 1. Try to find matching suburb across all towns in the province first
+  if (addrLower && subMap) {
+    for (const [tName, subs] of Object.entries(subMap)) {
+      if (Array.isArray(subs)) {
+        const sortedSubs = [...subs].sort((a, b) => b.name.length - a.name.length);
+        const found = sortedSubs.find(s => s.name && s.name.length > 2 && addrLower.includes(s.name.toLowerCase()));
+        if (found) {
+          matchedSuburb = found.name;
+          matchedTown = tName;
+          break;
+        }
+      }
+    }
   }
 
-  // 1. Find town in SA_PROVINCES
-  let matchedTown = "";
-  const provObj = SA_PROVINCES.find(p => p.slug === provinceSlug);
-  if (provObj) {
-    // Sort towns by length descending to match longer town names first
+  // 2. If town not matched via suburb, find town directly in address
+  if (!matchedTown && provObj && addrLower) {
     const sortedTowns = [...provObj.towns].sort((a, b) => b.length - a.length);
     const foundTown = sortedTowns.find(t => t.toLowerCase() !== "all locations" && addrLower.includes(t.toLowerCase()));
     if (foundTown) {
       matchedTown = foundTown;
-    } else {
-      matchedTown = provObj.towns[0] === 'All Locations' ? (provObj.towns[1] || defaultTown) : (provObj.towns[0] || defaultTown);
     }
-  } else {
-    matchedTown = defaultTown;
   }
 
-  // 2. Find suburb in matched town
-  let matchedSuburb = "";
-  const subMap = getProvinceSuburbs(provinceSlug);
-  if (subMap && subMap[matchedTown]) {
-    // Sort suburbs by length descending to match longer suburb names first
+  // 3. Fallback to defaultTown or province default
+  if (!matchedTown) {
+    if (defaultTown && defaultTown !== "Johannesburg") {
+      matchedTown = defaultTown;
+    } else if (provObj) {
+      const validTowns = provObj.towns.filter(t => t.toLowerCase() !== "all locations");
+      if (validTowns.some(t => t.toLowerCase() === defaultTown.toLowerCase())) {
+        matchedTown = defaultTown;
+      } else {
+        matchedTown = validTowns[0] || (provinceSlug === "kwazulu-natal" ? "Durban" : provinceSlug === "western-cape" ? "Cape Town" : provinceSlug === "eastern-cape" ? "Gqeberha" : "Johannesburg");
+      }
+    } else {
+      matchedTown = defaultTown || "Johannesburg";
+    }
+  }
+
+  // 4. If suburb not yet found, check in matched town
+  if (!matchedSuburb && subMap && subMap[matchedTown] && addrLower) {
     const sortedSuburbs = [...subMap[matchedTown]].sort((a, b) => b.name.length - a.name.length);
-    const foundSub = sortedSuburbs.find(s => addrLower.includes(s.name.toLowerCase()));
+    const foundSub = sortedSuburbs.find(s => s.name && s.name.length > 2 && addrLower.includes(s.name.toLowerCase()));
     if (foundSub) {
       matchedSuburb = foundSub.name;
     }
