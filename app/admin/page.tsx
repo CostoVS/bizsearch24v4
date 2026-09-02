@@ -3123,7 +3123,7 @@ export default function AdminDashboard() {
                           }
                         }
 
-                        const parsedLoc = findSuburbAndTown(location, address, "Johannesburg");
+                        const parsedLoc = findSuburbAndTown(location, address, rec.city || "Johannesburg");
 
                         newAds.push(cleanAd({
                           id: `csv-${Date.now()}-${i}`,
