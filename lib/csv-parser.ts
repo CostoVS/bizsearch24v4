@@ -110,7 +110,7 @@ export function isScraperStatusOrGarbage(text?: string | null): boolean {
 
   const lower = clean.toLowerCase();
 
-  // Operating status
+  // Operating status & opening hours (e.g., "Closes soon", "· Closes 5 pm", "· 4:45 pm · Opens 8 am Wed", "Open 24 hours")
   if (
     lower === "closed" ||
     lower === "open" ||
@@ -123,7 +123,26 @@ export function isScraperStatusOrGarbage(text?: string | null): boolean {
     lower.includes("open 24 hours") ||
     lower.includes("temporarily closed") ||
     lower.includes("permanently closed") ||
-    lower.includes("opening soon")
+    lower.includes("opening soon") ||
+    lower.includes("closes soon") ||
+    /\b(opens|closes)\b.*\b(am|pm)\b/i.test(clean) ||
+    /\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(clean) ||
+    /\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(clean) && /\b(open|close|am|pm|\d{1,2})\b/i.test(clean)
+  ) {
+    return true;
+  }
+
+  // Google Maps button labels & actions
+  if (
+    lower === "website" ||
+    lower === "directions" ||
+    lower === "call" ||
+    lower === "save" ||
+    lower === "share" ||
+    lower === "menu" ||
+    lower === "order" ||
+    lower === "reserve" ||
+    lower === "see photos"
   ) {
     return true;
   }
