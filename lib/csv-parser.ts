@@ -113,26 +113,58 @@ export function isLikelyStreetAddress(text?: string | null): boolean {
   // Not URLs, images or emails
   if (clean.startsWith("http://") || clean.startsWith("https://") || clean.includes("@")) return false;
 
+  // Pure punctuation or symbols
+  if (/^[·•\-\,\s]+$/.test(clean)) return false;
+
   const lower = clean.toLowerCase();
 
-  // Street / Location suffix keywords
-  const streetKeywords = /\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|estate|park|industrial|ind|suite|unit|shop|lane|ln|highway|hwy|bvd|mall|center|centre|square|sq|building|bldg|house|row|terrace|walk|loop|court|ct|passage|pass|fort|r\d{2,3}|n\d{1,2}|m\d{1,2})\b/i;
+  // Scraper statuses, hours, reviews, buttons
+  if (/^(open|closed|closes soon|opens soon|open now|open 24 hours|temporarily closed|permanently closed|on-site services|website|directions)$/i.test(lower)) return false;
+  if (/^[·•]\s*(closes|opens|open|closed)/i.test(lower)) return false;
+  if (/^\(?\d+\)?$/.test(clean)) return false; // review counts e.g. "(26)"
+  if (/^\d\.\d$/.test(clean)) return false; // ratings e.g. "4.7"
 
+  // Quotes / review snippets
+  if (clean.startsWith('"') || clean.endsWith('"') || clean.startsWith('“') || clean.startsWith('""')) return false;
+
+  // Geographic region or province names only
+  if (/^(ethekwini|ethekwini ak|kzn|kzn, 1|gauteng|western cape|eastern cape|limpopo|mpumalanga|free state|north west|northern cape)$/i.test(lower)) return false;
+
+  // Explicit category names (Must NOT be recognized as addresses!)
+  if (/^(auto body shop|auto repair shop|repair shop|body shop|machine shop|sign shop|coffee shop|barber shop|pet shop|gift shop|flower shop|print shop|sweet shop|tire shop|tyre shop|auto repair centre|repair centre|medical centre|health centre|business centre|car detailing service|car detailing|panel beater|panelbeater|spray painter|spray painting|plumber|electrician|mechanic|locksmith|dentist|attorney|lawyer|doctor|contractor|cleaning service|general business services|accounting|solar installation|restaurant|bakery|butchery)$/i.test(lower)) return false;
+
+  // Street type suffix keywords (only true street indicators)
+  const streetKeywords = /\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|lane|ln|court|ct|terrace|loop|walk|grove|grv|highway|hwy|bvd|passage|pass|r\d{2,3}|n\d{1,2}|m\d{1,2})\b/i;
+
+  // If text ends with generic commercial words (shop, centre, service, store) and has NO street keyword and NO number:
+  if (/(shop|centre|center|service|services|store|dealership|repairs)$/i.test(lower) && !streetKeywords.test(lower) && !/\d/.test(lower)) {
+    return false;
+  }
+
+  // Street keyword match
   if (streetKeywords.test(lower)) {
     return true;
   }
 
   // Starts with street number (e.g. "10 Calendula", "488 2nd Ave", "24 Inwabi", "5 Sucrose")
   if (/^\d{1,5}[a-z]?\s+[a-zA-Z]/i.test(clean)) {
+    const cleanDigits = clean.replace(/[^0-9]/g, '');
+    if (cleanDigits.length < 7) {
+      return true;
+    }
+  }
+
+  // Unit/Shop/Suite patterns with number (e.g. "Shop 4, 13 Commercial Rd", "Unit 2, North Park", "Shop No, 10 Milne")
+  if (/^(shop|unit|suite|building|block|flat|office|stand|no\.?)\s*(no\.?|#)?\s*\d+/i.test(lower)) {
     return true;
   }
 
-  // Unit/Shop/Suite patterns (e.g. "Shop 4, 13 Commercial Rd", "Unit 2, North Park")
-  if (/^(shop|unit|suite|building|block|flat|office|stand)\s+[\w\d]/i.test(lower)) {
+  // Corner of...
+  if (/^(cnr|corner)\b/i.test(lower) || /\b(corner of|cnr)\b/i.test(lower)) {
     return true;
   }
 
-  // Route / Highway numbers (e.g. "R197", "N2 Highway", "Old Main Road")
+  // Route numbers
   if (/^(r\d{2,3}|n\d{1,2}|m\d{1,2})\b/i.test(lower)) {
     return true;
   }
@@ -292,7 +324,20 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // 4. Physical / Street Address
+  // 4. Category (Extract first so we can ensure address doesn't duplicate category)
+  let category = "";
+  const catHeaders = ["category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"];
+  for (const ch of catHeaders) {
+    if (row[ch] && !isScraperStatusOrGarbage(row[ch]) && row[ch] !== title) {
+      category = row[ch];
+      break;
+    }
+  }
+  if (!category) {
+    category = defaultCategory || "General Business Services";
+  }
+
+  // 5. Physical / Street Address
   let address = "";
   
   // First check explicit standard address headers
@@ -308,12 +353,24 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // If no explicit valid address header was found, scan all columns for street address patterns
+  // Next check Google Maps scraper specific address columns (w4efsd 4, w4efsd 3, w4efsd 5)
+  if (!address) {
+    const gmapsAddressCandidates = ["w4efsd 4", "w4efsd 3", "w4efsd 5"];
+    for (const gCol of gmapsAddressCandidates) {
+      const gVal = row[gCol];
+      if (gVal && !isScraperStatusOrGarbage(gVal) && isLikelyStreetAddress(gVal)) {
+        address = gVal;
+        break;
+      }
+    }
+  }
+
+  // If still no address found, scan all columns for street address patterns
   if (!address) {
     // Check for multi-column address parts (e.g. Shop 4 + 13 Commercial Rd, or Shop no.2 + 84 Phila Ndwandwe Rd)
     for (let c = 0; c < values.length; c++) {
       const val = (values[c] || "").trim();
-      if (!val || val === title || val === phone || isScraperStatusOrGarbage(val)) continue;
+      if (!val || val === title || val === phone || val === category || isScraperStatusOrGarbage(val)) continue;
       
       // If this is a shop/unit/suite prefix, check if next non-empty column completes it
       const isPrefix = /^(shop|unit|suite|building|block|flat|office|stand)\s+[\w\d]/i.test(val);
@@ -321,7 +378,7 @@ export function parseCsvRowToRecord(
         let combined = val;
         for (let next = c + 1; next < Math.min(values.length, c + 4); next++) {
           const nextVal = (values[next] || "").trim();
-          if (nextVal && !isScraperStatusOrGarbage(nextVal) && nextVal !== phone && nextVal !== title) {
+          if (nextVal && !isScraperStatusOrGarbage(nextVal) && nextVal !== phone && nextVal !== title && nextVal !== category) {
             if (isLikelyStreetAddress(nextVal) || /\b(rd|road|st|street|ave|avenue|dr|drive|way|blvd|lane|park|pl|place)\b/i.test(nextVal)) {
               combined = `${val}, ${nextVal}`;
               break;
@@ -335,6 +392,11 @@ export function parseCsvRowToRecord(
       }
 
       if (isLikelyStreetAddress(val)) {
+        // Ensure this is not the category column or identical to category
+        const colHeader = (headers[c] || "").trim().toLowerCase();
+        if (colHeader === "w4efsd" || colHeader === "category" || val.toLowerCase() === category.toLowerCase()) {
+          continue;
+        }
         address = val;
         // Check if next column is a town/suburb extension (e.g. "St Patricks Rd" + "Umzinto")
         for (let next = c + 1; next < Math.min(values.length, c + 3); next++) {
@@ -354,22 +416,9 @@ export function parseCsvRowToRecord(
   // Clean address format (e.g. fix double commas: "Shop 4,, 13 Commercial Rd" -> "Shop 4, 13 Commercial Rd")
   if (address) {
     address = address.replace(/,\s*,+/g, ',').trim();
-    if (address === "·" || address === "" || isScraperStatusOrGarbage(address)) {
+    if (address === "·" || address === "" || isScraperStatusOrGarbage(address) || !isLikelyStreetAddress(address)) {
       address = "";
     }
-  }
-
-  // 5. Category
-  let category = "";
-  const catHeaders = ["category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"];
-  for (const ch of catHeaders) {
-    if (row[ch] && !isScraperStatusOrGarbage(row[ch]) && !isLikelyStreetAddress(row[ch]) && row[ch] !== title) {
-      category = row[ch];
-      break;
-    }
-  }
-  if (!category) {
-    category = defaultCategory || "General Business Services";
   }
 
   // 6. Email
@@ -404,10 +453,10 @@ export function parseCsvRowToRecord(
   let province = (row["province"] || row["state"] || row["region"] || "").trim().toLowerCase();
   let city = (row["city"] || row["town"] || row["suburb"] || row["municipality"] || row["area"] || "").trim();
 
-  // Use phone number, address text, and GPS coordinates for accurate South African geolocation
+  // Use phone number, address text, title and GPS coordinates for accurate South African geolocation
   const locDetection = detectLocationFromPhoneAndText(
     phone || "",
-    `${address || ""} ${city || ""} ${province || ""}`,
+    `${title || ""} ${address || ""} ${city || ""} ${province || ""}`,
     defaultProvince,
     coords || undefined
   );

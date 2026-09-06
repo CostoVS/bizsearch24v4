@@ -2349,8 +2349,8 @@ export default function AdminDashboard() {
                         const formatted = validWithPhone.map((item, index) => {
                           const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
                           const addr = item.address || "";
-                          const defaultCity = item.city || item.town || "Johannesburg";
-                          const parsedLoc = findSuburbAndTown(prov, addr, defaultCity);
+                          const defaultCity = item.city || item.town || "";
+                          const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
                           const rawServices = item.servicesOffered || "";
                           const cat = item.category || "Other";
                           
@@ -3034,7 +3034,7 @@ export default function AdminDashboard() {
                         const cols = parseCsvLine(lines[i]);
                         if (cols.length < 1 || cols.every(c => !c)) continue;
                         
-                        const rec = parseCsvRowToRecord(headers, cols);
+                        const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince);
                         let title = rec.title;
                         let address = rec.address;
                         let phone = rec.phone;
@@ -3123,7 +3123,7 @@ export default function AdminDashboard() {
                           }
                         }
 
-                        const parsedLoc = findSuburbAndTown(location, address, rec.city || "Johannesburg");
+                        const parsedLoc = findSuburbAndTown(location, address ? `${address} ${title}` : title, rec.city);
 
                         newAds.push(cleanAd({
                           id: `csv-${Date.now()}-${i}`,
@@ -4482,7 +4482,7 @@ export default function AdminDashboard() {
                 <div className="relative">
                   <input
                     type={showDeletePassword ? "text" : "password"}
-                    placeholder="Enter deletion password (Delete6604211989!?)"
+                    placeholder="Enter master authorization password"
                     value={deletePasswordInput}
                     onChange={(e) => {
                       setDeletePasswordInput(e.target.value);

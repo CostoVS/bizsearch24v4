@@ -157,9 +157,9 @@ ${JSON.stringify(batch, null, 2)}`;
         services = ai.servicesOffered.trim();
       }
 
-      // Clean raw address if it contains garbage or double commas
+      // Clean raw address if it contains garbage, category names, or invalid address text
       let cleanAddress = (b.address || "").trim();
-      if (isScraperStatusOrGarbage(cleanAddress)) {
+      if (!cleanAddress || isScraperStatusOrGarbage(cleanAddress) || !isLikelyStreetAddress(cleanAddress)) {
         cleanAddress = "";
       } else {
         cleanAddress = cleanAddress.replace(/,\s*,+/g, ',').trim();

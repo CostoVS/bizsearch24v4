@@ -31075,15 +31075,26 @@ export function findSuburbAndTown(provinceSlug: string, address: string, default
 
   // 3. Fallback to defaultTown or province default
   if (!matchedTown) {
-    if (defaultTown && defaultTown !== "Johannesburg") {
+    const PROVINCE_PRIMARY_TOWNS: Record<string, string> = {
+      "kwazulu-natal": "Durban",
+      "gauteng": "Johannesburg",
+      "western-cape": "Cape Town",
+      "eastern-cape": "Gqeberha",
+      "free-state": "Bloemfontein",
+      "limpopo": "Polokwane",
+      "mpumalanga": "Mbombela",
+      "north-west": "Rustenburg",
+      "northern-cape": "Kimberley",
+    };
+    const provPrimary = PROVINCE_PRIMARY_TOWNS[provinceSlug];
+
+    if (defaultTown && defaultTown !== "Johannesburg" && provObj?.towns.some(t => t.toLowerCase() === defaultTown.toLowerCase())) {
       matchedTown = defaultTown;
+    } else if (provPrimary) {
+      matchedTown = provPrimary;
     } else if (provObj) {
       const validTowns = provObj.towns.filter(t => t.toLowerCase() !== "all locations");
-      if (validTowns.some(t => t.toLowerCase() === defaultTown.toLowerCase())) {
-        matchedTown = defaultTown;
-      } else {
-        matchedTown = validTowns[0] || (provinceSlug === "kwazulu-natal" ? "Durban" : provinceSlug === "western-cape" ? "Cape Town" : provinceSlug === "eastern-cape" ? "Gqeberha" : "Johannesburg");
-      }
+      matchedTown = validTowns[0] || "Johannesburg";
     } else {
       matchedTown = defaultTown || "Johannesburg";
     }
