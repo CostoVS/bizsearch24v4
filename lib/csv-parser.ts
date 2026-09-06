@@ -34,6 +34,70 @@ export function parseCsvLine(line: string): string[] {
 }
 
 /**
+ * Multi-line CSV text parser that properly handles:
+ * - Embedded newlines inside double-quoted fields (e.g. customer reviews, descriptions)
+ * - Mismatched or unclosed quotes in web-scraper exports
+ * - Escaped double quotes ("")
+ * - Carriage returns and line feeds (\r\n and \n)
+ * - Blank trailing rows
+ */
+export function parseCsvText(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        currentField += '"';
+        i++; // skip escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if (char === '\r' || char === '\n') {
+      // Check if we should break line: either !inQuotes, OR upcoming text starts a new record (e.g. "http:// or "https://)
+      let nextIdx = i + 1;
+      while (nextIdx < text.length && (text[nextIdx] === ' ' || text[nextIdx] === '\t' || text[nextIdx] === '\r' || text[nextIdx] === '\n')) {
+        nextIdx++;
+      }
+      const upcoming = text.slice(nextIdx, nextIdx + 30).toLowerCase();
+      const startsNewRecord = upcoming.startsWith('"http://') || upcoming.startsWith('"https://') || upcoming.startsWith('http://') || upcoming.startsWith('https://');
+
+      if (!inQuotes || startsNewRecord) {
+        if (char === '\r' && text[i + 1] === '\n') {
+          i++; // skip \n following \r
+        }
+        inQuotes = false;
+        currentRow.push(currentField.trim());
+        currentField = '';
+        if (currentRow.some(c => c !== '')) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+      } else {
+        currentField += char;
+      }
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField !== '' || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some(c => c !== '')) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
+/**
  * Check if a text field is Google Maps scraper status, review garbage, or non-address UI text
  */
 export function isScraperStatusOrGarbage(text?: string | null): boolean {
@@ -133,13 +197,13 @@ export function isLikelyStreetAddress(text?: string | null): boolean {
   // Explicit category names (Must NOT be recognized as addresses!)
   if (/^(auto body shop|auto repair shop|repair shop|body shop|machine shop|sign shop|coffee shop|barber shop|pet shop|gift shop|flower shop|print shop|sweet shop|tire shop|tyre shop|auto repair centre|repair centre|medical centre|health centre|business centre|car detailing service|car detailing|panel beater|panelbeater|spray painter|spray painting|plumber|electrician|mechanic|locksmith|dentist|attorney|lawyer|doctor|contractor|cleaning service|general business services|accounting|solar installation|restaurant|bakery|butchery)$/i.test(lower)) return false;
 
-  // Street type suffix keywords (only true street indicators)
-  const streetKeywords = /\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|lane|ln|court|ct|terrace|loop|walk|grove|grv|highway|hwy|bvd|passage|pass|r\d{2,3}|n\d{1,2}|m\d{1,2})\b/i;
-
-  // If text ends with generic commercial words (shop, centre, service, store) and has NO street keyword and NO number:
-  if (/(shop|centre|center|service|services|store|dealership|repairs)$/i.test(lower) && !streetKeywords.test(lower) && !/\d/.test(lower)) {
+  // Commercial business suffixes (without any street keyword and without number) must not be treated as addresses
+  if (/(shop|centre|center|service|services|store|dealership|dealer|dealers|repairs|repair|restoration|specialist|supplies|spares|salon|clinic|fitment|towlines|assessment)$/i.test(lower) && !/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|lane|ln|way|blvd|cres|close|court)\b/i.test(lower) && !/\d/.test(lower)) {
     return false;
   }
+
+  // Street type suffix keywords (only true street indicators)
+  const streetKeywords = /\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|cres|crescent|cl|close|way|pl|place|blvd|boulevard|lane|ln|court|ct|terrace|loop|walk|grove|grv|highway|hwy|bvd|passage|pass|r\d{2,3}|n\d{1,2}|m\d{1,2})\b/i;
 
   // Street keyword match
   if (streetKeywords.test(lower)) {
@@ -353,13 +417,24 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // Next check Google Maps scraper specific address columns (w4efsd 4, w4efsd 3, w4efsd 5)
+  // Next check Google Maps scraper specific address columns (w4efsd 4, w4efsd 3, w4efsd 5, etc.)
   if (!address) {
-    const gmapsAddressCandidates = ["w4efsd 4", "w4efsd 3", "w4efsd 5"];
+    const gmapsAddressCandidates = ["w4efsd 4", "w4efsd 3", "w4efsd 5", "w4efsd 2", "w4efsd 6", "w4efsd 7"];
     for (const gCol of gmapsAddressCandidates) {
       const gVal = row[gCol];
-      if (gVal && !isScraperStatusOrGarbage(gVal) && isLikelyStreetAddress(gVal)) {
+      if (gVal && !isScraperStatusOrGarbage(gVal) && gVal !== category && isLikelyStreetAddress(gVal)) {
         address = gVal;
+        break;
+      }
+    }
+  }
+
+  // Next check positional columns in Google Maps scraper rows (columns 6 to 11)
+  if (!address && values.length >= 7) {
+    for (let c = 6; c < Math.min(values.length, 12); c++) {
+      const val = (values[c] || "").trim();
+      if (val && !isScraperStatusOrGarbage(val) && val !== phone && val !== title && val !== category && isLikelyStreetAddress(val)) {
+        address = val;
         break;
       }
     }

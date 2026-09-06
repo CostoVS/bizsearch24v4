@@ -16,7 +16,7 @@ import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/loc
 import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
-import { parseCsvLine, parseCsvRowToRecord, ParsedCsvBusinessRecord } from "@/lib/csv-parser";
+import { parseCsvLine, parseCsvText, parseCsvRowToRecord, ParsedCsvBusinessRecord } from "@/lib/csv-parser";
 
 const SEED_EVENTS: AnalyticsEvent[] = [];
 
@@ -2158,14 +2158,14 @@ export default function AdminDashboard() {
                       reader.onload = (event) => {
                         const text = event.target?.result as string;
                         if (text) {
-                          // Robust CSV client parse
-                          const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
-                          if (lines.length < 2) {
+                          // Robust multi-line CSV client parse
+                          const rawRows = parseCsvText(text);
+                          if (rawRows.length < 2) {
                             alert("Your CSV file must contain a header row and at least one data row.");
                             return;
                           }
 
-                          const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase());
+                          const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
                           const parsedRows = [];
                           let skippedNoPhone = 0;
                           let skippedDuplicates = 0;
@@ -2189,9 +2189,9 @@ export default function AdminDashboard() {
                             }
                           });
 
-                          for (let i = 1; i < lines.length; i++) {
-                            const values = parseCsvLine(lines[i]);
-                            if (values.length === 0 || values.every(v => !v)) continue;
+                          for (let i = 1; i < rawRows.length; i++) {
+                            const values = rawRows[i];
+                            if (!values || values.length === 0 || values.every(v => !v)) continue;
                             const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince);
                             const cleanPhone = (rec.phone || "").replace(/[\s\-\(\)\.]/g, '');
                             if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
@@ -3002,13 +3002,13 @@ export default function AdminDashboard() {
                     reader.onload = (event) => {
                       const content = event.target?.result as string;
                       if (!content) return;
-                      const lines = content.split(/\r?\n/).filter(l => l.trim() !== "");
-                      if (lines.length < 2) {
+                      const rawRows = parseCsvText(content);
+                      if (rawRows.length < 2) {
                         alert("CSV must have headers and at least one entry row.");
                         return;
                       }
 
-                      const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase());
+                      const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
                       const newAds = [];
                       let skippedNoPhone = 0;
                       let skippedDuplicates = 0;
@@ -3030,9 +3030,9 @@ export default function AdminDashboard() {
                         }
                       });
 
-                      for (let i = 1; i < lines.length; i++) {
-                        const cols = parseCsvLine(lines[i]);
-                        if (cols.length < 1 || cols.every(c => !c)) continue;
+                      for (let i = 1; i < rawRows.length; i++) {
+                        const cols = rawRows[i];
+                        if (!cols || cols.length < 1 || cols.every(c => !c)) continue;
                         
                         const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince);
                         let title = rec.title;
