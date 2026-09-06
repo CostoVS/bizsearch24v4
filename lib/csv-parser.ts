@@ -164,6 +164,51 @@ export function isScraperStatusOrGarbage(text?: string | null): boolean {
   return false;
 }
 
+// Explicit category and trade names that must NEVER be recognized as street addresses
+export function isCategoryOrTradeName(text?: string | null): boolean {
+  if (!text) return false;
+  const clean = text.trim().toLowerCase().replace(/^["']|["']$/g, '');
+  if (!clean) return false;
+
+  // Exact matches or common trade / service phrases
+  if (/^(auto body shop|auto repair shop|repair shop|body shop|machine shop|sign shop|coffee shop|barber shop|pet shop|gift shop|flower shop|print shop|sweet shop|tire shop|tyre shop|auto repair centre|repair centre|medical centre|health centre|business centre|car detailing service|car detailing|panel beater|panelbeater|panel beaters|panelbeaters|spray painter|spray painting|spray painters|plumber|plumbers|electrician|electricians|mechanic|mechanics|locksmith|locksmiths|dentist|dentists|attorney|attorneys|lawyer|lawyers|doctor|doctors|contractor|contractors|cleaning service|cleaning services|general business services|accounting|solar installation|solar power|restaurant|restaurants|bakery|butchery|dealership|dealerships|car wash|towlines|towing service|auto electrical|spares|motor spares|parts & accessories|commercial|services|service)$/i.test(clean)) {
+    return true;
+  }
+
+  // Multi-word phrases containing industry keywords without a street keyword or building number
+  if (
+    clean.includes("auto body") ||
+    clean.includes("auto repair") ||
+    clean.includes("body shop") ||
+    clean.includes("panel beat") ||
+    clean.includes("panelbeat") ||
+    clean.includes("spray paint") ||
+    clean.includes("car detailing") ||
+    clean.includes("dent and scratch") ||
+    clean.includes("car repair") ||
+    clean.includes("car service") ||
+    clean.includes("mechanic") ||
+    clean.includes("auto electrical") ||
+    clean.includes("motor spares") ||
+    clean.includes("tyre shop") ||
+    clean.includes("tire shop") ||
+    clean.includes("fitment centre") ||
+    clean.includes("restoration service") ||
+    clean.includes("towing service") ||
+    clean.includes("plumbing service") ||
+    clean.includes("electrical contractor") ||
+    clean.includes("general business services")
+  ) {
+    const hasStreetKeyword = /\b(st|street|rd|road|ave|avenue|dr|drive|cres|crescent|close|cl|lane|ln|way|blvd|boulevard|court|ct|pl|place)\b/i.test(clean);
+    const hasNumber = /\d/.test(clean);
+    if (!hasStreetKeyword || !hasNumber) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Checks if a string is likely a physical street / building / area address
  */
@@ -194,8 +239,8 @@ export function isLikelyStreetAddress(text?: string | null): boolean {
   // Geographic region or province names only
   if (/^(ethekwini|ethekwini ak|kzn|kzn, 1|gauteng|western cape|eastern cape|limpopo|mpumalanga|free state|north west|northern cape)$/i.test(lower)) return false;
 
-  // Explicit category names (Must NOT be recognized as addresses!)
-  if (/^(auto body shop|auto repair shop|repair shop|body shop|machine shop|sign shop|coffee shop|barber shop|pet shop|gift shop|flower shop|print shop|sweet shop|tire shop|tyre shop|auto repair centre|repair centre|medical centre|health centre|business centre|car detailing service|car detailing|panel beater|panelbeater|spray painter|spray painting|plumber|electrician|mechanic|locksmith|dentist|attorney|lawyer|doctor|contractor|cleaning service|general business services|accounting|solar installation|restaurant|bakery|butchery)$/i.test(lower)) return false;
+  // Trade / category names must NEVER be recognized as addresses
+  if (isCategoryOrTradeName(clean)) return false;
 
   // Commercial business suffixes (without any street keyword and without number) must not be treated as addresses
   if (/(shop|centre|center|service|services|store|dealership|dealer|dealers|repairs|repair|restoration|specialist|supplies|spares|salon|clinic|fitment|towlines|assessment)$/i.test(lower) && !/\b(st|street|rd|road|ave|avenue|dr|drive|cnr|corner|lane|ln|way|blvd|cres|close|court)\b/i.test(lower) && !/\d/.test(lower)) {
@@ -411,18 +456,31 @@ export function parseCsvRowToRecord(
   ];
   for (const ah of explicitAddressHeaders) {
     const candidateVal = row[ah];
-    if (candidateVal && !isScraperStatusOrGarbage(candidateVal) && isLikelyStreetAddress(candidateVal)) {
+    if (
+      candidateVal && 
+      !isScraperStatusOrGarbage(candidateVal) && 
+      candidateVal.toLowerCase() !== category.toLowerCase() &&
+      !isCategoryOrTradeName(candidateVal) &&
+      isLikelyStreetAddress(candidateVal)
+    ) {
       address = candidateVal;
       break;
     }
   }
 
   // Next check Google Maps scraper specific address columns (w4efsd 4, w4efsd 3, w4efsd 5, etc.)
+  // NOTE: 'w4efsd' without a number is strictly the category column in scraper tables and MUST NEVER be checked for address
   if (!address) {
     const gmapsAddressCandidates = ["w4efsd 4", "w4efsd 3", "w4efsd 5", "w4efsd 2", "w4efsd 6", "w4efsd 7"];
     for (const gCol of gmapsAddressCandidates) {
       const gVal = row[gCol];
-      if (gVal && !isScraperStatusOrGarbage(gVal) && gVal !== category && isLikelyStreetAddress(gVal)) {
+      if (
+        gVal && 
+        !isScraperStatusOrGarbage(gVal) && 
+        gVal.toLowerCase() !== category.toLowerCase() && 
+        !isCategoryOrTradeName(gVal) &&
+        isLikelyStreetAddress(gVal)
+      ) {
         address = gVal;
         break;
       }
@@ -433,7 +491,15 @@ export function parseCsvRowToRecord(
   if (!address && values.length >= 7) {
     for (let c = 6; c < Math.min(values.length, 12); c++) {
       const val = (values[c] || "").trim();
-      if (val && !isScraperStatusOrGarbage(val) && val !== phone && val !== title && val !== category && isLikelyStreetAddress(val)) {
+      if (
+        val && 
+        !isScraperStatusOrGarbage(val) && 
+        val !== phone && 
+        val !== title && 
+        val.toLowerCase() !== category.toLowerCase() && 
+        !isCategoryOrTradeName(val) &&
+        isLikelyStreetAddress(val)
+      ) {
         address = val;
         break;
       }
@@ -445,7 +511,24 @@ export function parseCsvRowToRecord(
     // Check for multi-column address parts (e.g. Shop 4 + 13 Commercial Rd, or Shop no.2 + 84 Phila Ndwandwe Rd)
     for (let c = 0; c < values.length; c++) {
       const val = (values[c] || "").trim();
-      if (!val || val === title || val === phone || val === category || isScraperStatusOrGarbage(val)) continue;
+      const colHeader = (headers[c] || "").trim().toLowerCase();
+      
+      // Completely ignore category columns, title, phone, or known trade descriptions
+      if (
+        !val || 
+        val === title || 
+        val === phone || 
+        val.toLowerCase() === category.toLowerCase() || 
+        isCategoryOrTradeName(val) ||
+        colHeader === "w4efsd" ||
+        colHeader.includes("category") ||
+        colHeader.includes("type") ||
+        colHeader.includes("trade") ||
+        colHeader.includes("industry") ||
+        isScraperStatusOrGarbage(val)
+      ) {
+        continue;
+      }
       
       // If this is a shop/unit/suite prefix, check if next non-empty column completes it
       const isPrefix = /^(shop|unit|suite|building|block|flat|office|stand)\s+[\w\d]/i.test(val);
@@ -453,7 +536,14 @@ export function parseCsvRowToRecord(
         let combined = val;
         for (let next = c + 1; next < Math.min(values.length, c + 4); next++) {
           const nextVal = (values[next] || "").trim();
-          if (nextVal && !isScraperStatusOrGarbage(nextVal) && nextVal !== phone && nextVal !== title && nextVal !== category) {
+          if (
+            nextVal && 
+            !isScraperStatusOrGarbage(nextVal) && 
+            nextVal !== phone && 
+            nextVal !== title && 
+            nextVal.toLowerCase() !== category.toLowerCase() &&
+            !isCategoryOrTradeName(nextVal)
+          ) {
             if (isLikelyStreetAddress(nextVal) || /\b(rd|road|st|street|ave|avenue|dr|drive|way|blvd|lane|park|pl|place)\b/i.test(nextVal)) {
               combined = `${val}, ${nextVal}`;
               break;
@@ -467,16 +557,21 @@ export function parseCsvRowToRecord(
       }
 
       if (isLikelyStreetAddress(val)) {
-        // Ensure this is not the category column or identical to category
-        const colHeader = (headers[c] || "").trim().toLowerCase();
-        if (colHeader === "w4efsd" || colHeader === "category" || val.toLowerCase() === category.toLowerCase()) {
-          continue;
-        }
         address = val;
         // Check if next column is a town/suburb extension (e.g. "St Patricks Rd" + "Umzinto")
         for (let next = c + 1; next < Math.min(values.length, c + 3); next++) {
           const nextVal = (values[next] || "").trim();
-          if (nextVal && !isScraperStatusOrGarbage(nextVal) && nextVal !== phone && nextVal !== title && !nextVal.includes("@") && !nextVal.startsWith("http") && nextVal.length < 50) {
+          if (
+            nextVal && 
+            !isScraperStatusOrGarbage(nextVal) && 
+            nextVal !== phone && 
+            nextVal !== title && 
+            nextVal.toLowerCase() !== category.toLowerCase() &&
+            !isCategoryOrTradeName(nextVal) &&
+            !nextVal.includes("@") && 
+            !nextVal.startsWith("http") && 
+            nextVal.length < 50
+          ) {
             if (/\b(umzinto|isipingo|pinetown|durban|craigieburn|umkomaas|scottburgh|gauteng|kzn|south coast|central)\b/i.test(nextVal)) {
               address = `${val}, ${nextVal}`;
               break;
@@ -491,7 +586,13 @@ export function parseCsvRowToRecord(
   // Clean address format (e.g. fix double commas: "Shop 4,, 13 Commercial Rd" -> "Shop 4, 13 Commercial Rd")
   if (address) {
     address = address.replace(/,\s*,+/g, ',').trim();
-    if (address === "·" || address === "" || isScraperStatusOrGarbage(address) || !isLikelyStreetAddress(address)) {
+    if (
+      address === "·" || 
+      address === "" || 
+      isScraperStatusOrGarbage(address) || 
+      isCategoryOrTradeName(address) ||
+      !isLikelyStreetAddress(address)
+    ) {
       address = "";
     }
   }

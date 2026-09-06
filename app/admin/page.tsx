@@ -202,7 +202,7 @@ export default function AdminDashboard() {
   const ITEMS_PER_PAGE = 12;
 
   // Master Bulk Delete & Purge Control State
-  const REQUIRED_DELETE_PASSWORD = "Delete6604211989!?";
+  const REQUIRED_DELETE_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_DELETE_PASSWORD || "Delete6604211989!?";
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteScope, setDeleteScope] = useState<"all" | "province" | "category" | "csv" | "unclaimed" | "filtered" | "selected">("all");
   const [deleteSelectedProvince, setDeleteSelectedProvince] = useState("gauteng");
@@ -4482,7 +4482,7 @@ export default function AdminDashboard() {
                 <div className="relative">
                   <input
                     type={showDeletePassword ? "text" : "password"}
-                    placeholder="Enter master authorization password"
+                    placeholder="••••••••••••"
                     value={deletePasswordInput}
                     onChange={(e) => {
                       setDeletePasswordInput(e.target.value);

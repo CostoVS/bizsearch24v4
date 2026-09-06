@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
-import { isScraperStatusOrGarbage, isLikelyStreetAddress } from "@/lib/csv-parser";
+import { isScraperStatusOrGarbage, isLikelyStreetAddress, isCategoryOrTradeName } from "@/lib/csv-parser";
 
 // All categories list for categorization
 const ALL_SUBCATEGORIES = CATEGORIES_STRUCTURED.flatMap(g => g.subcategories);
@@ -159,7 +159,7 @@ ${JSON.stringify(batch, null, 2)}`;
 
       // Clean raw address if it contains garbage, category names, or invalid address text
       let cleanAddress = (b.address || "").trim();
-      if (!cleanAddress || isScraperStatusOrGarbage(cleanAddress) || !isLikelyStreetAddress(cleanAddress)) {
+      if (!cleanAddress || isScraperStatusOrGarbage(cleanAddress) || isCategoryOrTradeName(cleanAddress) || !isLikelyStreetAddress(cleanAddress)) {
         cleanAddress = "";
       } else {
         cleanAddress = cleanAddress.replace(/,\s*,+/g, ',').trim();
