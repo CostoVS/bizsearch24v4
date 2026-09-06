@@ -45,6 +45,7 @@ function getLocalDataNoCache() {
     messages: [],
     deletedMessages: [],
     deletedAds: [],
+    trashAds: [],
     customPartners: [],
     community_posts: [],
     slugs: [],
@@ -110,6 +111,7 @@ async function getDbData(): Promise<any> {
       messages: Array.isArray(localData.messages) ? localData.messages : [],
       deletedMessages: Array.isArray(localData.deletedMessages) ? localData.deletedMessages : [],
       deletedAds: Array.isArray(localData.deletedAds) ? localData.deletedAds : [],
+      trashAds: Array.isArray(localData.trashAds) ? localData.trashAds : [],
       customPartners: Array.isArray(localData.customPartners) ? localData.customPartners : [],
       community_posts: Array.isArray(localData.community_posts) ? localData.community_posts : [],
       slugs: Array.isArray(localData.slugs) ? localData.slugs : [],
@@ -156,6 +158,7 @@ function mergeData(local: any, db: any) {
     messages: [],
     deletedMessages: [],
     deletedAds: [],
+    trashAds: [],
     customPartners: [],
     community_posts: [],
     slugs: [],
@@ -203,14 +206,16 @@ function mergeData(local: any, db: any) {
   merged.community_posts = mergeArrays(localVal.community_posts, dbVal.community_posts, 'id');
   merged.slugs = mergeArrays(localVal.slugs, dbVal.slugs, 'slug');
   merged.claimRequests = mergeArrays(localVal.claimRequests || [], dbVal.claimRequests || [], 'id');
+  merged.trashAds = mergeArrays(localVal.trashAds || [], dbVal.trashAds || [], 'id');
 
   merged.deletedAds = mergeIds(localVal.deletedAds, dbVal.deletedAds);
   merged.deletedMessages = mergeIds(localVal.deletedMessages, dbVal.deletedMessages);
 
-  // Filter out deleted ads
+  // Filter out permanently deleted ads from trash as well if any
   if (merged.deletedAds.length > 0) {
     const deletedAdsSet = new Set(merged.deletedAds);
     merged.ads = merged.ads.filter((ad: any) => ad && ad.id && !deletedAdsSet.has(ad.id));
+    merged.trashAds = merged.trashAds.filter((ad: any) => ad && ad.id && !deletedAdsSet.has(ad.id));
   }
 
   // Filter out deleted messages
@@ -250,7 +255,14 @@ async function loadAndReconcileData(): Promise<any> {
     if (finalData.ads && Array.isArray(finalData.ads) && finalData.deletedAds && Array.isArray(finalData.deletedAds)) {
       const deletedSet = new Set(finalData.deletedAds);
       finalData.ads = finalData.ads.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
+      if (Array.isArray(finalData.trashAds)) {
+        finalData.trashAds = finalData.trashAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
+      }
     }
+  }
+
+  if (!Array.isArray(finalData.trashAds)) {
+    finalData.trashAds = [];
   }
 
   return finalData;
@@ -342,29 +354,61 @@ export async function POST(req: Request) {
 
     if (body.deleteAdId) {
       const ads = Array.isArray(currentData.ads) ? currentData.ads : [];
+      const targetAd = ads.find((ad: any) => ad && ad.id === body.deleteAdId);
       newData.ads = ads.filter((ad: any) => ad && ad.id !== body.deleteAdId);
       
-      const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
-      if (!deletedAds.includes(body.deleteAdId)) {
-        newData.deletedAds = [...deletedAds, body.deleteAdId];
+      // If ad found and permanent is not set, add to trashAds
+      if (body.permanentDelete) {
+        const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
+        if (!deletedAds.includes(body.deleteAdId)) {
+          newData.deletedAds = [...deletedAds, body.deleteAdId];
+        }
+        const trash = Array.isArray(currentData.trashAds) ? currentData.trashAds : [];
+        newData.trashAds = trash.filter((t: any) => t && t.id !== body.deleteAdId);
+      } else {
+        const trash = Array.isArray(currentData.trashAds) ? currentData.trashAds : [];
+        const existingTrash = trash.find((t: any) => t && t.id === body.deleteAdId);
+        if (!existingTrash && targetAd) {
+          newData.trashAds = [{ ...targetAd, deletedAt: new Date().toISOString() }, ...trash];
+        }
       }
     } else if (body.forceSyncAds && Array.isArray(body.ads)) {
       // Client is sending authoritative ad collection (e.g. from Admin, deduplication, or saved state)
       const incomingAds = cleanAdsArray(body.ads.filter((a: any) => a && a.id));
       const incomingIdSet = new Set(incomingAds.map((a: any) => a.id));
       
-      // Any ads currently in database that are missing in the incoming list are marked deleted
       const currentAds = Array.isArray(currentData.ads) ? currentData.ads : [];
       const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
       const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
       
-      const missingIds = currentAds
-        .filter((a: any) => a && a.id && !incomingIdSet.has(a.id))
-        .map((a: any) => a.id);
-        
-      const allDeletedSet = new Set([...currentDeleted, ...clientDeleted, ...missingIds]);
+      // If client supplied explicit trashAds, respect them
+      if (Array.isArray(body.trashAds)) {
+        newData.trashAds = body.trashAds;
+      } else {
+        // Collect missing ads into trashAds if not already present
+        const currentTrash = Array.isArray(currentData.trashAds) ? currentData.trashAds : [];
+        const trashIdSet = new Set(currentTrash.map((t: any) => t?.id));
+        const newlyRemoved = currentAds.filter((a: any) => a && a.id && !incomingIdSet.has(a.id) && !trashIdSet.has(a.id));
+        if (newlyRemoved.length > 0) {
+          const stamped = newlyRemoved.map((a: any) => ({ ...a, deletedAt: new Date().toISOString() }));
+          newData.trashAds = [...stamped, ...currentTrash];
+        } else {
+          newData.trashAds = currentTrash;
+        }
+      }
+
+      // If permanent delete IDs are specified
+      if (Array.isArray(body.permanentDeletedIds) && body.permanentDeletedIds.length > 0) {
+        const permSet = new Set(body.permanentDeletedIds);
+        newData.trashAds = (newData.trashAds || []).filter((t: any) => t && t.id && !permSet.has(t.id));
+      }
+
+      const allDeletedSet = new Set([...currentDeleted, ...clientDeleted]);
       newData.deletedAds = Array.from(allDeletedSet);
       newData.ads = incomingAds.filter((a: any) => !allDeletedSet.has(a.id));
+      if (Array.isArray(newData.trashAds)) {
+        newData.trashAds = newData.trashAds.filter((t: any) => t && t.id && !allDeletedSet.has(t.id));
+      }
     } else if (body.ads) {
       const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
       const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
@@ -372,6 +416,9 @@ export async function POST(req: Request) {
       const mergedAds = mergeData({ ads: currentData.ads }, { ads: body.ads }).ads;
       newData.deletedAds = Array.from(deletedSet);
       newData.ads = mergedAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
+      if (Array.isArray(body.trashAds)) {
+        newData.trashAds = body.trashAds.filter((t: any) => t && t.id && !deletedSet.has(t.id));
+      }
     } else {
       Object.assign(newData, body);
     }

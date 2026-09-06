@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
-import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, MapPin, MessageSquare, Phone, BellRing } from "lucide-react";
+import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner, getTrashAds, restoreAdFromTrash, permanentlyDeleteAdFromTrash, emptyTrashPermanently } from "@/lib/data";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, MapPin, MessageSquare, Phone, BellRing, Undo2, RotateCcw, ArchiveRestore, History } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
@@ -212,6 +212,14 @@ export default function AdminDashboard() {
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [selectedAdIds, setSelectedAdIds] = useState<string[]>([]);
   const [showDeletePassword, setShowDeletePassword] = useState(false);
+
+  // Recycle Bin & Trash State
+  const [trashAds, setTrashAds] = useState<any[]>([]);
+  const [trashSearchTerm, setTrashSearchTerm] = useState("");
+  const [selectedTrashIds, setSelectedTrashIds] = useState<string[]>([]);
+  const [isRestoringTrash, setIsRestoringTrash] = useState(false);
+  const [isPurgingTrash, setIsPurgingTrash] = useState(false);
+  const [trashFeedback, setTrashFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     setAdPage(1);
@@ -483,10 +491,12 @@ export default function AdminDashboard() {
         // Load unified ads from master store & fetch fresh from server
         const currentLocal = getStoredAds();
         setAds(currentLocal);
+        setTrashAds(getTrashAds());
         fetchAndStoreAds().then((freshAds) => {
           if (freshAds && Array.isArray(freshAds) && freshAds.length > 0) {
             setAds(freshAds);
           }
+          setTrashAds(getTrashAds());
         }).catch(console.error);
 
         // Auto-load custom slugs and premium documents
@@ -518,6 +528,131 @@ export default function AdminDashboard() {
       }
     }
   }, [activeTab]);
+
+  // Hook to keep trash synchronized
+  useEffect(() => {
+    const handleTrashUpdated = () => {
+      setTrashAds(getTrashAds());
+    };
+    window.addEventListener("searchbiz_trash_updated", handleTrashUpdated);
+    window.addEventListener("searchbiz_ads_updated", handleTrashUpdated);
+    return () => {
+      window.removeEventListener("searchbiz_trash_updated", handleTrashUpdated);
+      window.removeEventListener("searchbiz_ads_updated", handleTrashUpdated);
+    };
+  }, []);
+
+  const handleRestoreSingleAd = async (id: string) => {
+    setIsRestoringTrash(true);
+    setTrashFeedback(null);
+    try {
+      const result = await restoreAdFromTrash(id);
+      if (result.success) {
+        setTrashAds(getTrashAds());
+        setAds(getStoredAds());
+        setSelectedTrashIds(prev => prev.filter(item => item !== id));
+        setTrashFeedback({ type: 'success', message: `Listing "${result.ad?.title || 'Selected ad'}" was successfully restored to the live directory!` });
+        setTimeout(() => setTrashFeedback(null), 5000);
+      } else {
+        setTrashFeedback({ type: 'error', message: 'Failed to restore listing from recycle bin.' });
+      }
+    } catch (e) {
+      setTrashFeedback({ type: 'error', message: 'Error occurred during restore operation.' });
+    } finally {
+      setIsRestoringTrash(false);
+    }
+  };
+
+  const handleRestoreBulkTrash = async () => {
+    if (selectedTrashIds.length === 0) return;
+    setIsRestoringTrash(true);
+    setTrashFeedback(null);
+    try {
+      let count = 0;
+      for (const id of selectedTrashIds) {
+        const res = await restoreAdFromTrash(id);
+        if (res.success) count++;
+      }
+      setTrashAds(getTrashAds());
+      setAds(getStoredAds());
+      setSelectedTrashIds([]);
+      setTrashFeedback({ type: 'success', message: `Successfully restored ${count} listing(s) back to the active directory!` });
+      setTimeout(() => setTrashFeedback(null), 5000);
+    } catch (e) {
+      setTrashFeedback({ type: 'error', message: 'Error occurred during bulk restore operation.' });
+    } finally {
+      setIsRestoringTrash(false);
+    }
+  };
+
+  const handlePermanentDeleteSingle = async (id: string, title?: string) => {
+    if (!confirm(`Are you sure you want to PERMANENTLY delete "${title || 'this listing'}"? This action cannot be undone.`)) {
+      return;
+    }
+    setIsPurgingTrash(true);
+    setTrashFeedback(null);
+    try {
+      const success = await permanentlyDeleteAdFromTrash(id);
+      if (success) {
+        setTrashAds(getTrashAds());
+        setSelectedTrashIds(prev => prev.filter(item => item !== id));
+        setTrashFeedback({ type: 'success', message: `Listing was permanently deleted from central records.` });
+        setTimeout(() => setTrashFeedback(null), 5000);
+      } else {
+        setTrashFeedback({ type: 'error', message: 'Failed to delete permanently.' });
+      }
+    } catch (e) {
+      setTrashFeedback({ type: 'error', message: 'Error occurred while permanently deleting.' });
+    } finally {
+      setIsPurgingTrash(false);
+    }
+  };
+
+  const handlePermanentDeleteBulk = async () => {
+    if (selectedTrashIds.length === 0) return;
+    if (!confirm(`Are you sure you want to PERMANENTLY purge ${selectedTrashIds.length} listing(s)? This action cannot be undone.`)) {
+      return;
+    }
+    setIsPurgingTrash(true);
+    setTrashFeedback(null);
+    try {
+      for (const id of selectedTrashIds) {
+        await permanentlyDeleteAdFromTrash(id);
+      }
+      setTrashAds(getTrashAds());
+      setSelectedTrashIds([]);
+      setTrashFeedback({ type: 'success', message: `Successfully purged selected items from the database permanently.` });
+      setTimeout(() => setTrashFeedback(null), 5000);
+    } catch (e) {
+      setTrashFeedback({ type: 'error', message: 'Error occurred during bulk purge.' });
+    } finally {
+      setIsPurgingTrash(false);
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    if (trashAds.length === 0) return;
+    if (!confirm(`Are you sure you want to empty the entire Recycle Bin (${trashAds.length} listings)? All deleted items will be permanently erased.`)) {
+      return;
+    }
+    setIsPurgingTrash(true);
+    setTrashFeedback(null);
+    try {
+      const success = await emptyTrashPermanently();
+      if (success) {
+        setTrashAds([]);
+        setSelectedTrashIds([]);
+        setTrashFeedback({ type: 'success', message: 'Recycle bin emptied permanently.' });
+        setTimeout(() => setTrashFeedback(null), 5000);
+      } else {
+        setTrashFeedback({ type: 'error', message: 'Failed to empty recycle bin.' });
+      }
+    } catch (e) {
+      setTrashFeedback({ type: 'error', message: 'Error occurred while emptying trash.' });
+    } finally {
+      setIsPurgingTrash(false);
+    }
+  };
 
   const resolveReport = (id: string) => {
     const updated = reports.filter(r => r.id !== id);
@@ -1168,6 +1303,7 @@ export default function AdminDashboard() {
                 { id: 'mapping_requests', label: `Area Mapping Requests (${mappingRequests.filter(r => r.status === 'PENDING').length})`, icon: MapPin, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'duplicates', label: 'Duplicate & Multi-Ads', icon: Copy, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'csv_uploads', label: `CSV Upload & Claims (${claimRequests.filter(c => c?.status === 'PENDING').length})`, icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
+                { id: 'trash', label: `Recycle Bin & Trash (${trashAds.length})`, icon: Trash2, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'slugs', label: `Custom URL Slugs (${customSlugs.length})`, icon: Sparkles, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'premium', label: `Premium Review (${premiumApps.filter(a => a.status === 'PENDING').length})`, icon: ShieldAlert, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
                 { id: 'banners', label: 'Global Site Banners', icon: LayoutTemplate, activeClass: 'bg-emerald-650 text-white', inactiveClass: 'text-slate-650 hover:bg-slate-50' },
@@ -1514,6 +1650,318 @@ export default function AdminDashboard() {
                 )}
              </div>
            </div>
+        </div>
+      )}
+
+      {/* RECYCLE BIN & TRASH MANAGEMENT TAB */}
+      {activeTab === 'trash' && (
+        <div className="lg:col-span-4 space-y-6">
+          {/* Header Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-display flex items-center gap-2.5">
+                    <span>Recycle Bin & Ad Recovery</span>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                      {trashAds.length} items
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Deleted advertisements are safely archived here. Restore them to the live directory with 1 click or permanently erase them.
+                  </p>
+                </div>
+              </div>
+
+              {trashAds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  {selectedTrashIds.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleRestoreBulkTrash}
+                        disabled={isRestoringTrash}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        <RotateCcw className={`w-3.5 h-3.5 ${isRestoringTrash ? 'animate-spin' : ''}`} />
+                        <span>Restore Selected ({selectedTrashIds.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handlePermanentDeleteBulk}
+                        disabled={isPurgingTrash}
+                        className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className={`w-3.5 h-3.5 ${isPurgingTrash ? 'animate-spin' : ''}`} />
+                        <span>Purge Selected ({selectedTrashIds.length})</span>
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleEmptyTrash}
+                    disabled={isPurgingTrash || trashAds.length === 0}
+                    className="px-4 py-2.5 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash className="w-3.5 h-3.5" />
+                    <span>Empty Recycle Bin</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Action Feedback Notification */}
+            {trashFeedback && (
+              <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold animate-in fade-in duration-200 ${
+                trashFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-rose-50 border-rose-200 text-rose-900'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {trashFeedback.type === 'success' ? (
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{trashFeedback.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTrashFeedback(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Search Filter & Bulk Selection Header */}
+            {trashAds.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search deleted listings by business name, phone, category, town..."
+                    value={trashSearchTerm}
+                    onChange={(e) => setTrashSearchTerm(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                  />
+                  {trashSearchTerm && (
+                    <button
+                      onClick={() => setTrashSearchTerm("")}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const filteredTrash = trashAds.filter(item => {
+                      if (!trashSearchTerm) return true;
+                      const q = trashSearchTerm.toLowerCase();
+                      return (
+                        item.title?.toLowerCase().includes(q) ||
+                        item.category?.toLowerCase().includes(q) ||
+                        item.city?.toLowerCase().includes(q) ||
+                        item.suburb?.toLowerCase().includes(q) ||
+                        item.phone?.toLowerCase().includes(q) ||
+                        item.email?.toLowerCase().includes(q)
+                      );
+                    });
+                    const allFilteredSelected = filteredTrash.length > 0 && filteredTrash.every(t => selectedTrashIds.includes(t.id));
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (allFilteredSelected) {
+                            setSelectedTrashIds([]);
+                          } else {
+                            setSelectedTrashIds(filteredTrash.map(t => t.id));
+                          }
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+                      >
+                        {allFilteredSelected ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                        <span>{allFilteredSelected ? "Deselect All" : "Select All"}</span>
+                      </button>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Trash Items List */}
+            {(() => {
+              const filteredTrash = trashAds.filter(item => {
+                if (!trashSearchTerm) return true;
+                const q = trashSearchTerm.toLowerCase();
+                return (
+                  item.title?.toLowerCase().includes(q) ||
+                  item.category?.toLowerCase().includes(q) ||
+                  item.city?.toLowerCase().includes(q) ||
+                  item.suburb?.toLowerCase().includes(q) ||
+                  item.phone?.toLowerCase().includes(q) ||
+                  item.email?.toLowerCase().includes(q)
+                );
+              });
+
+              if (trashAds.length === 0) {
+                return (
+                  <div className="py-16 text-center space-y-4">
+                    <div className="w-16 h-16 rounded-3xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center border border-slate-200">
+                      <ArchiveRestore className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-800">The Recycle Bin is Empty</h3>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                        Any listings deleted from the Advertisement Control, CSV Uploads, or Duplicate Manager will safely accumulate here for quick restoration.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (filteredTrash.length === 0) {
+                return (
+                  <div className="py-12 text-center text-slate-500 text-xs font-medium">
+                    No deleted listings matched &ldquo;{trashSearchTerm}&rdquo;.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredTrash.map((ad) => {
+                    const isSelected = selectedTrashIds.includes(ad.id);
+                    const formattedDate = ad.deletedAt
+                      ? new Date(ad.deletedAt).toLocaleString("en-ZA", {
+                          dateStyle: "medium",
+                          timeStyle: "short"
+                        })
+                      : "Recently deleted";
+
+                    return (
+                      <div
+                        key={ad.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                          isSelected
+                            ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-400/30'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3.5">
+                          {/* Selection Checkbox */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTrashIds(prev =>
+                                prev.includes(ad.id)
+                                  ? prev.filter(x => x !== ad.id)
+                                  : [...prev, ad.id]
+                              );
+                            }}
+                            className="mt-1 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-amber-600" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-300" />
+                            )}
+                          </button>
+
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm font-black text-slate-900 font-display">
+                                {ad.title || "Untitled Business Listing"}
+                              </h4>
+                              {ad.category && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                  {ad.category}
+                                </span>
+                              )}
+                              {ad.province && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  {ad.city ? `${ad.city}, ` : ''}{ad.province.toUpperCase()}
+                                </span>
+                              )}
+                              {ad.source === "csv" && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                  CSV Import
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-medium pt-0.5">
+                              {ad.phone && (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="w-3 h-3 text-slate-400" />
+                                  <span>{ad.phone}</span>
+                                </span>
+                              )}
+                              {ad.email && (
+                                <span className="flex items-center gap-1">
+                                  <MessageSquare className="w-3 h-3 text-slate-400" />
+                                  <span className="truncate max-w-[200px]">{ad.email}</span>
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                                <History className="w-3 h-3 text-amber-600" />
+                                <span>Deleted: {formattedDate}</span>
+                              </span>
+                            </div>
+
+                            {ad.description && (
+                              <p className="text-xs text-slate-600 line-clamp-1 pt-1 max-w-2xl italic">
+                                &ldquo;{ad.description}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreSingleAd(ad.id)}
+                            disabled={isRestoringTrash}
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                            title="Restore this listing to live directory"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Restore</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handlePermanentDeleteSingle(ad.id, ad.title)}
+                            disabled={isPurgingTrash}
+                            className="px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                            title="Permanently remove from storage"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Purge</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 
