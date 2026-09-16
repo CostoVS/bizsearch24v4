@@ -7,7 +7,11 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt } = await req.json();
+    const body = await req.json();
+    const prompt = body.prompt || body.message || "";
+    if (!prompt) {
+      return NextResponse.json({ text: "Please provide a prompt or message." }, { status: 400 });
+    }
 
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
@@ -63,7 +67,7 @@ BEHAVIOR RULES:
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         systemInstruction,

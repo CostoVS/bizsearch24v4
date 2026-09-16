@@ -462,6 +462,89 @@ To undo this, send:
     // Send typing action to Telegram
     await sendTelegramChatAction(chatId, 'typing');
 
+    // 10b. Natural Language Email Sending
+    const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+    if (emailMatch && (lower.includes('send an email') || lower.includes('send email') || lower.includes('email explaining') || lower.includes('email about') || lower.includes('mail to') || lower.includes('mail explaining') || lower.includes('shoot an email'))) {
+      const recipient = emailMatch[0];
+      const subject = "Discover SearchBiz.co.za | South Africa's Verified Local Directory";
+      const plainBody = `Hi there,
+
+Welcome to SearchBiz (https://searchbiz.co.za) - South Africa's premier verified local business directory and digital commercial platform.
+
+What is SearchBiz?
+SearchBiz is engineered for South African entrepreneurs, contractors, tradespeople, and local businesses. We connect real customers with vetted local services across Johannesburg, Cape Town, Durban, Pretoria, and all 9 provinces.
+
+Why Businesses Choose SearchBiz:
+1. Verified Trust Badge - Builds immediate buyer confidence and eliminates scam fears.
+2. High Local SEO Visibility - Fast, Google-optimized business profiles that rank high on local search.
+3. Direct Customer Leads - Direct phone call, WhatsApp, and email click-throughs straight to your team.
+
+Verified Pricing & Plans:
+• Base Premium Plan: R199.00 / month (Billed via South African debit card mandate)
+  - Unlimited hosting for static websites
+  - Unlimited domain-branded email accounts (@yourdomain.co.za)
+  - Custom design assistance for your smart static website
+  - Elite verified status and 1 custom directory listing in the SearchBiz index
+• Extras & Add-Ons:
+  - Additional ad listings: +R199.00 / month each
+  - .co.za Domain Registration: R99.00 / year
+
+How to Get Started:
+Visit https://searchbiz.co.za to claim or submit your business listing today.
+
+Best regards,
+The SearchBiz Executive Team
+https://searchbiz.co.za
+support@searchbiz.co.za`;
+
+      try {
+        const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
+        const smtpPort = Number(process.env.SMTP_PORT) || 465;
+        const smtpUser = (process.env.SMTP_USER || 'mailsearchbiz@gmail.com').trim();
+        const rawPass = process.env.SMTP_PASS || 'feqn hfps huhn kjhh';
+
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpPort === 465,
+          auth: { user: smtpUser, pass: rawPass.replace(/\s+/g, '') }
+        });
+
+        await transporter.sendMail({
+          from: `"SearchBiz AI" <${smtpUser}>`,
+          to: recipient,
+          subject,
+          text: plainBody
+        });
+
+        await sendTelegramMessage(chatId, `📧 <b>Email Successfully Dispatched!</b>\n\n📬 <b>To:</b> <code>${recipient}</code>\n📝 <b>Subject:</b> <i>${subject}</i>\n\n✨ I have sent a full breakdown of <b>SearchBiz.co.za</b> and the <b>R199.00/month</b> Premium plan. Check your inbox!`);
+        return NextResponse.json({ ok: true });
+      } catch (e: any) {
+        console.error('Email dispatch error:', e);
+        await sendTelegramMessage(chatId, `❌ Failed to dispatch email: ${e.message}`);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    // 10c. Storytelling & Creative Writing
+    if (lower.includes('tell a story') || lower.includes('tell one story') || lower.includes('tell me a story') || lower.includes('give me a story') || lower.includes('write a story') || lower === 'story') {
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const aiRes = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Tell a captivating, heartwarming, and inspirational short story about a South African entrepreneur building a business against all odds, with wit, warmth, and perseverance. Keep it engaging and under 220 words.`
+          });
+          if (aiRes?.text) {
+            await sendTelegramMessage(chatId, `📖 <b>Here is a story for you:</b>\n\n${aiRes.text}`);
+            return NextResponse.json({ ok: true });
+          }
+        } catch (e) {
+          console.error('Gemini story error:', e);
+        }
+      }
+    }
+
     // 11. Conversational & FAQ Handlers
     // Greetings
     if (/^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)/i.test(text)) {
