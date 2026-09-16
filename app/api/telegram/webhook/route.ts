@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createBotAd, deleteBotAd, searchBotAds, restoreBotAd, getBotTrashAds } from '@/lib/bot-ad-service';
 import nodemailer from 'nodemailer';
+import { GoogleGenAI } from '@google/genai';
 
 export const dynamic = 'force-dynamic';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8957546599:AAGWICeBceFDMBwJx2JAhFs6xMvi71biueI';
 const TELEGRAM_API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+async function sendTelegramChatAction(chatId: number | string, action: string = 'typing') {
+  try {
+    await fetch(`${TELEGRAM_API_BASE}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action })
+    });
+  } catch {
+    // silent
+  }
+}
 
 async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: any) {
   try {
@@ -446,17 +459,89 @@ To undo this, send:
       }
     }
 
+    // Send typing action to Telegram
+    await sendTelegramChatAction(chatId, 'typing');
+
+    // 11. Conversational & FAQ Handlers
+    // Greetings
+    if (/^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)/i.test(text)) {
+      const greeting = `
+👋 <b>Hello ${senderName}!</b>
+
+I'm doing great, thank you for asking! 😊 I am your SearchBiz Executive Agent.
+
+Everything is live and operational on <b>searchbiz.co.za</b>. Here is what I can do for you right now:
+• <b>Publish new ads:</b> Tell me the business name, city, and phone
+• <b>Manage directory:</b> Remove, restore, or search business listings
+• <b>Email client:</b> Send professional emails via SMTP or check inbox
+• <b>Answer questions:</b> Ask me anything about SearchBiz or business listings
+
+How can I help you today?
+`;
+      await sendTelegramMessage(chatId, greeting);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Pricing inquiries
+    if (/(?:pricing|plans?|how\s+much|rates?|costs?|fees?|subscription)/i.test(lower)) {
+      const pricingMsg = `
+💎 <b>SearchBiz Verified Pricing & Plans</b>
+
+• <b>Base Premium Plan:</b> <b>R199.00 / month</b>
+  - Unlimited hosting for static websites
+  - Unlimited domain-branded email accounts (@yourdomain.co.za)
+  - Custom design assistance for smart static websites
+  - Elite verified status and 1 custom directory listing
+
+• <b>Add-Ons & Extras:</b>
+  - Additional ad listing: <b>+R199.00 / month</b> each
+  - .co.za Domain Registration: <b>R99.00 / year</b>
+
+Would you like to post an ad or create a new business listing now?
+`;
+      await sendTelegramMessage(chatId, pricingMsg);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Gratitude & Compliments
+    if (/^(?:thanks|thank\s+you|awesome|great|cool|perfect|well\s+done)/i.test(text)) {
+      await sendTelegramMessage(chatId, `🙏 <b>You're welcome, ${senderName}!</b> Always happy to assist. Let me know whenever you need more listings or updates!`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // General Generative AI Conversational Assistant (Gemini)
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const aiRes = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: `You are Hermes, the helpful and professional Executive AI Bot for SearchBiz (South Africa's verified local business directory at searchbiz.co.za).
+The user is ${senderName}.
+Their message: "${text}".
+Provide a friendly, concise, and helpful response suitable for Telegram. Mention how you can help them with SearchBiz directory listings, advertising (R199/mo plan), or business inquiries. Format with clean, readable text. Keep it under 150 words.`
+        });
+
+        if (aiRes && aiRes.text) {
+          await sendTelegramMessage(chatId, aiRes.text);
+          return NextResponse.json({ ok: true });
+        }
+      } catch (geminiErr: any) {
+        console.error('[TelegramWebhook] Gemini generation failed:', geminiErr);
+      }
+    }
+
     // Fallback: friendly guidance
     await sendTelegramMessage(chatId, `
-🤖 <b>SearchBiz AI Executive Bot</b>
-I didn't quite catch that command.
+🤖 <b>SearchBiz Executive Agent</b>
+I'm here to help, ${senderName}!
 
-Try:
-• <code>/post_ad Business Name | Category | City | Phone | Description</code>
-• <code>/delete_ad Business Name</code>
-• <code>/list_ads</code>
-• <code>/send_email to@example.com | Subject | Message</code>
-• Or send <code>/help</code> for full instructions.
+You can chat with me or give me any command:
+• <i>"Make an ad for Elite Plumbers in Durban, 0821234567, leak repairs"</i>
+• <i>"Delete ad for Elite Plumbers"</i>
+• <i>"What are the pricing plans?"</i>
+• <code>/list_ads</code> to search active directory listings
+• <code>/send_email to@domain.com | Subject | Body</code>
+• Send <code>/help</code> for full instructions.
 `);
 
     return NextResponse.json({ ok: true });

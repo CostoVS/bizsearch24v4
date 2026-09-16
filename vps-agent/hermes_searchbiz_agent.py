@@ -29,6 +29,7 @@ from email.mime.multipart import MIMEMultipart
 import urllib.request
 import urllib.parse
 import urllib.error
+import re
 
 # Setup Logging
 logging.basicConfig(
@@ -85,6 +86,13 @@ def send_telegram(chat_id: int, text: str):
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": False
+    })
+
+def send_chat_action(chat_id: int, action: str = "typing"):
+    """Shows native 'typing...' indicator in Telegram"""
+    return telegram_call("sendChatAction", {
+        "chat_id": chat_id,
+        "action": action
     })
 
 
@@ -262,32 +270,63 @@ def directadmin_create_mailbox(username: str, password: str, domain: str = "sear
 
 
 # ============================================================================
-# Ollama Brain (qwen2.5:3b)
+# Multi-Tier AI Brain (Local Ollama qwen2.5:3b + SearchBiz Cloud AI API)
 # ============================================================================
-def ask_ollama(prompt: str, system_prompt: str = None) -> str:
-    """Invokes local Ollama qwen2.5:3b model"""
-    url = f"{OLLAMA_API_URL}/api/generate"
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.3,
-            "num_predict": 350
-        }
-    }
-    if system_prompt:
-        payload["system"] = system_prompt
-
+def ask_ai(prompt: str, system_prompt: str = None) -> str:
+    """Invokes AI Brain with automatic multi-tier fallback:
+    1. Local Ollama qwen2.5:3b (fast 12s timeout)
+    2. SearchBiz Cloud AI Endpoint (/api/llama3/chat or /api/gemini/chat)
+    """
+    # 1. Try local Ollama
     try:
+        url = f"{OLLAMA_API_URL}/api/generate"
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.4,
+                "num_predict": 280
+            }
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=40) as res:
+        with urllib.request.urlopen(req, timeout=12) as res:
             ans = json.loads(res.read().decode("utf-8"))
-            return ans.get("response", "").strip()
+            resp = ans.get("response", "").strip()
+            if resp:
+                return resp
     except Exception as e:
-        logger.error(f"Ollama call failed: {e}")
-        return ""
+        logger.warning(f"Local Ollama inference failed/slow ({e}). Falling back to SearchBiz Cloud AI...")
+
+    # 2. Try SearchBiz Server AI
+    for ep in ["/api/llama3/chat", "/api/gemini/chat"]:
+        try:
+            cloud_url = f"{SEARCHBIZ_API_URL}{ep}"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"
+            }
+            cloud_data = json.dumps({
+                "message": prompt,
+                "prompt": prompt
+            }).encode("utf-8")
+            req = urllib.request.Request(cloud_url, data=cloud_data, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as res:
+                ans = json.loads(res.read().decode("utf-8"))
+                cloud_text = ans.get("reply") or ans.get("text") or ans.get("response")
+                if cloud_text:
+                    return cloud_text.strip()
+        except Exception as e2:
+            logger.warning(f"SearchBiz cloud AI endpoint '{ep}' error: {e2}")
+
+    return ""
+
+def ask_ollama(prompt: str, system_prompt: str = None) -> str:
+    return ask_ai(prompt, system_prompt)
 
 
 # ============================================================================
@@ -476,67 +515,133 @@ Listing <b>"{removed.get('title', target)}"</b> (ID: <code>{removed.get('id')}</
             send_telegram(chat_id, f"❌ DirectAdmin error: {res.get('error')}")
         return
 
-    # 10. Natural Language Router via Ollama (qwen2.5:3b)
-    send_telegram(chat_id, "🤖 <i>Processing with Ollama qwen2.5:3b...</i>")
+    # Send typing action to Telegram
+    send_chat_action(chat_id, "typing")
+    lower = text.lower()
 
-    system_prompt = """You are Hermes, an autonomous AI executive on a Linux VPS managing searchbiz.co.za.
-Determine the user's intent. Output ONLY a valid JSON object matching one of these schemas:
-1. For creating an ad:
-{"intent": "create_ad", "title": "...", "category": "...", "city": "...", "phone": "...", "description": "..."}
-2. For deleting an ad:
-{"intent": "delete_ad", "target": "..."}
-3. For sending email:
-{"intent": "send_email", "to": "...", "subject": "...", "body": "..."}
-4. For general answer or chat:
-{"intent": "chat", "reply": "..."}
-DO NOT output markdown code fences, ONLY the raw JSON string."""
+    # 10. Instant Conversational Greetings & Well-being
+    if re.search(r'^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)', lower):
+        reply = f"""👋 <b>Hello {sender}!</b>
 
-    ollama_resp = ask_ollama(text, system_prompt=system_prompt)
-    logger.info(f"Ollama raw response: {ollama_resp}")
+I'm doing great, thank you for asking! 😊 I am Hermes, your SearchBiz Executive Agent running on your VPS.
 
-    try:
-        # Clean response if wrapped in code block
-        clean_json = ollama_resp.strip()
-        if clean_json.startswith("```"):
-            clean_json = clean_json.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+Everything is live and operational on <b>{SEARCHBIZ_API_URL}</b>. Here is what I can do for you:
+• <b>Publish an ad:</b> <i>"Make an ad for Quick Towing in Pretoria, 0825551234, 24/7 breakdown"</i>
+• <b>Manage ads:</b> <i>"Delete ad for Quick Towing"</i> or <code>/list_ads</code>
+• <b>Send emails:</b> <code>/send_email client@domain.com | Subject | Body</code>
+• <b>Check inbox:</b> <code>/check_inbox</code>
+• <b>Business questions:</b> Ask me about pricing, services, or business marketing!
 
-        data = json.loads(clean_json)
-        intent = data.get("intent")
+What would you like to work on today?"""
+        send_telegram(chat_id, reply)
+        return
 
-        if intent == "create_ad":
-            res = searchbiz_create_ad(
-                title=data.get("title", "Business Listing"),
-                category=data.get("category", "General Services"),
-                city=data.get("city", "Johannesburg"),
-                phone=data.get("phone", "0821234567"),
-                description=data.get("description", text)
-            )
-            if res.get("success"):
-                send_telegram(chat_id, f"✨ <b>Ad Created via AI!</b>\n🏢 <b>{res['ad']['title']}</b>\n📍 {res['ad']['city']} | 📞 {res['ad']['phone']}\n🔗 <a href='{SEARCHBIZ_API_URL}/directory?q={urllib.parse.quote(res['ad']['title'])}'>View on SearchBiz</a>")
-            else:
-                send_telegram(chat_id, f"❌ Failed to create ad: {res.get('error')}")
+    # 11. Pricing & Subscription Plans
+    if re.search(r'(?:pricing|plans?|how\s+much|rates?|costs?|fees?|subscription)', lower):
+        pricing = f"""💎 <b>SearchBiz Verified Pricing & Plans</b>
 
-        elif intent == "delete_ad":
-            target = data.get("target", text)
-            res = searchbiz_delete_ad(target)
-            if res.get("success"):
-                send_telegram(chat_id, f"🗑️ <b>Ad Archived:</b> Removed '{res['removedAd']['title']}' to Recycle Bin.")
-            else:
-                send_telegram(chat_id, f"❌ Could not delete: {res.get('error')}")
+• <b>Base Premium Plan:</b> <b>R199.00 / month</b>
+  - Unlimited hosting for static websites
+  - Unlimited domain-branded email accounts (@yourdomain.co.za)
+  - Custom design assistance for smart static websites
+  - Elite verified status and 1 custom directory listing
 
-        elif intent == "send_email":
-            res = send_email_smtp(data.get("to"), data.get("subject", "Notice"), data.get("body", "Hello"))
-            if res.get("success"):
-                send_telegram(chat_id, f"📧 Email sent to <code>{data.get('to')}</code>")
-            else:
-                send_telegram(chat_id, f"❌ Email error: {res.get('error')}")
+• <b>Add-Ons & Extras:</b>
+  - Additional ad listing: <b>+R199.00 / month</b> each
+  - .co.za Domain Registration: <b>R99.00 / year</b>
 
-        else:
-            send_telegram(chat_id, data.get("reply", "Understood. How else can I assist with SearchBiz?"))
+Would you like me to publish a new ad or create an email account for you?"""
+        send_telegram(chat_id, pricing)
+        return
 
-    except Exception as e:
-        logger.warn(f"Failed to parse Ollama JSON ({e}), outputting text reply.")
-        send_telegram(chat_id, ollama_resp or "Command received. Send /help to see all operations.")
+    # 12. Gratitude & Confirmation
+    if re.search(r'^(?:thanks|thank\s+you|awesome|great|cool|perfect|well\s+done)', lower):
+        send_telegram(chat_id, f"🙏 <b>You're very welcome, {sender}!</b> Always at your service. Let me know whenever you need more listings or updates!")
+        return
+
+    # 13. Natural Language Ad Creation
+    if any(k in lower for k in ['post ad', 'create ad', 'make an ad', 'make ad', 'add ad', 'new ad', 'post an ad', 'publish ad']):
+        # extract phone
+        phone_match = re.search(r'(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}', text)
+        phone = re.sub(r'\s+', '', phone_match.group(0)) if phone_match else '0821234567'
+
+        # extract city
+        cities = ['durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'umkomaas', 'ballito', 'randburg', 'centurion', 'soweto']
+        found_city = 'Johannesburg'
+        for c in cities:
+            if c in lower:
+                found_city = ' '.join([w.capitalize() for w in c.split()])
+                break
+
+        # extract title
+        cleaned = re.sub(r'^(?:please\s+)?(?:make|post|create|add|publish)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
+        title_candidate = cleaned.split(' in ')[0].split(' phone ')[0].split(',')[0].strip()
+        title = title_candidate.title() if len(title_candidate) > 2 else "New Business Listing"
+
+        cat = "General Services"
+        if any(w in lower for w in ['plumber', 'plumbing', 'pipes']): cat = "Plumbers"
+        elif any(w in lower for w in ['electric', 'electrical', 'wire', 'wiring']): cat = "Electricians"
+        elif any(w in lower for w in ['towing', 'tow', 'breakdown', 'recovery']): cat = "Towing & Breakdown"
+        elif any(w in lower for w in ['mechanic', 'auto', 'car repair']): cat = "Auto Repair"
+        elif any(w in lower for w in ['clean', 'cleaning']): cat = "Cleaning Services"
+        elif any(w in lower for w in ['builder', 'building', 'construction', 'roof']): cat = "Construction"
+        elif any(w in lower for w in ['restaurant', 'food', 'catering', 'cafe']): cat = "Restaurants & Food"
+
+        send_chat_action(chat_id, "typing")
+        res = searchbiz_create_ad(title, cat, found_city, phone, text)
+        if res.get("success") and res.get("ad"):
+            ad = res["ad"]
+            reply = f"""✨ <b>Advertisement Published!</b>
+
+🏢 <b>{ad['title']}</b>
+🏷️ Category: {ad['category']}
+📍 Location: {ad.get('city', found_city)}
+📞 Phone: {ad.get('phone', phone)}
+🆔 ID: <code>{ad['id']}</code>
+⭐ Status: Verified & Premium
+
+🌐 <a href="{SEARCHBIZ_API_URL}/directory?q={urllib.parse.quote(ad['title'])}">View Live Listing on SearchBiz</a>"""
+            send_telegram(chat_id, reply)
+            return
+
+    # 14. Natural Language Ad Deletion
+    if any(k in lower for k in ['delete ad', 'remove ad', 'trash ad', 'take down']):
+        cleaned = re.sub(r'^(?:please\s+)?(?:delete|remove|trash|take\s+down)\s+(?:the\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
+        if len(cleaned) >= 2:
+            send_chat_action(chat_id, "typing")
+            res = searchbiz_delete_ad(cleaned, permanent=False)
+            if res.get("success") and res.get("removedAd"):
+                ad = res["removedAd"]
+                reply = f"""🗑️ <b>Ad Archived to Recycle Bin</b>
+
+Listing <b>"{ad['title']}"</b> (ID: <code>{ad['id']}</code>) has been safely moved to the SearchBiz Recycle Bin.
+
+♻️ To restore it, send:
+<code>/restore_ad {ad['id']}</code>"""
+                send_telegram(chat_id, reply)
+                return
+
+    # 15. General Conversational AI Assistant
+    send_chat_action(chat_id, "typing")
+    ai_reply = ask_ai(
+        text,
+        system_prompt=f"You are Hermes, the friendly, intelligent AI Executive Assistant for SearchBiz (searchbiz.co.za in South Africa). The user is {sender}. Be helpful, polite, and concise. Explain South African business directory details, ad management, and assistance clearly in under 150 words."
+    )
+    if ai_reply:
+        send_telegram(chat_id, ai_reply)
+        return
+
+    # 16. Fallback Guidance
+    send_telegram(chat_id, f"""🤖 <b>SearchBiz Executive Agent</b>
+Ready to help, <b>{sender}</b>!
+
+You can talk to me naturally or give me commands:
+• <i>"Make an ad for Elite Plumbers in Durban, 0821234567, emergency leak repairs"</i>
+• <i>"Delete ad for Elite Plumbers"</i>
+• <i>"What are the pricing plans?"</i>
+• <code>/list_ads</code> to search listings
+• <code>/send_email to@domain.com | Subject | Body</code>
+• Send <code>/help</code> for full instructions.""")
 
 
 def main():
