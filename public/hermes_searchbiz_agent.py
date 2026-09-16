@@ -202,9 +202,13 @@ def searchbiz_restore_ad(id_or_title: str):
 # Email System: Send & Receive (SMTP + Gateway Fallback + IMAP)
 # ============================================================================
 def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: str = None):
-    """Sends an email using standard SMTP with automatic fallback to SearchBiz /api/bot/email"""
-    # 1. If direct SMTP credentials are provided, attempt direct transmission
-    if SMTP_PASS and SMTP_USER:
+    """Sends an email using high-reliability multi-tier routing:
+    1. User's custom SMTP (if configured with password)
+    2. Direct standard library SMTP_SSL via SearchBiz Gateway (smtp.gmail.com:465)
+    3. SearchBiz HTTP API Gateway (/api/bot/email)
+    """
+    # 1. Direct configured SMTP if provided
+    if SMTP_PASS and SMTP_USER and SMTP_PASS.strip():
         try:
             msg = MIMEMultipart("alternative")
             msg["From"] = f"SearchBiz Executive <{SMTP_USER}>"
@@ -223,17 +227,44 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: s
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, [to_email], msg.as_string())
             server.quit()
-            logger.info(f"Direct SMTP email delivered to {to_email}")
-            return {"success": True, "message": f"Delivered via direct SMTP to {to_email}"}
+            logger.info(f"Direct custom SMTP delivered to {to_email}")
+            return {"success": True, "message": f"Delivered via custom SMTP to {to_email}"}
         except Exception as e:
-            logger.warning(f"Direct SMTP failed ({e}), falling back to SearchBiz API gateway...")
+            logger.warning(f"Custom SMTP failed ({e}), trying primary gateway...")
 
-    # 2. Reliable SearchBiz API Gateway Fallback (/api/bot/email)
+    # 2. Direct Python SMTP via active SearchBiz App Gateway (smtp.gmail.com:465)
+    try:
+        gw_user = "mailsearchbiz@gmail.com"
+        gw_pass = "ygrvhhqihdhibxwt"
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"SearchBiz AI Executive <{gw_user}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body_text, "plain"))
+        if html_content:
+            msg.attach(MIMEText(html_content, "html"))
+
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=12)
+        server.login(gw_user, gw_pass)
+        server.sendmail(gw_user, [to_email], msg.as_string())
+        server.quit()
+        logger.info(f"Direct Python SMTP delivered to {to_email}")
+        return {"success": True, "message": f"Delivered via SearchBiz Gateway to {to_email}"}
+    except Exception as e:
+        logger.warning(f"Direct Python SMTP gateway failed ({e}), trying Website API...")
+
+    # 3. SearchBiz API Gateway Fallback (/api/bot/email)
     res = api_request("/api/bot/email", method="POST", payload={
         "to": to_email,
         "subject": subject,
         "text": body_text,
-        "html": html_content
+        "html": html_content,
+        "smtpConfig": {
+            "host": "smtp.gmail.com",
+            "port": 465,
+            "user": "mailsearchbiz@gmail.com",
+            "pass": "ygrv hhqi hdhi bxwt"
+        }
     })
     return res
 
@@ -579,13 +610,91 @@ Listing <b>"{removed.get('title', target)}"</b> (ID: <code>{removed.get('id')}</
     send_chat_action(chat_id, "typing")
     lower = text.lower()
 
-    # 10. Natural Language Email Sending (e.g. "Send an email explaining What searchbiz.co.za is all about to nicholauscostochetty@gmail.com")
+    # 10. Natural Language Email Sending
     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-    if email_match and any(k in lower for k in ['send an email', 'send email', 'email explaining', 'email about', 'mail explaining', 'mail to', 'shoot an email']):
+    if email_match and any(k in lower for k in ['send an email', 'send email', 'email explaining', 'email about', 'mail explaining', 'mail to', 'shoot an email', 'explain about', 'explaining']):
         recipient = email_match.group(0)
-        is_about_searchbiz = any(k in lower for k in ['searchbiz', 'all about', 'what it is', 'pricing', 'plans', 'platform'])
+        is_free_vs_paid = any(k in lower for k in ['free option', 'free vs paid', 'verify the business', 'paid options', 'verification option', 'pricing options', 'listing and the paid', 'verify'])
+        is_about_searchbiz = is_free_vs_paid or any(k in lower for k in ['searchbiz', 'all about', 'what it is', 'pricing', 'plans', 'platform'])
 
-        if is_about_searchbiz:
+        if is_free_vs_paid:
+            subject = "SearchBiz Business Verification: Free vs Paid Options Guide"
+            plain_body = """Hi there,
+
+Thank you for your interest in SearchBiz (https://searchbiz.co.za) - South Africa's trusted local business directory.
+
+Here is a clear comparison between our Free Listing Verification and our Paid Premium Options:
+
+=======================================================
+1. FREE BUSINESS LISTING & VERIFICATION OPTION
+=======================================================
+• Cost: 100% Free (No credit card or payment required).
+• Standard Directory Listing: Published in the SearchBiz South African local business index.
+• Verification Process: Business owners can claim and verify their listing using SMS/email confirmation or proof of operation.
+• Visibility: Public telephone number, city, province, and business category are prominently displayed so customers can reach you directly.
+
+=======================================================
+2. PAID PREMIUM SUBSCRIPTION & VERIFIED GROWTH PLAN
+=======================================================
+• Base Premium Plan: R199.00 / month (Billed via South African debit order mandate)
+  - Elite Verified Trust Badge: Distinctive green verification shield providing immediate customer confidence and anti-fraud protection.
+  - Custom Smart Static Website: Fast, modern business landing page hosted directly on SearchBiz with complimentary design assistance.
+  - Unlimited Domain-Branded Email Accounts: e.g., info@yourdomain.co.za or sales@yourdomain.co.za.
+  - Top Directory Placement: Priority positioning above standard free listings in search results.
+  - 1 Custom verified listing in SearchBiz directory included.
+
+• Extras & Add-Ons:
+  - Additional ad listings: +R199.00 / month each
+  - .co.za Domain Registration: R99.00 / year
+
+How to Get Started:
+Visit https://searchbiz.co.za to claim, verify, or register your business profile today.
+
+Best regards,
+SearchBiz Executive AI Team
+https://searchbiz.co.za
+support@searchbiz.co.za
+"""
+            html_body = """
+<div style="font-family: Arial, Helvetica, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
+  <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 24px; color: #ffffff;">
+    <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">SearchBiz.co.za</h1>
+    <p style="margin: 0; font-size: 14px; opacity: 0.9;">Business Verification: Free vs Paid Options Guide</p>
+  </div>
+  <div style="padding: 24px; color: #334155; line-height: 1.6; font-size: 14px;">
+    <p style="font-size: 15px; margin-top: 0;"><strong>Hello,</strong></p>
+    <p>Here is a complete breakdown of the <strong>Free Verification Option</strong> and the <strong>Paid Premium Options</strong> available for South African businesses on SearchBiz:</p>
+    
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 18px; margin: 20px 0;">
+      <h3 style="margin: 0 0 10px 0; color: #166534; font-size: 16px;">🆓 1. Free Business Listing & Verification Option</h3>
+      <ul style="margin: 0; padding-left: 18px; color: #15803d;">
+        <li style="margin-bottom: 6px;"><strong>Cost:</strong> 100% Free (No credit card or recurring charge).</li>
+        <li style="margin-bottom: 6px;"><strong>Standard Directory Indexing:</strong> Listed in the South African local business index.</li>
+        <li style="margin-bottom: 6px;"><strong>Claim & Verify:</strong> Verify ownership of your business profile via email/SMS proof.</li>
+        <li style="margin-bottom: 6px;"><strong>Direct Inquiries:</strong> Direct customer telephone, WhatsApp, and location display.</li>
+      </ul>
+    </div>
+
+    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 18px; margin: 20px 0;">
+      <h3 style="margin: 0 0 10px 0; color: #065f46; font-size: 16px;">💎 2. Paid Premium Subscription & Growth Plan</h3>
+      <p style="margin: 0 0 8px 0;"><strong>Base Premium Plan: R199.00 / month</strong> (Billed via South African debit order mandate)</p>
+      <ul style="margin: 0 0 12px 0; padding-left: 18px; font-size: 13.5px; color: #047857;">
+        <li style="margin-bottom: 6px;"><strong>Elite Verified Trust Badge:</strong> Green verification shield for customer trust.</li>
+        <li style="margin-bottom: 6px;"><strong>Custom Smart Static Website:</strong> Fully hosted with design & setup assistance included.</li>
+        <li style="margin-bottom: 6px;"><strong>Unlimited Domain-Branded Emails:</strong> Unlimited accounts (e.g. <code>info@yourdomain.co.za</code>).</li>
+        <li style="margin-bottom: 6px;"><strong>Top Placement:</strong> Ranked above standard free listings in search results.</li>
+      </ul>
+      <p style="margin: 0; font-size: 13px; color: #065f46;">
+        <strong>Extras:</strong> Additional listed ads at <strong>+R199.00/mo</strong> each | <strong>.co.za Domain:</strong> <strong>R99.00/year</strong>
+      </p>
+    </div>
+
+    <p style="margin-top: 24px;">To claim or verify your listing, visit <a href="https://searchbiz.co.za" style="color: #059669; font-weight: bold; text-decoration: none;">searchbiz.co.za</a>.</p>
+    <p style="margin-bottom: 0;">Warm regards,<br><strong>SearchBiz AI Executive Team</strong><br><a href="https://searchbiz.co.za" style="color: #059669; text-decoration: none;">https://searchbiz.co.za</a></p>
+  </div>
+</div>
+"""
+        elif is_about_searchbiz:
             subject = "Discover SearchBiz.co.za | South Africa's Verified Local Directory"
             plain_body = """Hi there,
 
@@ -673,10 +782,11 @@ support@searchbiz.co.za
 📬 <b>To:</b> <code>{recipient}</code>
 📝 <b>Subject:</b> <i>{subject}</i>
 
-✨ I have dispatched a comprehensive breakdown of <b>SearchBiz.co.za</b>, our verified directory features, and the <b>R199.00/month</b> Premium plan. Check your inbox!"""
+✨ The email has been delivered directly. Please check your inbox!"""
             send_telegram(chat_id, confirm)
         else:
-            send_telegram(chat_id, f"❌ Failed to dispatch email: {send_res.get('error', 'Unknown gateway error')}")
+            err_msg = send_res.get("details") or send_res.get("error") or "Unknown gateway error"
+            send_telegram(chat_id, f"❌ Failed to dispatch email: {err_msg}")
         return
 
     # 11. Storytelling & Creative Writing (e.g. "Tell one story")

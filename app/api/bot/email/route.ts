@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const host = smtpConfig?.host || (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
     const port = Number(smtpConfig?.port) || Number(process.env.SMTP_PORT) || 465;
     const user = smtpConfig?.user || (process.env.SMTP_USER || 'mailsearchbiz@gmail.com').trim();
-    const rawPass = smtpConfig?.pass || process.env.SMTP_PASS || 'feqn hfps huhn kjhh';
+    const rawPass = smtpConfig?.pass || process.env.SMTP_PASS || 'ygrv hhqi hdhi bxwt';
     const cleanPass = rawPass.replace(/\s+/g, '');
 
     const transporter = nodemailer.createTransport({

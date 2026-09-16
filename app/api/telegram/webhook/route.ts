@@ -373,7 +373,7 @@ To undo this, send:
         const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
         const smtpPort = Number(process.env.SMTP_PORT) || 465;
         const smtpUser = (process.env.SMTP_USER || 'mailsearchbiz@gmail.com').trim();
-        const rawPass = process.env.SMTP_PASS || 'feqn hfps huhn kjhh';
+        const rawPass = process.env.SMTP_PASS || 'ygrv hhqi hdhi bxwt';
 
         const transporter = nodemailer.createTransport({
           host: smtpHost,
@@ -501,7 +501,7 @@ support@searchbiz.co.za`;
         const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
         const smtpPort = Number(process.env.SMTP_PORT) || 465;
         const smtpUser = (process.env.SMTP_USER || 'mailsearchbiz@gmail.com').trim();
-        const rawPass = process.env.SMTP_PASS || 'feqn hfps huhn kjhh';
+        const rawPass = process.env.SMTP_PASS || 'ygrv hhqi hdhi bxwt';
 
         const transporter = nodemailer.createTransport({
           host: smtpHost,
