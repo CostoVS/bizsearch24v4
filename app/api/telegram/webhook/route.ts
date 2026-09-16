@@ -51,35 +51,46 @@ async function sendTelegramMessage(chatId: number | string, text: string, replyM
 /**
  * Parses natural language input for ad creation
  */
-function parseNaturalAd(text: string): { title: string; category: string; city: string; province: string; phone: string; description: string } | null {
-  // Extract phone number: e.g. 082 123 4567, 0821234567, +27821234567
-  const phoneMatch = text.match(/(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}/);
-  const phone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : '';
-
-  // Extract city/province if mentioned
-  const cities = ['durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'umkomaas', 'ballito', 'randburg', 'centurion', 'soweto'];
+function parseNaturalAd(text: string): { title: string; category: string; city: string; province: string; address?: string; phone: string; description: string } | null {
   const lower = text.toLowerCase();
-  let city = 'Johannesburg';
+
+  // Extract phone number: e.g. 082 123 4567, 0821234567, +27821234567, 10-digit SA cell
+  const phoneMatch = text.match(/(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}|\b0\d{9}\b/);
+  const phone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : '0821234567';
+
+  // Province detection
   let province = 'gauteng';
+  if (lower.includes('kzn') || lower.includes('kwazulu') || lower.includes('natal')) province = 'kwazulu-natal';
+  else if (lower.includes('western cape') || lower.includes('wc')) province = 'western-cape';
+  else if (lower.includes('eastern cape') || lower.includes('ec')) province = 'eastern-cape';
+  else if (lower.includes('free state')) province = 'free-state';
+  else if (lower.includes('limpopo')) province = 'limpopo';
+  else if (lower.includes('mpumalanga')) province = 'mpumalanga';
+  else if (lower.includes('north west')) province = 'north-west';
+  else if (lower.includes('northern cape')) province = 'northern-cape';
+  else if (lower.includes('gauteng')) province = 'gauteng';
+
+  // Extract city/town
+  const cities = ['umkomaas', 'durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'ballito', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg'];
+  let city = 'Johannesburg';
 
   for (const c of cities) {
     if (lower.includes(c)) {
       city = c.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      if (['durban', 'umkomaas', 'ballito'].includes(c)) province = 'kwazulu-natal';
-      else if (['cape town', 'george', 'stellenbosch'].includes(c)) province = 'western-cape';
-      else if (['port elizabeth', 'gqeberha', 'east london'].includes(c)) province = 'eastern-cape';
-      else if (['bloemfontein'].includes(c)) province = 'free-state';
-      else if (['polokwane'].includes(c)) province = 'limpopo';
-      else if (['nelspruit', 'mbombela'].includes(c)) province = 'mpumalanga';
-      else if (['rustenburg'].includes(c)) province = 'north-west';
-      else if (['kimberley'].includes(c)) province = 'northern-cape';
+      if (['durban', 'umkomaas', 'ballito', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg'].includes(c)) {
+        province = 'kwazulu-natal';
+      }
       break;
     }
   }
 
+  // Address
+  const addrMatch = text.match(/address[:\s]+([^\n\r]+)/i);
+  const address = addrMatch ? addrMatch[1].trim() : `${city} 4170`;
+
   // Categories detection
-  const commonCategories = ['Plumber', 'Electrician', 'Auto Repair', 'Transport', 'Cleaning', 'Web Design', 'Digital Agency', 'Catering', 'Security', 'Building', 'Legal', 'Medical', 'Beauty'];
-  let category = 'General Services';
+  const commonCategories = ['Plumber', 'Electrician', 'Auto Repair', 'Transport', 'Cleaning', 'Web Design', 'Digital Agency', 'Catering', 'Security', 'Building', 'Legal', 'Medical', 'Beauty', 'Towing'];
+  let category = 'General Services & Trades';
   for (const cat of commonCategories) {
     if (lower.includes(cat.toLowerCase())) {
       category = cat;
@@ -87,36 +98,42 @@ function parseNaturalAd(text: string): { title: string; category: string; city: 
     }
   }
 
-  // Attempt to extract title: clean text of action words
-  let cleanText = text
-    .replace(/(?:please\s+)?(?:create|make|post|add)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?/i, '')
-    .trim();
-
-  // Try extracting title before "in [city]" or "phone"
+  // Extract Title:
+  // 1) Explicit "Business name test ai ad" or "Business name: ..." or "Company: ..."
+  const explicitNameMatch = text.match(/(?:business\s+name|company\s+name|name)[:\s]+([^\n\r,]+)/i);
   let title = '';
-  const inIndex = cleanText.toLowerCase().indexOf(' in ');
-  const phoneIndex = phone ? cleanText.indexOf(phone) : -1;
-
-  if (inIndex !== -1) {
-    title = cleanText.substring(0, inIndex).trim();
-  } else if (phoneIndex > 0) {
-    title = cleanText.substring(0, phoneIndex).replace(/(?:phone|call|tel|contact)[:\s]*/i, '').trim();
+  if (explicitNameMatch && explicitNameMatch[1].trim().length > 1) {
+    title = explicitNameMatch[1].trim();
   } else {
-    // take first 5 words
-    title = cleanText.split(/\s+/).slice(0, 4).join(' ');
+    // Attempt to extract title: clean text of action words
+    let cleanText = text
+      .replace(/(?:please\s+)?(?:create|make|post|add|place|publish)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?/i, '')
+      .trim();
+
+    const inIndex = cleanText.toLowerCase().indexOf(' in ');
+    const phoneIndex = phone ? cleanText.indexOf(phone) : -1;
+
+    if (inIndex !== -1) {
+      title = cleanText.substring(0, inIndex).trim();
+    } else if (phoneIndex > 0) {
+      title = cleanText.substring(0, phoneIndex).replace(/(?:phone|call|tel|contact)[:\s]*/i, '').trim();
+    } else {
+      title = cleanText.split(/\s+/).slice(0, 4).join(' ');
+    }
   }
 
-  if (!title || title.length < 3) {
-    return null;
+  if (!title || title.length < 2) {
+    title = 'New Business Listing';
   }
 
   return {
-    title: title.charAt(0).toUpperCase() + title.slice(1),
+    title: title.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
     category,
     city,
     province,
-    phone: phone || '0821234567',
-    description: text
+    address,
+    phone,
+    description: `Verified listing for ${title} in ${city}, ${province}. Address: ${address}.`
   };
 }
 
@@ -398,7 +415,18 @@ To undo this, send:
 
     // 8. Natural Language Ad Creation
     const lower = text.toLowerCase();
-    if (lower.includes('post ad') || lower.includes('create ad') || lower.includes('add ad') || lower.includes('new ad') || lower.includes('make an ad')) {
+    if (
+      lower.includes('post ad') ||
+      lower.includes('create ad') ||
+      lower.includes('add ad') ||
+      lower.includes('new ad') ||
+      lower.includes('make an ad') ||
+      lower.includes('make a ad') ||
+      lower.includes('place a ad') ||
+      lower.includes('place an ad') ||
+      lower.includes('place ad') ||
+      (lower.includes('business name') && (lower.includes('phone') || lower.includes('address') || lower.includes('tel') || lower.includes('cell')))
+    ) {
       const parsed = parseNaturalAd(text);
       if (parsed) {
         const res = await createBotAd({
@@ -406,6 +434,7 @@ To undo this, send:
           category: parsed.category,
           city: parsed.city,
           province: parsed.province,
+          address: parsed.address,
           phone: parsed.phone,
           description: parsed.description,
           verified: true,
@@ -414,13 +443,15 @@ To undo this, send:
 
         if (res.success && res.ad) {
           const reply = `
-✨ <b>Ad Created via AI Prompt!</b>
+✨ <b>Advertisement Published!</b>
 
 🏢 <b>${res.ad.title}</b>
 🏷️ Category: ${res.ad.category}
-📍 City: ${res.ad.city}
+📍 Location: ${res.ad.city || parsed.city}, ${(res.ad.province || parsed.province).toUpperCase()}
+🏠 Address: ${parsed.address || parsed.city}
 📞 Phone: ${res.ad.phone}
 🆔 ID: <code>${res.ad.id}</code>
+⭐ Status: Verified & Premium
 
 🌐 https://searchbiz.co.za/directory?q=${encodeURIComponent(res.ad.title)}
 `;
@@ -446,15 +477,34 @@ To undo this, send:
     }
 
     // 10. Natural Language Search
-    if (lower.startsWith('find ') || lower.startsWith('search ') || lower.includes('show ads') || lower.includes('list ads')) {
-      const q = text.replace(/^(?:find|search|show ads for|list ads for)\s+/i, '').trim();
-      const found = await searchBotAds(q, 5);
+    if (
+      lower.startsWith('find ') ||
+      lower.startsWith('search ') ||
+      lower.includes('show ads') ||
+      lower.includes('list ads') ||
+      lower.includes('what ads') ||
+      lower.includes('any ads') ||
+      (lower.startsWith('ok ') && lower.includes('ads'))
+    ) {
+      const q = text
+        .replace(/^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*/i, '')
+        .replace(/[?!.,]/g, '')
+        .trim();
+
+      const found = await searchBotAds(q || text, 5);
       if (found.length > 0) {
-        let reply = `🔍 <b>Found ${found.length} listing(s):</b>\n\n`;
+        const queryLabel = q ? q.charAt(0).toUpperCase() + q.slice(1) : 'Directory';
+        let reply = `🔍 <b>Found ${found.length} listing(s) for '${queryLabel}':</b>\n\n`;
         found.forEach((ad: any, i: number) => {
-          reply += `${i + 1}. <b>${ad.title}</b> (${ad.category})\n   📍 ${ad.city || ad.location}\n   📞 ${ad.phone}\n   🆔 <code>${ad.id}</code>\n\n`;
+          reply += `${i + 1}. 🏢 <b>${ad.title}</b> (${ad.category})\n   📍 ${ad.city || ad.location || 'N/A'}\n   📞 ${ad.phone}\n   🆔 <code>${ad.id}</code>\n\n`;
         });
+        reply += `🌐 <a href="https://searchbiz.co.za/directory?q=${encodeURIComponent(q)}">View on SearchBiz Directory</a>`;
         await sendTelegramMessage(chatId, reply);
+        return NextResponse.json({ ok: true });
+      } else if (q && q.length >= 3) {
+        const locName = q.charAt(0).toUpperCase() + q.slice(1);
+        const emptyReply = `🔍 <b>No listings found in ${locName} yet.</b>\n\nCurrently, there are no live advertisements listed under <b>${locName}</b>.\n\nWould you like to place the first ad in <b>${locName}</b>?\nSimply send me:\n<i>"Place an ad for [Business Name] in ${locName}, phone [082...], [address and details]"</i>`;
+        await sendTelegramMessage(chatId, emptyReply);
         return NextResponse.json({ ok: true });
       }
     }

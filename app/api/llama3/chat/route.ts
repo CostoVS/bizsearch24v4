@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { createBotAd } from "@/lib/bot-ad-service";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,91 @@ export async function POST(req: NextRequest) {
 
     if (!message) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
+    }
+
+    const lowerMessage = message.toLowerCase();
+
+    // --- 0. NATURAL AD CREATION INTENT ---
+    if (
+      lowerMessage.includes('place a ad') ||
+      lowerMessage.includes('place an ad') ||
+      lowerMessage.includes('place ad') ||
+      lowerMessage.includes('post an ad') ||
+      lowerMessage.includes('post a ad') ||
+      lowerMessage.includes('create an ad') ||
+      lowerMessage.includes('create a ad') ||
+      lowerMessage.includes('make an ad') ||
+      lowerMessage.includes('make a ad') ||
+      (lowerMessage.includes('business name') && (lowerMessage.includes('phone') || lowerMessage.includes('address') || lowerMessage.includes('tel') || lowerMessage.includes('cell')))
+    ) {
+      // Parse phone
+      const phoneMatch = message.match(/(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}|\b\d{10}\b/);
+      const phone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : '0821234567';
+
+      // Parse business name
+      const nameMatch = message.match(/(?:business\s+name|company\s+name|name)[:\s]+([^\n\r,]+)/i);
+      let title = nameMatch ? nameMatch[1].trim() : '';
+      if (!title) {
+        const lines = message.split('\n');
+        for (const line of lines) {
+          if (/business|name/i.test(line)) {
+            title = line.replace(/.*(?:business\s+name|name)[:\s]*/i, '').trim();
+            if (title) break;
+          }
+        }
+      }
+      if (!title || title.length < 2) title = 'Test AI Ad';
+      title = title.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+      // Parse city & province
+      let city = 'Umkomaas';
+      let province = 'kwazulu-natal';
+      if (lowerMessage.includes('kzn') || lowerMessage.includes('kwazulu')) province = 'kwazulu-natal';
+      else if (lowerMessage.includes('gauteng')) province = 'gauteng';
+      else if (lowerMessage.includes('western cape')) province = 'western-cape';
+
+      const saCities = ['umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'rustenburg', 'amanzimtoti', 'scottburgh'];
+      for (const c of saCities) {
+        if (lowerMessage.includes(c)) {
+          city = c.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          break;
+        }
+      }
+
+      // Parse address
+      const addrMatch = message.match(/address[:\s]+([^\n\r]+)/i);
+      const address = addrMatch ? addrMatch[1].trim() : `${city} 4170`;
+
+      // Category detection
+      let category = 'General Services & Trades';
+      if (lowerMessage.includes('plumb')) category = 'Plumbing Services';
+      else if (lowerMessage.includes('electric')) category = 'Electrical Services';
+      else if (lowerMessage.includes('auto') || lowerMessage.includes('mechanic')) category = 'Auto Repair & Services';
+      else if (lowerMessage.includes('towing')) category = 'Towing & Recovery';
+      else if (lowerMessage.includes('clean')) category = 'Cleaning Services';
+
+      try {
+        const createRes = await createBotAd({
+          title,
+          category,
+          city,
+          province,
+          address,
+          phone,
+          description: `Verified listing for ${title} in ${city}, ${province}. Address: ${address}.`,
+          verified: true,
+          isPremium: true
+        });
+
+        if (createRes.success && createRes.ad) {
+          const ad = createRes.ad;
+          return NextResponse.json({
+            text: `✨ **Advertisement Successfully Published!**\n\n🏢 **${ad.title}**\n🏷️ **Category:** ${ad.category}\n📍 **Location:** ${ad.city || city}, ${(ad.province || province).toUpperCase()}\n🏠 **Address:** ${address}\n📞 **Phone:** ${ad.phone}\n🆔 **ID:** \`${ad.id}\`\n⭐ **Status:** Verified & Premium Listing\n\n🌐 View live on SearchBiz: https://searchbiz.co.za/directory?q=${encodeURIComponent(ad.title)}`
+          });
+        }
+      } catch (err: any) {
+        console.error('Bot ad creation error in llama3 chat:', err);
+      }
     }
 
     // Load actual real-time business data from local JSON database to prevent stale / mock data
@@ -69,81 +155,7 @@ ${adsContext || "Currently no business listings are stored in the index. Help us
 Please answer the user's inquiry based on this verified dataset.
 `;
 
-    // --- 1. ATTEMPT LOCAL VPS OLLAMA LLAMA3 DIRECTLY ---
-    const ollamaHost = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "");
-    const targetModel = process.env.LLAMA3_MODEL || "llama3";
-    let finalModel = targetModel;
-
-    try {
-      // 1a. Query tags endpoint to discover available models and verify connection
-      try {
-        const tagsController = new AbortController();
-        const tagsTimeout = setTimeout(() => tagsController.abort(), 1200); // 1.2s fast check
-        const tagsResponse = await fetch(`${ollamaHost}/api/tags`, {
-          signal: tagsController.signal
-        });
-        clearTimeout(tagsTimeout);
-
-        if (tagsResponse.ok) {
-          const tagsData = await tagsResponse.json();
-          const availableModels = tagsData.models || [];
-          if (availableModels.length > 0) {
-            const matchingModel = availableModels.find((m: any) => 
-              (m.name || "").toLowerCase().includes(targetModel.toLowerCase()) || 
-              (m.model || "").toLowerCase().includes(targetModel.toLowerCase())
-            );
-
-            if (matchingModel) {
-              finalModel = matchingModel.name;
-            } else {
-              finalModel = availableModels[0].name;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Could not retrieve Ollama tags, defaulting to configuration model name:", err);
-      }
-
-      // 1b. Transmit request with a strict 10-second timeout to prevent Cloudflare 524
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s fast timeout
-
-      const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: finalModel,
-          messages: [
-            { role: "system", content: systemInstruction },
-            ...(history || []).map((msg: any) => ({
-              role: msg.sender === "user" ? "user" : "assistant",
-              content: msg.text
-            })),
-            { role: "user", content: message }
-          ],
-          options: {
-            temperature: 0.3
-          },
-          stream: false
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (ollamaResponse.ok) {
-        const ollamaData = await ollamaResponse.json();
-        if (ollamaData.message?.content) {
-          return NextResponse.json({ text: ollamaData.message.content });
-        }
-      }
-    } catch (ollamaError) {
-      console.warn("Ollama llama3 is offline or loopback is blocked in this container sandbox. Attempting fallback...", ollamaError);
-    }
-
-    // --- 2. FALLBACK TO GEMINI (IF CONFIG IN CLOUD PREVIEW) ---
+    // --- 1. GEMINI CLOUD LLM (FASTEST, HIGHEST QUALITY, ACTIVE DATA GROUNDING) ---
     if (process.env.GEMINI_API_KEY) {
       try {
         const ai = new GoogleGenAI({
@@ -170,8 +182,8 @@ Please answer the user's inquiry based on this verified dataset.
           parts: [{ text: message }],
         });
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+        const generatePromise = ai.models.generateContent({
+          model: "gemini-2.5-flash",
           contents,
           config: {
             systemInstruction,
@@ -179,11 +191,93 @@ Please answer the user's inquiry based on this verified dataset.
           },
         });
 
-        if (response.text) {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Gemini call timed out after 5s")), 5000)
+        );
+
+        const response: any = await Promise.race([generatePromise, timeoutPromise]);
+
+        if (response?.text) {
           return NextResponse.json({ text: response.text });
         }
       } catch (geminiError) {
-        console.error("Gemini fallback failed:", geminiError);
+        console.error("Gemini model execution failed, attempting local fallback...", geminiError);
+      }
+    }
+
+    // --- 2. LOCAL VPS OLLAMA (IF HOST IS ONLINE) ---
+    const ollamaHost = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "");
+    const targetModel = process.env.LLAMA3_MODEL || "llama3";
+    let isOllamaOnline = false;
+    let finalModel = targetModel;
+
+    try {
+      const tagsController = new AbortController();
+      const tagsTimeout = setTimeout(() => tagsController.abort(), 1200); // 1.2s check
+      const tagsResponse = await fetch(`${ollamaHost}/api/tags`, {
+        signal: tagsController.signal
+      });
+      clearTimeout(tagsTimeout);
+
+      if (tagsResponse.ok) {
+        isOllamaOnline = true;
+        const tagsData = await tagsResponse.json();
+        const availableModels = tagsData.models || [];
+        if (availableModels.length > 0) {
+          const matchingModel = availableModels.find((m: any) => 
+            (m.name || "").toLowerCase().includes(targetModel.toLowerCase()) || 
+            (m.model || "").toLowerCase().includes(targetModel.toLowerCase())
+          );
+          if (matchingModel) {
+            finalModel = matchingModel.name;
+          } else {
+            finalModel = availableModels[0].name;
+          }
+        }
+      }
+    } catch {
+      // Ollama offline, skip cleanly without hanging
+      isOllamaOnline = false;
+    }
+
+    if (isOllamaOnline) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: finalModel,
+            messages: [
+              { role: "system", content: systemInstruction },
+              ...(history || []).map((msg: any) => ({
+                role: msg.sender === "user" ? "user" : "assistant",
+                content: msg.text
+              })),
+              { role: "user", content: message }
+            ],
+            options: {
+              temperature: 0.3
+            },
+            stream: false
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (ollamaResponse.ok) {
+          const ollamaData = await ollamaResponse.json();
+          if (ollamaData.message?.content) {
+            return NextResponse.json({ text: ollamaData.message.content });
+          }
+        }
+      } catch (ollamaErr) {
+        console.warn("Ollama chat call failed:", ollamaErr);
       }
     }
 
@@ -240,38 +334,53 @@ Please answer the user's inquiry based on this verified dataset.
     }
 
     // Query active database listings directly
+    const cleanSearch = normalizedQuery
+      .replace(/^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*/i, '')
+      .trim();
+    const searchTarget = cleanSearch || normalizedQuery;
+    const tokens = searchTarget.split(/\s+/).filter((t: string) => t.length >= 3 && !['what', 'have', 'your', 'with', 'from', 'this', 'that', 'under', 'here', 'there'].includes(t));
+
     const matchedAds = activeAds.filter(ad => {
       const title = (ad.title || "").toLowerCase();
       const cat = (ad.category || "").toLowerCase();
-      const loc = (ad.location || "").toLowerCase();
+      const loc = (ad.location || ad.city || "").toLowerCase();
       const prov = (ad.province || "").toLowerCase();
+      const addr = (ad.address || "").toLowerCase();
       const desc = (ad.description || "").toLowerCase();
       const serv = (ad.servicesOffered || "").toLowerCase();
 
-      return (
-        normalizedQuery.includes(title) ||
-        normalizedQuery.includes(cat) ||
-        normalizedQuery.includes(loc) ||
-        normalizedQuery.includes(prov) ||
-        title.includes(normalizedQuery) ||
-        cat.includes(normalizedQuery) ||
-        loc.includes(normalizedQuery) ||
-        prov.includes(normalizedQuery) ||
-        desc.includes(normalizedQuery) ||
-        serv.includes(normalizedQuery)
-      );
+      // Exact or substring match on clean searchTarget
+      if (
+        title.includes(searchTarget) ||
+        cat.includes(searchTarget) ||
+        loc.includes(searchTarget) ||
+        prov.includes(searchTarget) ||
+        addr.includes(searchTarget) ||
+        searchTarget.includes(title) ||
+        (loc && searchTarget.includes(loc)) ||
+        (prov && searchTarget.includes(prov))
+      ) {
+        return true;
+      }
+
+      // Token match
+      if (tokens.length > 0 && tokens.some((tok: string) => loc.includes(tok) || prov.includes(tok) || addr.includes(tok) || title.includes(tok) || cat.includes(tok))) {
+        return true;
+      }
+
+      return false;
     });
 
     if (matchedAds.length > 0) {
-      let responseText = `I found **${matchedAds.length} verified listing(s)** in our live index matching your search: \n\n`;
+      let responseText = `I found **${matchedAds.length} verified listing(s)** in our live index matching "${searchTarget}": \n\n`;
       
       matchedAds.forEach((ad, i) => {
         responseText += `### ${i + 1}. ${ad.title} ${ad.verified ? "✅ (Verified)" : ""}\n`;
         responseText += `* **Category:** ${ad.category}\n`;
-        responseText += `* **Location:** ${ad.location ? ad.location.charAt(0).toUpperCase() + ad.location.slice(1) : "N/A"}, ${ad.province ? ad.province.toUpperCase() : "N/A"}\n`;
+        responseText += `* **Location:** ${ad.city || ad.location ? (ad.city || ad.location).charAt(0).toUpperCase() + (ad.city || ad.location).slice(1) : "N/A"}, ${ad.province ? ad.province.toUpperCase() : "N/A"}\n`;
         if (ad.address) responseText += `* **Address:** ${ad.address}\n`;
         if (ad.servicesOffered) responseText += `* **Services:** ${ad.servicesOffered}\n`;
-        responseText += `* **Description:** ${ad.description}\n`;
+        if (ad.description) responseText += `* **Description:** ${ad.description}\n`;
         
         responseText += `* **Contact Info:**\n`;
         if (ad.phone) responseText += `  - Tel: ${ad.phone}\n`;
@@ -281,9 +390,17 @@ Please answer the user's inquiry based on this verified dataset.
         responseText += `\n---\n\n`;
       });
 
-      responseText += `Feel free to ask for contact details or search for other services!`;
+      responseText += `Feel free to ask for contact details or search for other locations and services!`;
       return NextResponse.json({ text: responseText });
     }
+
+    if (searchTarget && searchTarget.length >= 3 && !searchTarget.includes("direct match")) {
+      const formattedLocation = searchTarget.charAt(0).toUpperCase() + searchTarget.slice(1);
+      return NextResponse.json({
+        text: `🔍 I searched our verified directory, but there are currently no active listings published under **"${formattedLocation}"**.\n\nWould you like to place the first business advertisement in **${formattedLocation}**?\nJust tell me: *"Place an ad for [Business Name] in ${formattedLocation}, phone [082...], [description]"* and I will publish it immediately!`
+      });
+    }
+
     return NextResponse.json({ text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:\n• **Services & Trades:** Search for active businesses or local services.\n• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).\n• **Verification process:** Learn how to verify your business listing.\nCurrently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Trades, Services, Local Businesses"}**.\nPlease refine your search or ask about a specific category!` });
 
   } catch (error: any) {

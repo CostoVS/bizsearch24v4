@@ -260,16 +260,34 @@ export async function searchBotAds(searchTerm?: string, limit: number = 10): Pro
   }
 
   const q = searchTerm.toLowerCase().trim();
+  const cleanQ = q.replace(/^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*/i, '').trim();
+  const searchTarget = cleanQ || q;
+  const tokens = searchTarget.split(/\s+/).filter(t => t.length >= 3 && !['what', 'have', 'your', 'with', 'from', 'this', 'that', 'under'].includes(t));
+
   const filtered = ads.filter((a: any) => {
     if (!a) return false;
     const title = (a.title || '').toLowerCase();
     const cat = (a.category || '').toLowerCase();
     const city = (a.location || a.city || '').toLowerCase();
     const prov = (a.province || '').toLowerCase();
+    const address = (a.address || '').toLowerCase();
     const phone = (a.phone || '').toLowerCase();
     const id = (a.id || '').toLowerCase();
 
-    return title.includes(q) || cat.includes(q) || city.includes(q) || prov.includes(q) || phone.includes(q) || id.includes(q);
+    // Exact or substring match on raw or cleaned query
+    if (title.includes(q) || cat.includes(q) || city.includes(q) || prov.includes(q) || address.includes(q) || phone.includes(q) || id.includes(q)) {
+      return true;
+    }
+    if (searchTarget && (title.includes(searchTarget) || cat.includes(searchTarget) || city.includes(searchTarget) || prov.includes(searchTarget) || address.includes(searchTarget))) {
+      return true;
+    }
+
+    // Token match
+    if (tokens.length > 0 && tokens.some(tok => city.includes(tok) || prov.includes(tok) || title.includes(tok) || cat.includes(tok) || address.includes(tok))) {
+      return true;
+    }
+
+    return false;
   });
 
   return filtered.slice(0, limit);

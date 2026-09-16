@@ -169,12 +169,14 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
         _CACHED_API_URL = None
         return {"error": str(e)}
 
-def searchbiz_create_ad(title: str, category: str, city: str, phone: str, description: str, province: str = "gauteng"):
+def searchbiz_create_ad(title: str, category: str, city: str, phone: str, description: str, province: str = "gauteng", address: str = None):
     payload = {
         "title": title,
         "category": category,
         "city": city,
+        "location": city,
         "province": province,
+        "address": address or f"{city}",
         "phone": phone,
         "description": description,
         "verified": True,
@@ -851,25 +853,112 @@ Would you like me to publish a new ad or send you full plan details via email?""
         send_telegram(chat_id, f"🙏 <b>You're very welcome, {sender}!</b> Always at your service. Let me know whenever you need more listings, emails, or updates!")
         return
 
+    # 14b. Natural Language Directory Search (e.g. "Ok what ads you have in umkomaas")
+    search_triggers = ['what ads', 'which ads', 'show ads', 'list ads', 'any ads', 'search ads', 'find ads', 'what businesses', 'show businesses', 'any business', 'ads in', 'businesses in', 'listings in', 'who has ads']
+    if any(k in lower for k in search_triggers) or (lower.startswith('ok ') and any(k in lower for k in ['ads', 'businesses', 'listings'])):
+        search_target = re.sub(r'^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*', '', lower).strip()
+        search_target = re.sub(r'[?!.,]', '', search_target).strip()
+
+        all_cities = ['umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate']
+        if not search_target:
+            for c in all_cities:
+                if c in lower:
+                    search_target = c
+                    break
+
+        send_chat_action(chat_id, "typing")
+        res = searchbiz_list_ads(search_target or "all", limit=5)
+        ads = res.get("ads", []) if isinstance(res, dict) else []
+
+        if ads:
+            loc_label = search_target.title() if search_target else "Directory"
+            reply = f"🔍 <b>Directory Listings for '{loc_label}' ({len(ads)}):</b>\n\n"
+            for i, a in enumerate(ads, 1):
+                reply += f"{i}. 🏢 <b>{a.get('title')}</b> ({a.get('category')})\n"
+                reply += f"   📍 {a.get('city', 'N/A')}, {str(a.get('province', '')).upper()}\n"
+                if a.get('address'):
+                    reply += f"   🏠 {a.get('address')}\n"
+                reply += f"   📞 {a.get('phone')}\n"
+                reply += f"   🆔 <code>{a.get('id')}</code>\n\n"
+            reply += f"🌐 <a href=\"https://searchbiz.co.za/directory?q={urllib.parse.quote(search_target)}\">View on SearchBiz Directory</a>"
+            send_telegram(chat_id, reply)
+            return
+        elif search_target and len(search_target) >= 3:
+            loc_name = search_target.title()
+            reply = f"""🔍 <b>No listings found in {loc_name} yet.</b>
+
+Currently, there are no live advertisements listed under <b>{loc_name}</b>.
+
+Would you like to place the first ad in <b>{loc_name}</b>?
+Simply send me:
+<i>"Place an ad for [Business Name] in {loc_name}, phone [082...], [address and details]"</i>"""
+            send_telegram(chat_id, reply)
+            return
+
     # 15. Natural Language Ad Creation
-    if any(k in lower for k in ['post ad', 'create ad', 'make an ad', 'make ad', 'add ad', 'new ad', 'post an ad', 'publish ad']):
-        phone_match = re.search(r'(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}', text)
+    ad_creation_triggers = [
+        'post ad', 'post an ad', 'post a ad',
+        'create ad', 'create an ad', 'create a ad',
+        'make an ad', 'make a ad', 'make ad',
+        'add ad', 'add an ad', 'add a ad',
+        'new ad', 'publish ad', 'publish an ad',
+        'place a ad', 'place an ad', 'place ad', 'list ad'
+    ]
+    has_biz_info = ('business name' in lower or 'company name' in lower) and ('phone' in lower or 'address' in lower or 'tel' in lower or 'cell' in lower)
+
+    if any(k in lower for k in ad_creation_triggers) or has_biz_info:
+        phone_match = re.search(r'(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}|\b0\d{9}\b', text)
         phone = re.sub(r'\s+', '', phone_match.group(0)) if phone_match else '0821234567'
 
-        cities = ['durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'umkomaas', 'ballito', 'randburg', 'centurion', 'soweto']
+        # Province detection
+        province = 'gauteng'
+        if any(w in lower for w in ['kzn', 'kwazulu', 'natal']): province = 'kwazulu-natal'
+        elif 'western cape' in lower or ' wc ' in lower: province = 'western-cape'
+        elif 'eastern cape' in lower: province = 'eastern-cape'
+        elif 'free state' in lower: province = 'free-state'
+        elif 'limpopo' in lower: province = 'limpopo'
+        elif 'mpumalanga' in lower: province = 'mpumalanga'
+        elif 'north west' in lower: province = 'north-west'
+        elif 'northern cape' in lower: province = 'northern-cape'
+        elif 'gauteng' in lower: province = 'gauteng'
+
+        # City detection
+        cities = ['umkomaas', 'durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'ballito', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg']
         found_city = 'Johannesburg'
         for c in cities:
             if c in lower:
                 found_city = ' '.join([w.capitalize() for w in c.split()])
+                if c in ['umkomaas', 'durban', 'ballito', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg']:
+                    province = 'kwazulu-natal'
                 break
 
-        cleaned = re.sub(r'^(?:please\s+)?(?:make|post|create|add|publish)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
-        title_candidate = cleaned.split(' in ')[0].split(' phone ')[0].split(',')[0].strip()
-        title = title_candidate.title() if len(title_candidate) > 2 else "New Business Listing"
+        # Address detection
+        addr_match = re.search(r'address[:\s]+([^\n\r]+)', text, re.IGNORECASE)
+        address = addr_match.group(1).strip() if addr_match else f"{found_city} 4170"
 
-        cat = "General Services"
-        if any(w in lower for w in ['plumber', 'plumbing', 'pipes']): cat = "Plumbers"
-        elif any(w in lower for w in ['electric', 'electrical', 'wire', 'wiring']): cat = "Electricians"
+        # Explicit Title / Business Name detection
+        explicit_title = None
+        name_match = re.search(r'(?:business\s+name|company\s+name|name)[:\s]+([^\n\r,]+)', text, re.IGNORECASE)
+        if name_match and len(name_match.group(1).strip()) > 1:
+            explicit_title = name_match.group(1).strip()
+        else:
+            for line in text.split('\n'):
+                if 'business name' in line.lower() or 'company name' in line.lower():
+                    cand = re.sub(r'.*(?:business\s+name|company\s+name)[:\s]*', '', line, flags=re.IGNORECASE).strip()
+                    if len(cand) > 1:
+                        explicit_title = cand
+                        break
+
+        if explicit_title:
+            title = explicit_title.title()
+        else:
+            cleaned = re.sub(r'^(?:please\s+)?(?:make|post|create|add|publish|place)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
+            title_candidate = cleaned.split(' in ')[0].split(' under ')[0].split(' phone ')[0].split(',')[0].strip()
+            title = title_candidate.title() if len(title_candidate) > 2 else "New Business Listing"
+
+        cat = "General Services & Trades"
+        if any(w in lower for w in ['plumber', 'plumbing', 'pipes']): cat = "Plumbing Services"
+        elif any(w in lower for w in ['electric', 'electrical', 'wire', 'wiring']): cat = "Electrical Services"
         elif any(w in lower for w in ['towing', 'tow', 'breakdown', 'recovery']): cat = "Towing & Breakdown"
         elif any(w in lower for w in ['mechanic', 'auto', 'car repair']): cat = "Auto Repair"
         elif any(w in lower for w in ['clean', 'cleaning']): cat = "Cleaning Services"
@@ -877,20 +966,25 @@ Would you like me to publish a new ad or send you full plan details via email?""
         elif any(w in lower for w in ['restaurant', 'food', 'catering', 'cafe']): cat = "Restaurants & Food"
 
         send_chat_action(chat_id, "typing")
-        res = searchbiz_create_ad(title, cat, found_city, phone, text)
+        res = searchbiz_create_ad(title, cat, found_city, phone, text, province=province, address=address)
         if res.get("success") and res.get("ad"):
             ad = res["ad"]
             reply = f"""✨ <b>Advertisement Published!</b>
 
 🏢 <b>{ad['title']}</b>
 🏷️ Category: {ad['category']}
-📍 Location: {ad.get('city', found_city)}
+📍 Location: {ad.get('city', found_city)}, {province.upper()}
+🏠 Address: {address}
 📞 Phone: {ad.get('phone', phone)}
 🆔 ID: <code>{ad['id']}</code>
 ⭐ Status: Verified & Premium
 
 🌐 <a href="https://searchbiz.co.za/directory?q={urllib.parse.quote(ad['title'])}">View Live Listing on SearchBiz</a>"""
             send_telegram(chat_id, reply)
+            return
+        else:
+            err = res.get("error") or "Unknown error"
+            send_telegram(chat_id, f"❌ Failed to publish ad: {err}")
             return
 
     # 16. Natural Language Ad Deletion
