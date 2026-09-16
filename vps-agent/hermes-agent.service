@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes Autonomous Executive Agent for SearchBiz
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hermes-searchbiz
+EnvironmentFile=/opt/hermes-searchbiz/.env
+ExecStart=/usr/bin/python3 /opt/hermes-searchbiz/hermes_searchbiz_agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

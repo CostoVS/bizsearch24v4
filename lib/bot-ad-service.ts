@@ -1,0 +1,330 @@
+import fs from 'fs';
+import path from 'path';
+import { cleanAdsArray } from './clean-ad';
+import { SA_PROVINCES } from './locations';
+
+const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
+
+// Global cache access matching /app/api/storage/route.ts
+const globalRef = global as any;
+
+export interface BotAdPayload {
+  title: string;
+  category: string;
+  province?: string;
+  city?: string;
+  location?: string;
+  suburb?: string;
+  address?: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  website?: string;
+  description: string;
+  tradingHours?: string;
+  servicesOffered?: string;
+  preferredContact?: string;
+  verified?: boolean;
+  isPremium?: boolean;
+  isSponsor?: boolean;
+  image?: string;
+  price?: string | number;
+}
+
+export function readServerDb(): any {
+  try {
+    if (fs.existsSync(JSON_PATH)) {
+      const fileContent = fs.readFileSync(JSON_PATH, 'utf-8');
+      const data = JSON.parse(fileContent);
+      if (data && typeof data === 'object') {
+        data.ads = Array.isArray(data.ads) ? data.ads : [];
+        data.trashAds = Array.isArray(data.trashAds) ? data.trashAds : [];
+        data.deletedAds = Array.isArray(data.deletedAds) ? data.deletedAds : [];
+        return data;
+      }
+    }
+  } catch (e) {
+    console.error('[BotAdService] Failed to read db.json:', e);
+  }
+  return { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now() };
+}
+
+export function writeServerDb(data: any): void {
+  try {
+    const dir = path.dirname(JSON_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    data.updatedAt = Date.now();
+    fs.writeFileSync(JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    
+    // Update global cache so GET /api/storage serves fresh data
+    globalRef.storageCache = data;
+    globalRef.storageCacheTime = Date.now();
+  } catch (e) {
+    console.error('[BotAdService] Failed to write db.json:', e);
+  }
+}
+
+// Normalize province string to canonical slug
+export function normalizeProvinceSlug(rawProvince?: string): string {
+  if (!rawProvince) return 'gauteng';
+  const clean = rawProvince.toLowerCase().trim();
+  
+  if (clean.includes('kzn') || clean.includes('kwazulu') || clean.includes('natal')) {
+    return 'kwazulu-natal';
+  }
+  if (clean.includes('gauteng') || clean.includes('jhb') || clean.includes('pta') || clean.includes('pretoria') || clean.includes('joburg')) {
+    return 'gauteng';
+  }
+  if (clean.includes('west') && clean.includes('cape')) {
+    return 'western-cape';
+  }
+  if (clean.includes('east') && clean.includes('cape')) {
+    return 'eastern-cape';
+  }
+  if (clean.includes('north') && clean.includes('cape')) {
+    return 'northern-cape';
+  }
+  if (clean.includes('free') || clean.includes('state')) {
+    return 'free-state';
+  }
+  if (clean.includes('limpopo')) {
+    return 'limpopo';
+  }
+  if (clean.includes('mpumalanga')) {
+    return 'mpumalanga';
+  }
+  if (clean.includes('north') && clean.includes('west')) {
+    return 'north-west';
+  }
+  if (clean.includes('national')) {
+    return 'national';
+  }
+
+  // Exact match search
+  const found = SA_PROVINCES.find((p: any) => p.slug === clean || p.name.toLowerCase() === clean);
+  return found ? found.slug : 'gauteng';
+}
+
+/**
+ * Create a new business advertisement on SearchBiz
+ */
+export async function createBotAd(payload: BotAdPayload): Promise<{ success: boolean; ad?: any; error?: string }> {
+  if (!payload.title || !payload.title.trim()) {
+    return { success: false, error: 'Business title is required.' };
+  }
+  if (!payload.phone || !payload.phone.trim()) {
+    return { success: false, error: 'Phone number is required.' };
+  }
+
+  const dbData = readServerDb();
+  const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
+
+  const town = payload.city || payload.location || 'Johannesburg';
+  const province = normalizeProvinceSlug(payload.province);
+  const nowIso = new Date().toISOString();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const adId = `ad-agent-${Date.now()}-${randomSuffix}`;
+
+  const defaultDescription = payload.description && payload.description.trim().length >= 10
+    ? payload.description.trim()
+    : `${payload.title.trim()} offers top-tier professional ${payload.category || 'business'} services in ${town}, ${province.toUpperCase()}. Contact us today for reliable support and quotes.`;
+
+  const newAd = {
+    id: adId,
+    userId: 'agent-bot',
+    isActive: true,
+    title: payload.title.trim(),
+    category: payload.category ? payload.category.trim() : 'General Services',
+    location: town.toLowerCase(),
+    city: town,
+    province: province,
+    suburb: payload.suburb ? payload.suburb.trim() : '',
+    serviceAreas: [],
+    description: defaultDescription,
+    tradingHours: payload.tradingHours || 'Mon-Fri: 08:00 - 17:00',
+    servicesOffered: payload.servicesOffered || payload.category || 'Professional Services',
+    preferredContact: payload.preferredContact || (payload.whatsapp ? 'WhatsApp' : 'Phone'),
+    showCallOption: true,
+    verified: payload.verified !== undefined ? payload.verified : true,
+    isPremium: payload.isPremium !== undefined ? payload.isPremium : true,
+    isSponsor: payload.isSponsor || false,
+    isClaimed: true,
+    source: 'agent_bot',
+    image: payload.image || 'https://picsum.photos/seed/' + encodeURIComponent(payload.title) + '/800/600',
+    address: payload.address ? payload.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
+    phone: payload.phone.trim(),
+    whatsapp: payload.whatsapp ? payload.whatsapp.trim() : payload.phone.trim(),
+    email: payload.email ? payload.email.trim() : '',
+    website: payload.website ? payload.website.trim() : '',
+    price: payload.price !== undefined ? payload.price : undefined,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+
+  // Prepend to active ads
+  const updatedAds = cleanAdsArray([newAd, ...currentAds]);
+  dbData.ads = updatedAds;
+
+  // Make sure not in deletedAds or trashAds
+  if (Array.isArray(dbData.deletedAds)) {
+    dbData.deletedAds = dbData.deletedAds.filter((id: string) => id !== adId);
+  }
+  if (Array.isArray(dbData.trashAds)) {
+    dbData.trashAds = dbData.trashAds.filter((t: any) => t && t.id !== adId);
+  }
+
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    ad: {
+      ...newAd,
+      url: `/directory?q=${encodeURIComponent(newAd.title)}`
+    }
+  };
+}
+
+/**
+ * Remove an ad by ID or search term (moves to Recycle Bin by default)
+ */
+export async function deleteBotAd(
+  idOrTitle: string, 
+  permanent: boolean = false
+): Promise<{ success: boolean; removedAd?: any; inTrash?: boolean; error?: string }> {
+  if (!idOrTitle || !idOrTitle.trim()) {
+    return { success: false, error: 'Ad ID or business title is required.' };
+  }
+
+  const query = idOrTitle.trim().toLowerCase();
+  const dbData = readServerDb();
+  const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
+
+  // Match exact ID first, then title, then partial title
+  let targetAd = ads.find((a: any) => a && a.id && a.id.toLowerCase() === query);
+  if (!targetAd) {
+    targetAd = ads.find((a: any) => a && a.title && a.title.toLowerCase() === query);
+  }
+  if (!targetAd) {
+    targetAd = ads.find((a: any) => a && a.title && a.title.toLowerCase().includes(query));
+  }
+  if (!targetAd) {
+    targetAd = ads.find((a: any) => a && a.phone && a.phone.replace(/[^0-9]/g, '').includes(query.replace(/[^0-9]/g, '')));
+  }
+
+  if (!targetAd) {
+    return { 
+      success: false, 
+      error: `No active advertisement found matching "${idOrTitle}".` 
+    };
+  }
+
+  const adId = targetAd.id;
+  dbData.ads = ads.filter((a: any) => a && a.id !== adId);
+
+  if (permanent) {
+    const deletedAds = Array.isArray(dbData.deletedAds) ? dbData.deletedAds : [];
+    if (!deletedAds.includes(adId)) {
+      dbData.deletedAds = [...deletedAds, adId];
+    }
+    const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+    dbData.trashAds = trash.filter((t: any) => t && t.id !== adId);
+  } else {
+    // Soft delete to Recycle Bin
+    const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+    const alreadyInTrash = trash.find((t: any) => t && t.id === adId);
+    if (!alreadyInTrash) {
+      dbData.trashAds = [{ ...targetAd, deletedAt: new Date().toISOString() }, ...trash];
+    }
+  }
+
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    removedAd: targetAd,
+    inTrash: !permanent
+  };
+}
+
+/**
+ * Search or list ads
+ */
+export async function searchBotAds(searchTerm?: string, limit: number = 10): Promise<any[]> {
+  const dbData = readServerDb();
+  const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
+  
+  if (!searchTerm || !searchTerm.trim()) {
+    return ads.slice(0, limit);
+  }
+
+  const q = searchTerm.toLowerCase().trim();
+  const filtered = ads.filter((a: any) => {
+    if (!a) return false;
+    const title = (a.title || '').toLowerCase();
+    const cat = (a.category || '').toLowerCase();
+    const city = (a.location || a.city || '').toLowerCase();
+    const prov = (a.province || '').toLowerCase();
+    const phone = (a.phone || '').toLowerCase();
+    const id = (a.id || '').toLowerCase();
+
+    return title.includes(q) || cat.includes(q) || city.includes(q) || prov.includes(q) || phone.includes(q) || id.includes(q);
+  });
+
+  return filtered.slice(0, limit);
+}
+
+/**
+ * Restore an ad from the Recycle Bin
+ */
+export async function restoreBotAd(idOrTitle: string): Promise<{ success: boolean; restoredAd?: any; error?: string }> {
+  if (!idOrTitle || !idOrTitle.trim()) {
+    return { success: false, error: 'Ad ID or business title is required.' };
+  }
+
+  const query = idOrTitle.trim().toLowerCase();
+  const dbData = readServerDb();
+  const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+
+  let targetTrash = trash.find((t: any) => t && t.id && t.id.toLowerCase() === query);
+  if (!targetTrash) {
+    targetTrash = trash.find((t: any) => t && t.title && t.title.toLowerCase() === query);
+  }
+  if (!targetTrash) {
+    targetTrash = trash.find((t: any) => t && t.title && t.title.toLowerCase().includes(query));
+  }
+
+  if (!targetTrash) {
+    return { success: false, error: `No deleted ad found in Recycle Bin matching "${idOrTitle}".` };
+  }
+
+  const adId = targetTrash.id;
+  const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
+  
+  const cleanedAd = { ...targetTrash };
+  delete cleanedAd.deletedAt;
+
+  dbData.trashAds = trash.filter((t: any) => t && t.id !== adId);
+  dbData.ads = cleanAdsArray([cleanedAd, ...currentAds.filter((a: any) => a && a.id !== adId)]);
+  
+  if (Array.isArray(dbData.deletedAds)) {
+    dbData.deletedAds = dbData.deletedAds.filter((id: string) => id !== adId);
+  }
+
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    restoredAd: cleanedAd
+  };
+}
+
+/**
+ * List recent ads in Recycle Bin
+ */
+export async function getBotTrashAds(limit: number = 10): Promise<any[]> {
+  const dbData = readServerDb();
+  const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+  return trash.slice(0, limit);
+}
