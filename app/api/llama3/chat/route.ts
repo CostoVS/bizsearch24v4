@@ -394,6 +394,40 @@ Please answer the user's inquiry based on this verified dataset.
       return NextResponse.json({ text: responseText });
     }
 
+    // Conversational, complaints, meta-inquiries or commands handling
+    const isConversational = 
+      normalizedQuery.includes("you didn't") ||
+      normalizedQuery.includes("why didn't") ||
+      normalizedQuery.includes("why did you") ||
+      normalizedQuery.includes("what did you") ||
+      normalizedQuery.includes("i told you") ||
+      normalizedQuery.includes("i asked you") ||
+      normalizedQuery.includes("not working") ||
+      normalizedQuery.includes("delete") ||
+      normalizedQuery.includes("remove") ||
+      normalizedQuery.includes("restore") ||
+      (normalizedQuery.includes("where") && (normalizedQuery.includes("ads") || normalizedQuery.includes("went") || normalizedQuery.includes("my"))) ||
+      normalizedQuery.includes("help") ||
+      normalizedQuery.includes("can you") ||
+      normalizedQuery.includes("error") ||
+      normalizedQuery.includes("failed");
+
+    if (isConversational) {
+      if (normalizedQuery.includes("delete") || normalizedQuery.includes("remove")) {
+        return NextResponse.json({
+          text: `I understand you want to delete or remove an advertisement! To remove any ad immediately, you can tell me:\n• *"Delete the ad you just created"*\n• *"Delete the ad in [City]"*\n• Or use \`/delete_ad [ID or Business Name]\`\n\nIf you want me to remove the ad created in Umkomaas or the last created listing, simply say *"Delete the recent ad"* or send the ID!`
+        });
+      }
+      if (normalizedQuery.includes("where") || normalizedQuery.includes("restore") || normalizedQuery.includes("missing")) {
+        return NextResponse.json({
+          text: `If listings were archived or moved to the Recycle Bin, they are completely safe and can be restored! You can:\n• Send \`/restore_all\` to restore all listings from the Recycle Bin back to the live directory\n• Open SearchBiz Admin and visit the **Recycle Bin & Trash** tab to click "Restore Selected" or "Restore All".`
+        });
+      }
+      return NextResponse.json({
+        text: `I apologize for any misunderstanding! As your SearchBiz AI assistant, I can perform direct tasks for you:\n• **Create an ad:** *"Place an ad for [Business Name] in [City], phone [082...], [details]"*\n• **Delete an ad:** *"Delete the ad you just created"* or \`/delete_ad [ID]\`\n• **Restore all ads:** \`/restore_all\`\n• **Search listings:** *"What ads are in [City]"*\n\nTell me what you'd like me to execute right now!`
+      });
+    }
+
     if (searchTarget && searchTarget.length >= 3 && !searchTarget.includes("direct match")) {
       const formattedLocation = searchTarget.charAt(0).toUpperCase() + searchTarget.slice(1);
       return NextResponse.json({

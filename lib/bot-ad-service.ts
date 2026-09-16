@@ -166,6 +166,8 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   // Prepend to active ads
   const updatedAds = cleanAdsArray([newAd, ...currentAds]);
   dbData.ads = updatedAds;
+  dbData.lastCreatedAdId = newAd.id;
+  dbData.lastCreatedAd = newAd;
 
   // Make sure not in deletedAds or trashAds
   if (Array.isArray(dbData.deletedAds)) {
@@ -197,20 +199,113 @@ export async function deleteBotAd(
     return { success: false, error: 'Ad ID or business title is required.' };
   }
 
-  const query = idOrTitle.trim().toLowerCase();
+  const rawQuery = idOrTitle.trim();
+  const query = rawQuery.toLowerCase();
   const dbData = readServerDb();
   const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
 
-  // Match exact ID first, then title, then partial title
-  let targetAd = ads.find((a: any) => a && a.id && a.id.toLowerCase() === query);
+  if (ads.length === 0) {
+    return { success: false, error: 'There are currently no active listings to delete.' };
+  }
+
+  // 1. Check for references to "just created", "what you created", "this ad", "it", "that", "the ad"
+  const isRecentRef = 
+    query.includes('just created') ||
+    query.includes('you just made') ||
+    query.includes('what it just created') ||
+    query.includes('what you just created') ||
+    query.includes('this ad') ||
+    query.includes('that ad') ||
+    query.includes('the ad you created') ||
+    query.includes('last ad') ||
+    query.includes('latest ad') ||
+    query === 'it' ||
+    query === 'this' ||
+    query === 'that';
+
+  let targetAd: any = null;
+
+  // If referring to the recent ad
+  if (isRecentRef) {
+    if (dbData.lastCreatedAdId) {
+      targetAd = ads.find((a: any) => a && a.id === dbData.lastCreatedAdId);
+    }
+    if (!targetAd) {
+      // Find the most recent bot-created ad or most recent ad
+      targetAd = ads.find((a: any) => a && a.source === 'agent_bot') || ads[0];
+    }
+  }
+
+  // 2. Match exact ID
+  if (!targetAd) {
+    targetAd = ads.find((a: any) => a && a.id && a.id.toLowerCase() === query);
+  }
+
+  // 3. Match exact Title
   if (!targetAd) {
     targetAd = ads.find((a: any) => a && a.title && a.title.toLowerCase() === query);
   }
+
+  // 4. Match partial Title
   if (!targetAd) {
     targetAd = ads.find((a: any) => a && a.title && a.title.toLowerCase().includes(query));
   }
+
+  // 5. Match phone
   if (!targetAd) {
-    targetAd = ads.find((a: any) => a && a.phone && a.phone.replace(/[^0-9]/g, '').includes(query.replace(/[^0-9]/g, '')));
+    const queryDigits = query.replace(/[^0-9]/g, '');
+    if (queryDigits.length >= 7) {
+      targetAd = ads.find((a: any) => a && a.phone && a.phone.replace(/[^0-9]/g, '').includes(queryDigits));
+    }
+  }
+
+  // 6. Cleaned conversational phrase matching
+  if (!targetAd) {
+    // Strip common filler words
+    const stripped = query
+      .replace(/^(?:ok\s+|please\s+)?(?:delete|remove|trash|take\s+down|cancel|drop)\s+/i, '')
+      .replace(/(?:the\s+)?ad(?:vertisement)?\s*/i, '')
+      .replace(/(?:that\s+)?(?:you\s+)?just\s+(?:created|made|posted|published)\s*/i, '')
+      .replace(/^(?:in|for|at|from)\s+/i, '')
+      .replace(/[?!.,]/g, '')
+      .trim();
+
+    if (stripped.length >= 2) {
+      targetAd = ads.find((a: any) => a && a.title && a.title.toLowerCase().includes(stripped));
+      if (!targetAd) {
+        targetAd = ads.find((a: any) => {
+          const city = (a.city || a.location || '').toLowerCase();
+          const prov = (a.province || '').toLowerCase();
+          const suburb = (a.suburb || '').toLowerCase();
+          return city.includes(stripped) || prov.includes(stripped) || suburb.includes(stripped) || stripped.includes(city);
+        });
+      }
+    }
+  }
+
+  // 7. Check if a South African city was mentioned (e.g. "in umkomaas")
+  if (!targetAd) {
+    const saCities = [
+      'umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria',
+      'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane',
+      'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'randburg', 'centurion',
+      'soweto', 'amanzimtoti', 'scottburgh', 'margate'
+    ];
+    for (const c of saCities) {
+      if (query.includes(c)) {
+        // Find ad in that city
+        targetAd = ads.find((a: any) => {
+          const city = (a.city || a.location || '').toLowerCase();
+          return city.includes(c);
+        });
+        if (targetAd) break;
+      }
+    }
+  }
+
+  // 8. If there is only 1 ad in the entire directory and the user is asking to delete
+  if (!targetAd && ads.length === 1 && (query.includes('delete') || query.includes('remove') || isRecentRef)) {
+    targetAd = ads[0];
   }
 
   if (!targetAd) {
@@ -222,6 +317,12 @@ export async function deleteBotAd(
 
   const adId = targetAd.id;
   dbData.ads = ads.filter((a: any) => a && a.id !== adId);
+
+  // Clear lastCreatedAd if we just deleted it
+  if (dbData.lastCreatedAdId === adId) {
+    dbData.lastCreatedAdId = null;
+    dbData.lastCreatedAd = null;
+  }
 
   if (permanent) {
     const deletedAds = Array.isArray(dbData.deletedAds) ? dbData.deletedAds : [];
@@ -345,4 +446,61 @@ export async function getBotTrashAds(limit: number = 10): Promise<any[]> {
   const dbData = readServerDb();
   const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
   return trash.slice(0, limit);
+}
+
+/**
+ * Restore ALL ads from the Recycle Bin back into active directory listings
+ */
+export async function restoreAllBotAds(): Promise<{ success: boolean; count: number; activeTotal: number; error?: string }> {
+  const dbData = readServerDb();
+  const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+  const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
+
+  if (trash.length === 0) {
+    return {
+      success: true,
+      count: 0,
+      activeTotal: currentAds.length
+    };
+  }
+
+  const restoredAds = trash.map((t: any) => {
+    const copy = { ...t };
+    delete copy.deletedAt;
+    return copy;
+  });
+
+  const merged = cleanAdsArray([...restoredAds, ...currentAds]);
+  dbData.ads = merged;
+  dbData.trashAds = [];
+  dbData.deletedAds = [];
+
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    count: restoredAds.length,
+    activeTotal: merged.length
+  };
+}
+
+/**
+ * Get directory statistics (active, trash, last created ad)
+ */
+export async function getBotStats(): Promise<{
+  activeCount: number;
+  trashCount: number;
+  deletedCount: number;
+  lastCreatedAd: any;
+}> {
+  const dbData = readServerDb();
+  const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
+  const trash = Array.isArray(dbData.trashAds) ? dbData.trashAds : [];
+  const deleted = Array.isArray(dbData.deletedAds) ? dbData.deletedAds : [];
+  return {
+    activeCount: ads.length,
+    trashCount: trash.length,
+    deletedCount: deleted.length,
+    lastCreatedAd: dbData.lastCreatedAd || null
+  };
 }

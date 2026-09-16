@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createBotAd, deleteBotAd, searchBotAds, restoreBotAd, getBotTrashAds } from '@/lib/bot-ad-service';
+import { createBotAd, deleteBotAd, searchBotAds, restoreBotAd, restoreAllBotAds, getBotTrashAds } from '@/lib/bot-ad-service';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI } from '@google/genai';
 
@@ -350,6 +350,17 @@ To undo this, send:
       return NextResponse.json({ ok: true });
     }
 
+    // 5b. /restore_all or /untrash_all
+    if (text.startsWith('/restore_all') || text.startsWith('/untrash_all') || text.startsWith('/recover_ads')) {
+      const result = await restoreAllBotAds();
+      if (result.success) {
+        await sendTelegramMessage(chatId, `♻️ <b>Recycle Bin Restored!</b>\nSuccessfully restored <b>${result.count}</b> listing(s) back into live directory! Total active: <b>${result.activeTotal}</b>.`);
+      } else {
+        await sendTelegramMessage(chatId, `❌ ${result.error || 'Could not restore ads.'}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     // 6. /list_ads or /search_ads
     if (text.startsWith('/list_ads') || text.startsWith('/search_ads')) {
       const q = text.replace(/^\/(?:list_ads|search_ads)\s*/i, '').trim();
@@ -461,18 +472,57 @@ To undo this, send:
       }
     }
 
+    // 8b. Restore / Where did ads go / Recycle Bin recovery
+    const restoreTriggers = [
+      'where did all the ads go', 'where all the ads went', 'where are all the ads',
+      'where are my ads', 'where did the ads go', 'where is all the ads',
+      'restore all ads', 'restore my ads', 'restore ads', 'bring back the ads',
+      'bring back all ads', 'untrash all', 'recover ads', 'restore all',
+      'bring back my ads'
+    ];
+    if (restoreTriggers.some(t => lower.includes(t)) || ((lower.includes('where') || lower.includes('restore') || lower.includes('missing')) && (lower.includes('ads') || lower.includes('listings')))) {
+      const result = await restoreAllBotAds();
+      if (result.success) {
+        if (result.count > 0) {
+          await sendTelegramMessage(chatId, `♻️ <b>Recycle Bin Restored!</b>\n\nI have retrieved and restored <b>${result.count} listing(s)</b> from the Recycle Bin back to the active directory!\nTotal live listings on SearchBiz: <b>${result.activeTotal}</b>.\n\n🌐 You can view all live listings at <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>.`);
+        } else {
+          await sendTelegramMessage(chatId, `ℹ️ <b>Directory Status</b>\n\nThere were no deleted listings in the Recycle Bin.\nCurrent active listings: <b>${result.activeTotal}</b>.`);
+        }
+      } else {
+        await sendTelegramMessage(chatId, `⚠️ ${result.error || 'Could not restore ads.'}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     // 9. Natural Language Ad Deletion
-    if (lower.includes('delete ad') || lower.includes('remove ad') || lower.includes('trash ad') || lower.includes('take down')) {
-      const cleaned = text
-        .replace(/(?:please\s+)?(?:delete|remove|trash|take\s+down)\s+(?:the\s+)?ad(?:vertisement)?\s+(?:for\s+)?/i, '')
+    const deleteKeywords = ['delete', 'remove', 'trash', 'take down', 'takedown', 'get rid of', 'purge'];
+    const hasDeleteIntent = deleteKeywords.some(k => lower.includes(k)) && (
+      ['ad', 'advertisement', 'listing', 'business', 'created', 'umkomaas', 'it', 'this', 'that'].some(w => lower.includes(w)) ||
+      lower.includes('just created') || lower.includes('you created') || lower.includes('it created') || lower.includes('last ad')
+    );
+
+    if (hasDeleteIntent) {
+      let target = text
+        .replace(/^(?:ok\s+|please\s+)?(?:delete|remove|trash|take\s+down|purge)\s+/i, '')
+        .replace(/(?:the\s+)?ad(?:vertisement)?\s*/i, '')
+        .replace(/(?:that\s+)?(?:you\s+|it\s+)?just\s+(?:created|made|posted|published)\s*/i, '')
+        .replace(/^(?:in|for|at|from)\s+/i, '')
+        .replace(/[?!.,]/g, '')
         .trim();
 
-      if (cleaned.length >= 3) {
-        const delRes = await deleteBotAd(cleaned, false);
-        if (delRes.success && delRes.removedAd) {
-          await sendTelegramMessage(chatId, `🗑️ Removed <b>"${delRes.removedAd.title}"</b> (ID: <code>${delRes.removedAd.id}</code>) and moved it to the SearchBiz Recycle Bin.`);
-          return NextResponse.json({ ok: true });
-        }
+      if (!target || lower.includes('just created') || lower.includes('last ad') || lower.includes('this ad')) {
+        target = 'just created';
+      }
+
+      const delRes = await deleteBotAd(target, false);
+      if (delRes.success && delRes.removedAd) {
+        const ad = delRes.removedAd;
+        const loc = ad.city ? ` in ${ad.city}` : '';
+        await sendTelegramMessage(chatId, `🗑️ <b>Ad Archived to Recycle Bin</b>\n\nListing <b>"${ad.title}"</b>${loc} (ID: <code>${ad.id}</code>) has been successfully taken off the live directory.\n\n♻️ To restore it at any time, run <code>/restore_ad ${ad.id}</code> or send <i>"Restore all ads"</i>.`);
+        return NextResponse.json({ ok: true });
+      } else {
+        await sendTelegramMessage(chatId, `⚠️ ${delRes.error || `Could not find an active listing matching '${target}'.`}\n\nUse <code>/list_ads</code> to inspect active listings or <code>/delete_ad [ID]</code>.`);
+        return NextResponse.json({ ok: true });
       }
     }
 

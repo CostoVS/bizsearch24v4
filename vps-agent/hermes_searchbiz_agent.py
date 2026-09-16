@@ -169,7 +169,10 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
         _CACHED_API_URL = None
         return {"error": str(e)}
 
+_LAST_CREATED_AD = None
+
 def searchbiz_create_ad(title: str, category: str, city: str, phone: str, description: str, province: str = "gauteng", address: str = None):
+    global _LAST_CREATED_AD
     payload = {
         "title": title,
         "category": category,
@@ -182,7 +185,10 @@ def searchbiz_create_ad(title: str, category: str, city: str, phone: str, descri
         "verified": True,
         "isPremium": True
     }
-    return api_request("/api/bot/ad", method="POST", payload=payload)
+    res = api_request("/api/bot/ad", method="POST", payload=payload)
+    if res.get("success") and res.get("ad"):
+        _LAST_CREATED_AD = res.get("ad")
+    return res
 
 def searchbiz_delete_ad(id_or_title: str, permanent: bool = False):
     payload = {
@@ -198,6 +204,12 @@ def searchbiz_list_ads(query: str = "", limit: int = 5):
 def searchbiz_restore_ad(id_or_title: str):
     payload = {"id": id_or_title}
     return api_request("/api/bot/ad", method="PATCH", payload=payload)
+
+def searchbiz_restore_all_ads():
+    return api_request("/api/bot/ad", method="PATCH", payload={"all": True})
+
+def searchbiz_get_stats():
+    return api_request("/api/bot/ad?stats=true", method="GET")
 
 
 # ============================================================================
@@ -505,21 +517,27 @@ Live Platform: <code>{base_url}</code>
     # 4. Delete Ad Command (/delete_ad)
     if text.startswith("/delete_ad") or text.startswith("/remove_ad"):
         target = text.split(" ", 1)[-1].strip() if " " in text else ""
+        if not target and _LAST_CREATED_AD:
+            target = _LAST_CREATED_AD.get("id") or _LAST_CREATED_AD.get("title") or ""
+
         if not target:
-            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/delete_ad [ID or Business Name]</code>")
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/delete_ad [ID or Business Name]</code>\nOr simply say <i>\"Delete the ad you just created\"</i>.")
             return
 
         send_chat_action(chat_id, "typing")
         res = searchbiz_delete_ad(target)
         if res.get("success"):
             removed = res.get("removedAd", {})
-            send_telegram(chat_id, f"""
-🗑️ <b>Ad Archived to Recycle Bin</b>
-Listing <b>"{removed.get('title', target)}"</b> (ID: <code>{removed.get('id')}</code>) has been safely taken off the live directory.
+            title = removed.get('title', target)
+            ad_id = removed.get('id', target)
+            city = removed.get('city', '')
+            loc_str = f" in {city}" if city else ""
+            send_telegram(chat_id, f"""🗑️ <b>Ad Archived to Recycle Bin</b>
+Listing <b>"{title}"</b>{loc_str} (ID: <code>{ad_id}</code>) has been safely taken off the live directory.
 
-♻️ To restore it, run:
-<code>/restore_ad {removed.get('id')}</code>
-""")
+♻️ To restore it at any time:
+<code>/restore_ad {ad_id}</code>
+or run <code>/restore_all</code> to recover all listings.""")
         else:
             send_telegram(chat_id, f"❌ Failed: {res.get('error')}")
         return
@@ -547,6 +565,19 @@ Listing <b>"{removed.get('title', target)}"</b> (ID: <code>{removed.get('id')}</
         res = searchbiz_restore_ad(target)
         if res.get("success"):
             send_telegram(chat_id, f"✅ <b>Restored!</b> Listing <b>\"{res['ad']['title']}\"</b> is live again.")
+        else:
+            send_telegram(chat_id, f"❌ Restore error: {res.get('error')}")
+        return
+
+    # 6b. Restore All Ads (/restore_all or /untrash_all)
+    if text.startswith("/restore_all") or text.startswith("/untrash_all") or text.startswith("/recover_ads"):
+        send_chat_action(chat_id, "typing")
+        res = searchbiz_restore_all_ads()
+        if res.get("success"):
+            count = res.get("restoredCount", res.get("count", 0))
+            total = res.get("activeTotal", "")
+            total_str = f" Total active listings now: <b>{total}</b>." if total else ""
+            send_telegram(chat_id, f"♻️ <b>Recycle Bin Restored!</b>\nSuccessfully restored <b>{count}</b> listing(s) back into the live SearchBiz directory.{total_str}")
         else:
             send_telegram(chat_id, f"❌ Restore error: {res.get('error')}")
         return
@@ -853,9 +884,118 @@ Would you like me to publish a new ad or send you full plan details via email?""
         send_telegram(chat_id, f"🙏 <b>You're very welcome, {sender}!</b> Always at your service. Let me know whenever you need more listings, emails, or updates!")
         return
 
-    # 14b. Natural Language Directory Search (e.g. "Ok what ads you have in umkomaas")
+    # 14b. Restore / Where did ads go / Recycle Bin recovery
+    restore_triggers = [
+        'where did all the ads go', 'where all the ads went', 'where are all the ads',
+        'where are my ads', 'where did the ads go', 'where is all the ads',
+        'restore all ads', 'restore my ads', 'restore ads', 'bring back the ads',
+        'bring back all ads', 'untrash all', 'recover ads', 'restore all',
+        'bring back my ads'
+    ]
+    if any(t in lower for t in restore_triggers) or (('where' in lower or 'restore' in lower or 'missing' in lower) and ('ads' in lower or 'listings' in lower)):
+        send_chat_action(chat_id, "typing")
+        res = searchbiz_restore_all_ads()
+        if res.get("success"):
+            count = res.get("restoredCount", res.get("count", 0))
+            total = res.get("activeTotal", "")
+            if count > 0:
+                send_telegram(chat_id, f"""♻️ <b>Recycle Bin Restored!</b>
+
+I have retrieved and restored <b>{count} listing(s)</b> from the Recycle Bin back to the active directory!
+Total live listings on SearchBiz: <b>{total}</b>.
+
+🌐 You can view all live listings at <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>.""")
+                return
+            else:
+                send_telegram(chat_id, f"""ℹ️ <b>Directory Status</b>
+
+There were no deleted listings sitting in the Recycle Bin to restore.
+Current active listings in the index: <b>{total}</b>.
+
+If you recently reset your database or ran a fresh sync, your listings can also be restored via the Admin Dashboard under <b>Recycle Bin & Trash</b>.""")
+                return
+        else:
+            send_telegram(chat_id, f"⚠️ Unable to query Recycle Bin: {res.get('error')}")
+            return
+
+    # 14c. Natural Language Ad Deletion (MUST run BEFORE search!)
+    delete_keywords = ['delete', 'remove', 'trash', 'take down', 'takedown', 'get rid of', 'purge']
+    has_delete_intent = any(k in lower for k in delete_keywords) and (
+        any(w in lower for w in ['ad', 'advertisement', 'listing', 'business', 'created', 'umkomaas', 'it', 'this', 'that']) or
+        'just created' in lower or 'you created' in lower or 'it created' in lower or 'last ad' in lower
+    )
+
+    if has_delete_intent:
+        send_chat_action(chat_id, "typing")
+        
+        # Check if referring to what was just created or recent
+        is_recent_ref = (
+            'just created' in lower or 'you just created' in lower or 'it just created' in lower or
+            'what it just created' in lower or 'what you just created' in lower or
+            'this ad' in lower or 'that ad' in lower or 'the ad you' in lower or
+            lower.strip() in ['delete it', 'remove it', 'delete this', 'remove this'] or
+            'last ad' in lower
+        )
+
+        target = ""
+        if is_recent_ref and _LAST_CREATED_AD and _LAST_CREATED_AD.get("id"):
+            target = _LAST_CREATED_AD.get("id")
+        elif is_recent_ref:
+            target = "just created"
+        else:
+            # Check for city
+            sa_cities = ['umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate']
+            found_c = None
+            for c in sa_cities:
+                if c in lower:
+                    found_c = c
+                    break
+            
+            # Clean text
+            cleaned = re.sub(r'^(?:ok\s+|please\s+)?(?:delete|remove|trash|take\s+down|purge)\s+', '', text, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r'(?:the\s+)?ad(?:vertisement)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r'(?:that\s+)?(?:you\s+|it\s+)?just\s+(?:created|made|posted|published)\s*', '', cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r'^(?:in|for|at|from)\s+', '', cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r'[?!.,]', '', cleaned).strip()
+
+            if found_c and (not cleaned or len(cleaned) < 3):
+                target = found_c
+            elif cleaned:
+                target = cleaned
+            elif _LAST_CREATED_AD:
+                target = _LAST_CREATED_AD.get("id", "")
+            else:
+                target = "just created"
+
+        res = searchbiz_delete_ad(target)
+        if res.get("success") and res.get("removedAd"):
+            removed = res["removedAd"]
+            title = removed.get('title', 'Listing')
+            ad_id = removed.get('id', target)
+            city = removed.get('city', '')
+            loc_str = f" in {city}" if city else ""
+            reply = f"""🗑️ <b>Ad Archived to Recycle Bin</b>
+
+Listing <b>"{title}"</b>{loc_str} (ID: <code>{ad_id}</code>) has been successfully taken off the live directory!
+
+♻️ To restore it at any time, just reply:
+<code>/restore_ad {ad_id}</code>
+or say <i>"Restore all ads"</i>."""
+            send_telegram(chat_id, reply)
+            return
+        else:
+            err = res.get("error") or f"Could not find an active listing matching '{target}'."
+            send_telegram(chat_id, f"⚠️ <b>Delete request:</b> {err}\n\nYou can run <code>/list_ads</code> to view current live IDs or <code>/delete_ad [ID]</code>.")
+            return
+
+    # 14d. Natural Language Directory Search (e.g. "Ok what ads you have in umkomaas")
     search_triggers = ['what ads', 'which ads', 'show ads', 'list ads', 'any ads', 'search ads', 'find ads', 'what businesses', 'show businesses', 'any business', 'ads in', 'businesses in', 'listings in', 'who has ads']
-    if any(k in lower for k in search_triggers) or (lower.startswith('ok ') and any(k in lower for k in ['ads', 'businesses', 'listings'])):
+    is_search_intent = (
+        (any(k in lower for k in search_triggers) or (lower.startswith('ok ') and any(k in lower for k in ['ads', 'businesses', 'listings']))) and
+        not any(w in lower for w in ['delete', 'remove', 'trash', 'take down', 'purge', 'cancel'])
+    )
+
+    if is_search_intent:
         search_target = re.sub(r'^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*', '', lower).strip()
         search_target = re.sub(r'[?!.,]', '', search_target).strip()
 
@@ -986,23 +1126,6 @@ Simply send me:
             err = res.get("error") or "Unknown error"
             send_telegram(chat_id, f"❌ Failed to publish ad: {err}")
             return
-
-    # 16. Natural Language Ad Deletion
-    if any(k in lower for k in ['delete ad', 'remove ad', 'trash ad', 'take down']):
-        cleaned = re.sub(r'^(?:please\s+)?(?:delete|remove|trash|take\s+down)\s+(?:the\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
-        if len(cleaned) >= 2:
-            send_chat_action(chat_id, "typing")
-            res = searchbiz_delete_ad(cleaned, permanent=False)
-            if res.get("success") and res.get("removedAd"):
-                ad = res["removedAd"]
-                reply = f"""🗑️ <b>Ad Archived to Recycle Bin</b>
-
-Listing <b>"{ad['title']}"</b> (ID: <code>{ad['id']}</code>) has been safely moved to the SearchBiz Recycle Bin.
-
-♻️ To restore it, send:
-<code>/restore_ad {ad['id']}</code>"""
-                send_telegram(chat_id, reply)
-                return
 
     # 17. Conversational AI Assistant with Soul & Personality
     ai_reply = ask_ai(

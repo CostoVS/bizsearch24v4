@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createBotAd, deleteBotAd, searchBotAds, restoreBotAd, getBotTrashAds } from '@/lib/bot-ad-service';
+import { 
+  createBotAd, 
+  deleteBotAd, 
+  searchBotAds, 
+  restoreBotAd, 
+  restoreAllBotAds, 
+  getBotTrashAds, 
+  getBotStats 
+} from '@/lib/bot-ad-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +27,7 @@ function checkAuth(req: NextRequest): boolean {
 
 /**
  * GET /api/bot/ad
- * Search or list ads
+ * Search or list ads, or get stats
  */
 export async function GET(req: NextRequest) {
   try {
@@ -28,6 +36,12 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
+    const stats = searchParams.get('stats') === 'true';
+    if (stats) {
+      const data = await getBotStats();
+      return NextResponse.json({ success: true, ...data });
+    }
+
     const q = searchParams.get('q') || '';
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const trash = searchParams.get('trash') === 'true';
@@ -161,10 +175,21 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json();
+
+    if (body.all === true || body.restoreAll === true) {
+      const result = await restoreAllBotAds();
+      return NextResponse.json({
+        success: true,
+        message: `Successfully restored ${result.count} listings from Recycle Bin back into live directory! Total active: ${result.activeTotal}.`,
+        restoredCount: result.count,
+        activeTotal: result.activeTotal
+      });
+    }
+
     const idOrTitle = body.id || body.title || '';
 
     if (!idOrTitle) {
-      return NextResponse.json({ error: 'Please provide "id" or "title" to restore.' }, { status: 400 });
+      return NextResponse.json({ error: 'Please provide "id" or "title" to restore, or set "all": true.' }, { status: 400 });
     }
 
     const result = await restoreBotAd(idOrTitle);
