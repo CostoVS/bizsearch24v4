@@ -22,6 +22,7 @@ import json
 import logging
 import smtplib
 import imaplib
+import ssl
 import email
 from email.header import decode_header
 from email.mime.text import MIMEText
@@ -213,82 +214,69 @@ def searchbiz_get_stats():
 
 
 # ============================================================================
-# Email System: Send & Receive (SMTP + Gateway Fallback + IMAP)
+# Email System: Send & Receive (SMTP + IMAP)
 # ============================================================================
 def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: str = None):
-    """Sends an email using high-reliability multi-tier routing:
-    1. User's custom SMTP (if configured with password)
-    2. Direct standard library SMTP_SSL via SearchBiz Gateway (smtp.gmail.com:465)
-    3. SearchBiz HTTP API Gateway (/api/bot/email)
+    """Sends an email using dedicated domain SMTP (ai@searchbiz.co.za).
+    When SMTP_USER is configured, it strictly delivers through the domain mailbox.
     """
-    # 1. Direct configured SMTP if provided
+    # 1. Direct configured domain SMTP (ai@searchbiz.co.za)
     if SMTP_PASS and SMTP_USER and SMTP_PASS.strip():
         try:
             msg = MIMEMultipart("alternative")
-            msg["From"] = f"SearchBiz Executive <{SMTP_USER}>"
+            msg["From"] = f"SearchBiz AI Executive <{SMTP_USER}>"
             msg["To"] = to_email
             msg["Subject"] = subject
             msg.attach(MIMEText(body_text, "plain"))
             if html_content:
                 msg.attach(MIMEText(html_content, "html"))
 
+            ssl_ctx = ssl.create_default_context()
+            if SMTP_HOST in ("127.0.0.1", "localhost"):
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE
+
             if SMTP_PORT == 465:
-                server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=12)
+                server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15, context=ssl_ctx)
             else:
-                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=12)
-                server.starttls()
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+                server.ehlo()
+                try:
+                    server.starttls(context=ssl_ctx)
+                    server.ehlo()
+                except Exception as tls_err:
+                    logger.warning(f"STARTTLS negotiation note: {tls_err}")
 
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, [to_email], msg.as_string())
             server.quit()
-            logger.info(f"Direct custom SMTP delivered to {to_email}")
-            return {"success": True, "message": f"Delivered via custom SMTP to {to_email}"}
+            logger.info(f"Direct domain SMTP successfully delivered via {SMTP_USER} to {to_email}")
+            return {"success": True, "message": f"Delivered via {SMTP_USER} to {to_email}"}
         except Exception as e:
-            logger.warning(f"Custom SMTP failed ({e}), trying primary gateway...")
+            logger.error(f"Dedicated SMTP error for {SMTP_USER}: {e}")
+            return {"error": f"Failed delivering via {SMTP_USER}: {str(e)}"}
 
-    # 2. Direct Python SMTP via active SearchBiz App Gateway (smtp.gmail.com:465)
-    try:
-        gw_user = "mailsearchbiz@gmail.com"
-        gw_pass = "ygrvhhqihdhibxwt"
-        msg = MIMEMultipart("alternative")
-        msg["From"] = f"SearchBiz AI Executive <{gw_user}>"
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body_text, "plain"))
-        if html_content:
-            msg.attach(MIMEText(html_content, "html"))
-
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=12)
-        server.login(gw_user, gw_pass)
-        server.sendmail(gw_user, [to_email], msg.as_string())
-        server.quit()
-        logger.info(f"Direct Python SMTP delivered to {to_email}")
-        return {"success": True, "message": f"Delivered via SearchBiz Gateway to {to_email}"}
-    except Exception as e:
-        logger.warning(f"Direct Python SMTP gateway failed ({e}), trying Website API...")
-
-    # 3. SearchBiz API Gateway Fallback (/api/bot/email)
+    # 2. SearchBiz API Gateway Fallback (only if no domain SMTP configured)
     res = api_request("/api/bot/email", method="POST", payload={
         "to": to_email,
         "subject": subject,
         "text": body_text,
-        "html": html_content,
-        "smtpConfig": {
-            "host": "smtp.gmail.com",
-            "port": 465,
-            "user": "mailsearchbiz@gmail.com",
-            "pass": "ygrv hhqi hdhi bxwt"
-        }
+        "html": html_content
     })
     return res
 
 def fetch_recent_emails(limit: int = 5):
-    """Fetches recent emails via IMAP (supports DirectAdmin Exim/Dovecot)"""
+    """Fetches recent emails via IMAP for ai@searchbiz.co.za"""
     if not IMAP_USER or not IMAP_PASS:
         return {"error": "IMAP credentials not configured"}
 
     try:
-        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=15)
+        ssl_ctx = ssl.create_default_context()
+        if IMAP_HOST in ("127.0.0.1", "localhost"):
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=15, ssl_context=ssl_ctx)
         mail.login(IMAP_USER, IMAP_PASS)
         mail.select("inbox")
 
