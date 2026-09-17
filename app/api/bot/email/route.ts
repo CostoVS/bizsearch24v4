@@ -77,23 +77,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email body or text content is required.' }, { status: 400 });
     }
 
-    const host = smtpConfig?.host || (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
-    const port = Number(smtpConfig?.port) || Number(process.env.SMTP_PORT) || 465;
-    const user = smtpConfig?.user || (process.env.SMTP_USER || 'mailsearchbiz@gmail.com').trim();
-    const rawPass = smtpConfig?.pass || process.env.SMTP_PASS || 'ygrv hhqi hdhi bxwt';
+    const host = smtpConfig?.host || (process.env.SMTP_HOST || '127.0.0.1').trim();
+    const port = Number(smtpConfig?.port) || Number(process.env.SMTP_PORT) || 587;
+    const user = smtpConfig?.user || (process.env.SMTP_USER || 'ai@searchbiz.co.za').trim();
+    const rawPass = smtpConfig?.pass || process.env.SMTP_PASS || 'HermesAI@2026!';
     const cleanPass = rawPass.replace(/\s+/g, '');
 
     const transporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
+      tls: {
+        rejectUnauthorized: false
+      },
       auth: {
         user,
         pass: cleanPass,
       }
     });
 
-    const sender = from || `"SearchBiz AI Agent" <${user}>`;
+    const sender = from || `"SearchBiz AI Executive" <${user}>`;
 
     const mailOptions = {
       from: sender,

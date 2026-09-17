@@ -46,16 +46,16 @@ SEARCHBIZ_BOT_SECRET = os.getenv("SEARCHBIZ_BOT_SECRET", "searchbiz_agent_key_20
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
-# Email Configurations (DirectAdmin or standard VPS SMTP/IMAP)
-SMTP_HOST = os.getenv("SMTP_HOST", "mail.searchbiz.co.za")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USER = os.getenv("SMTP_USER", "mail@searchbiz.co.za")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
+# Email Configurations (Mailcow VPS SMTP/IMAP for ai@searchbiz.co.za)
+SMTP_HOST = os.getenv("SMTP_HOST", "127.0.0.1")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "ai@searchbiz.co.za")
+SMTP_PASS = os.getenv("SMTP_PASS", "HermesAI@2026!")
 
-IMAP_HOST = os.getenv("IMAP_HOST", "mail.searchbiz.co.za")
+IMAP_HOST = os.getenv("IMAP_HOST", "127.0.0.1")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
-IMAP_USER = os.getenv("IMAP_USER", SMTP_USER)
-IMAP_PASS = os.getenv("IMAP_PASS", SMTP_PASS)
+IMAP_USER = os.getenv("IMAP_USER", "ai@searchbiz.co.za")
+IMAP_PASS = os.getenv("IMAP_PASS", "HermesAI@2026!")
 
 # DirectAdmin API Configuration
 DIRECTADMIN_URL = os.getenv("DIRECTADMIN_URL", "https://localhost:2222").rstrip("/")
@@ -256,14 +256,8 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: s
             logger.error(f"Dedicated SMTP error for {SMTP_USER}: {e}")
             return {"error": f"Failed delivering via {SMTP_USER}: {str(e)}"}
 
-    # 2. SearchBiz API Gateway Fallback (only if no domain SMTP configured)
-    res = api_request("/api/bot/email", method="POST", payload={
-        "to": to_email,
-        "subject": subject,
-        "text": body_text,
-        "html": html_content
-    })
-    return res
+    # Fallback error if credentials missing
+    return {"error": "Domain email credentials for ai@searchbiz.co.za are missing."}
 
 def fetch_recent_emails(limit: int = 5):
     """Fetches recent emails via IMAP for ai@searchbiz.co.za"""
