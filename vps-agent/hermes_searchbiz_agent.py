@@ -47,15 +47,15 @@ OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434").rstrip("/
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
 # Email Configurations (Mailcow VPS SMTP/IMAP for ai@searchbiz.co.za)
-SMTP_HOST = os.getenv("SMTP_HOST", "127.0.0.1")
+SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip() or "127.0.0.1"
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "ai@searchbiz.co.za")
-SMTP_PASS = os.getenv("SMTP_PASS", "HermesAI@2026!")
+SMTP_USER = (os.getenv("SMTP_USER") or "").strip() or "ai@searchbiz.co.za"
+SMTP_PASS = (os.getenv("SMTP_PASS") or "").strip() or "HermesAI@2026!"
 
-IMAP_HOST = os.getenv("IMAP_HOST", "127.0.0.1")
+IMAP_HOST = (os.getenv("IMAP_HOST") or "").strip() or "127.0.0.1"
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
-IMAP_USER = os.getenv("IMAP_USER", "ai@searchbiz.co.za")
-IMAP_PASS = os.getenv("IMAP_PASS", "HermesAI@2026!")
+IMAP_USER = (os.getenv("IMAP_USER") or "").strip() or "ai@searchbiz.co.za"
+IMAP_PASS = (os.getenv("IMAP_PASS") or "").strip() or "HermesAI@2026!"
 
 # DirectAdmin API Configuration
 DIRECTADMIN_URL = os.getenv("DIRECTADMIN_URL", "https://localhost:2222").rstrip("/")
