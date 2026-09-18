@@ -25,6 +25,7 @@ import imaplib
 import ssl
 import email
 from email.header import decode_header
+from email.utils import make_msgid, formatdate
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import urllib.request
@@ -227,9 +228,37 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: s
             msg["From"] = f"SearchBiz AI Executive <{SMTP_USER}>"
             msg["To"] = to_email
             msg["Subject"] = subject
-            msg.attach(MIMEText(body_text, "plain"))
-            if html_content:
-                msg.attach(MIMEText(html_content, "html"))
+            msg["Date"] = formatdate(localtime=True)
+            msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
+            msg["Reply-To"] = f"SearchBiz AI Executive <{SMTP_USER}>"
+            msg["X-Mailer"] = "SearchBiz-Executive-Agent/1.0"
+            msg["Auto-Submitted"] = "auto-generated"
+
+            # Plain text part
+            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+            # Build high-deliverability clean HTML template if not provided
+            if not html_content:
+                html_content = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:24px;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+    <div style="background:#0f172a;padding:20px 24px;border-bottom:2px solid #00f0ff;">
+      <h2 style="margin:0;color:#ffffff;font-size:18px;letter-spacing:0.5px;">SearchBiz AI Executive</h2>
+      <p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">searchbiz.co.za Business Directory & Autonomous Services</p>
+    </div>
+    <div style="padding:28px 24px;line-height:1.6;font-size:15px;color:#334155;">
+      {body_text.replace(chr(10), '<br>')}
+    </div>
+    <div style="background:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
+      <p style="margin:0;">This email was sent by <strong>Hermes</strong> via <strong>ai@searchbiz.co.za</strong>.</p>
+      <p style="margin:4px 0 0;">SearchBiz South Africa &bull; Gauteng, South Africa &bull; <a href="https://searchbiz.co.za" style="color:#0284c7;text-decoration:none;">searchbiz.co.za</a></p>
+    </div>
+  </div>
+</body>
+</html>"""
+            msg.attach(MIMEText(html_content, "html", "utf-8"))
 
             ssl_ctx = ssl.create_default_context()
             if SMTP_HOST in ("127.0.0.1", "localhost"):
