@@ -44,6 +44,7 @@ logger = logging.getLogger("HermesSearchBiz")
 # Configuration from Environment Variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8957546599:AAGWICeBceFDMBwJx2JAhFs6xMvi71biueI")
 SEARCHBIZ_BOT_SECRET = os.getenv("SEARCHBIZ_BOT_SECRET", "searchbiz_agent_key_2026")
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
@@ -374,16 +375,220 @@ def directadmin_create_mailbox(username: str, password: str, domain: str = "sear
 
 
 # ============================================================================
-# Multi-Tier AI Brain (Next.js Cloud / Local Ollama qwen2.5:3b)
+# Live Internet Data Tools: Date/Time, Weather, Crypto, & Web Search
+# ============================================================================
+from datetime import datetime, timezone, timedelta
+
+def get_current_datetime_sast() -> str:
+    """Returns the live South Africa Standard Time (SAST, UTC+2) date, day and time."""
+    sast = timezone(timedelta(hours=2))
+    now = datetime.now(sast)
+    day_name = now.strftime("%A")
+    date_str = now.strftime("%d %B %Y")
+    time_str = now.strftime("%H:%M:%S")
+    return f"""📅 <b>Live Date & Time (South Africa - SAST)</b>
+
+🗓️ <b>Day:</b> {day_name}
+📆 <b>Date:</b> {date_str}
+⏰ <b>Time:</b> <code>{time_str}</code> (UTC+2)"""
+
+def get_crypto_price(symbol: str = "BTC") -> str:
+    """Fetches real-time cryptocurrency spot price from Binance API and converts to ZAR."""
+    sym = symbol.upper().strip()
+    if sym in ["BITCOIN", "BTC"]:
+        pair = "BTCUSDT"
+        display_name = "Bitcoin (BTC)"
+    elif sym in ["ETHEREUM", "ETH"]:
+        pair = "ETHUSDT"
+        display_name = "Ethereum (ETH)"
+    elif sym in ["SOLANA", "SOL"]:
+        pair = "SOLUSDT"
+        display_name = "Solana (SOL)"
+    elif sym in ["RIPPLE", "XRP"]:
+        pair = "XRPUSDT"
+        display_name = "Ripple (XRP)"
+    elif sym in ["DOGECOIN", "DOGE"]:
+        pair = "DOGEUSDT"
+        display_name = "Dogecoin (DOGE)"
+    elif sym in ["BNB", "BINANCE"]:
+        pair = "BNBUSDT"
+        display_name = "BNB"
+    else:
+        pair = f"{sym}USDT"
+        display_name = sym
+
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={pair}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            usd_price = float(data.get("price", 0))
+
+        # Live USD to ZAR conversion rate
+        zar_rate = 18.25
+        try:
+            ex_req = urllib.request.Request("https://open.er-api.com/v6/latest/USD", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(ex_req, timeout=3) as ex_r:
+                zar_data = json.loads(ex_r.read().decode("utf-8"))
+                zar_rate = float(zar_data.get("rates", {}).get("ZAR", 18.25))
+        except Exception:
+            pass
+
+        zar_price = usd_price * zar_rate
+
+        return f"""🪙 <b>{display_name} Live Price</b>
+
+💵 <b>USD:</b> <code>${usd_price:,.2f}</code>
+🇿🇦 <b>ZAR:</b> <code>R{zar_price:,.2f}</code>
+🔄 <i>Exchange rate: $1 USD ≈ R{zar_rate:.2f} ZAR</i>"""
+    except Exception as e:
+        logger.error(f"Crypto price lookup failed: {e}")
+        return f"⚠️ Could not fetch price for <b>{symbol}</b>. (Error: {e})"
+
+def get_weather(city: str = "Durban") -> str:
+    """Fetches real-time weather and forecast using wttr.in."""
+    clean_city = re.sub(r'^(?:in|for|at|around)\s+', '', city, flags=re.IGNORECASE).strip()
+    clean_city = clean_city.rstrip("?!.,").strip()
+    if not clean_city:
+        clean_city = "Durban"
+
+    try:
+        encoded = urllib.parse.quote(clean_city)
+        url = f"https://wttr.in/{encoded}?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            curr = data["current_condition"][0]
+            temp = curr["temp_C"]
+            feels = curr["FeelsLikeC"]
+            desc = curr["weatherDesc"][0]["value"]
+            humidity = curr["humidity"]
+            wind = curr["windspeedKmph"]
+
+            today = data.get("weather", [{}])[0]
+            max_t = today.get("maxtempC", temp)
+            min_t = today.get("mintempC", temp)
+
+            return f"""🌦️ <b>Live Weather for {clean_city.title()}</b>
+
+🌤️ <b>Condition:</b> {desc}
+🌡️ <b>Temperature:</b> <b>{temp}°C</b> (Feels like {feels}°C)
+📊 <b>Day Range:</b> Low {min_t}°C / High {max_t}°C
+💧 <b>Humidity:</b> {humidity}%
+💨 <b>Wind Speed:</b> {wind} km/h"""
+    except Exception as e:
+        logger.error(f"Weather lookup failed: {e}")
+        try:
+            encoded = urllib.parse.quote(clean_city)
+            url = f"https://wttr.in/{encoded}?format=%C+%t+(feels+like+%f),+Wind:+%w"
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
+            with urllib.request.urlopen(req, timeout=4) as r:
+                txt = r.read().decode("utf-8").strip()
+                return f"🌦️ <b>Weather for {clean_city.title()}:</b>\n{txt}"
+        except Exception:
+            return f"⚠️ Could not fetch weather for <b>{clean_city}</b>. Please verify city name."
+
+def search_web(query: str) -> str:
+    """Performs real-time web search across DuckDuckGo and Wikipedia, returning clean findings."""
+    clean_q = re.sub(
+        r'^(?:please\s+)?(?:search\s+(?:this\s+)?on\s+google(?:\s+for)?|search\s+google\s+for|google\s+(?:this\s+)?for|google|search\s+(?:the\s+)?(?:web|internet)\s+for|search\s+for|find\s+(?:me\s+)?information\s+about|where\s+can\s+i\s+find|where\s+to\s+find)\s*',
+        '',
+        query,
+        flags=re.IGNORECASE
+    ).strip()
+    clean_q = clean_q.rstrip("?!.,").strip()
+    if not clean_q:
+        clean_q = query
+
+    # 1. Wikipedia Summary Check for concepts/entities
+    wiki_extract = ""
+    try:
+        w_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_q)}"
+        w_req = urllib.request.Request(w_url, headers={"User-Agent": "HermesSearchBiz/1.0 (info@searchbiz.co.za)"})
+        with urllib.request.urlopen(w_req, timeout=4) as w_resp:
+            w_data = json.loads(w_resp.read().decode("utf-8"))
+            if w_data.get("extract"):
+                wiki_extract = f"📚 <b>{w_data.get('title')}:</b>\n{w_data.get('extract')[:380]}...\n🔗 <a href=\"{w_data.get('content_urls', {}).get('desktop', {}).get('page', '')}\">Read more on Wikipedia</a>"
+    except Exception:
+        pass
+
+    # 2. DuckDuckGo Live Web Search
+    web_findings = []
+    try:
+        ddg_url = "https://html.duckduckgo.com/html/"
+        ddg_data = urllib.parse.urlencode({"q": clean_q}).encode("utf-8")
+        ddg_req = urllib.request.Request(
+            ddg_url,
+            data=ddg_data,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        )
+        with urllib.request.urlopen(ddg_req, timeout=7) as ddg_resp:
+            page = ddg_resp.read().decode("utf-8", errors="ignore")
+            import html as html_lib
+            snippets = re.findall(r'<a class=\"result__snippet[^\"]*\"[^>]*>(.*?)</a>', page, re.DOTALL)
+            titles = re.findall(r'<a class=\"result__url[^\"]*\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>', page, re.DOTALL)
+            raw_titles = re.findall(r'<h2[^>]*class=\"result__title\"[^>]*>.*?<a[^>]*>(.*?)</a>', page, re.DOTALL)
+
+            for i in range(min(3, len(snippets))):
+                t = html_lib.unescape(re.sub(r'<[^>]+>', '', raw_titles[i]).strip()) if i < len(raw_titles) else f"Result {i+1}"
+                s = html_lib.unescape(re.sub(r'<[^>]+>', '', snippets[i]).strip())
+                u = titles[i][0] if i < len(titles) else ""
+                if "uddg=" in u:
+                    try:
+                        u = urllib.parse.unquote(re.search(r'uddg=([^&]+)', u).group(1))
+                    except Exception:
+                        pass
+                if s:
+                    web_findings.append(f"• <b>{t}</b>\n  {s[:180]}...\n  🔗 <a href=\"{u}\">Visit Website</a>" if u else f"• <b>{t}</b>\n  {s[:180]}...")
+    except Exception as e:
+        logger.warning(f"DuckDuckGo search error: {e}")
+
+    header = f"🌐 <b>Live Web Results for:</b> <i>'{clean_q}'</i>\n\n"
+    if wiki_extract:
+        header += f"{wiki_extract}\n\n"
+    if web_findings:
+        header += "🔎 <b>Top Web Findings:</b>\n" + "\n\n".join(web_findings)
+    elif not wiki_extract:
+        header += f"🔍 Direct search link: <a href=\"https://www.google.com/search?q={urllib.parse.quote(clean_q)}\">Search '{clean_q}' on Google</a>"
+
+    return header
+
+
+# ============================================================================
+# Multi-Tier AI Brain (Direct Gemini Cloud / Next.js Server / Local Ollama)
 # ============================================================================
 def ask_ai(prompt: str, system_prompt: str = None) -> str:
     """Invokes AI Brain with multi-tier resilience:
-    1. SearchBiz Next.js Server API (/api/gemini/chat) - fast & full business context
-    2. Local Ollama qwen2.5:3b (timeout 18s)
+    1. Direct Google Gemini API (if GEMINI_API_KEY is configured)
+    2. SearchBiz Next.js Server API (/api/gemini/chat) - full business context
+    3. Local Ollama qwen2.5:3b (timeout 18s)
     """
+    # 1. Direct Gemini API
+    if GEMINI_API_KEY:
+        for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 650}
+                }
+                if system_prompt:
+                    payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=12) as res:
+                    g_data = json.loads(res.read().decode("utf-8"))
+                    cands = g_data.get("candidates", [])
+                    if cands:
+                        text_val = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        if text_val:
+                            return text_val.strip()
+            except Exception as e:
+                logger.debug(f"Direct Gemini '{model}' error: {e}")
+
     base_url = get_active_api_base()
 
-    # 1. SearchBiz Server AI
+    # 2. SearchBiz Server AI
     for ep in ["/api/gemini/chat", "/api/llama3/chat"]:
         try:
             cloud_url = f"{base_url}{ep}"
@@ -399,12 +604,12 @@ def ask_ai(prompt: str, system_prompt: str = None) -> str:
             with urllib.request.urlopen(req, timeout=15) as res:
                 ans = json.loads(res.read().decode("utf-8"))
                 cloud_text = ans.get("reply") or ans.get("text") or ans.get("response")
-                if cloud_text and "Encountered an internal" not in cloud_text:
+                if cloud_text and "Encountered an internal" not in cloud_text and "Missing API Key" not in cloud_text:
                     return cloud_text.strip()
         except Exception as e:
             logger.debug(f"SearchBiz cloud AI endpoint '{ep}' error: {e}")
 
-    # 2. Local Ollama
+    # 3. Local Ollama
     try:
         url = f"{OLLAMA_API_URL}/api/generate"
         payload = {
@@ -453,12 +658,18 @@ def handle_message(message: dict):
         base_url = get_active_api_base()
         reply = f"""
 🌟 <b>SearchBiz Hermes Executive Agent</b>
-Ready on your VPS, <b>{sender}</b>!
+Online and ready on your VPS, <b>{sender}</b>!
 
-Connected Brain: <code>{OLLAMA_MODEL}</code> / Cloud AI
+Connected Brain: <code>{OLLAMA_MODEL}</code> / Cloud Hybrid
 Live Platform: <code>{base_url}</code>
 
-<b>Core Operations:</b>
+<b>🌐 Live Internet & Assistant Tools:</b>
+🌦️ <code>/weather [city]</code> - Real-time weather & forecast
+🪙 <code>/crypto [BTC/ETH/SOL]</code> - Live spot prices in USD & ZAR
+📅 <code>/date</code> or <code>/time</code> - Live South Africa (SAST) time & date
+🔍 <code>/search [query]</code> - Live Google & Web search with links
+
+<b>🏢 Directory & Email Operations:</b>
 ➕ <code>/post_ad Title | Category | City | Phone | Description</code>
 🗑️ <code>/delete_ad [Business Name or ID]</code>
 🔍 <code>/list_ads [keyword]</code>
@@ -468,12 +679,16 @@ Live Platform: <code>{base_url}</code>
 📬 <code>/create_email username password [domain]</code>
 ⚡ <code>/status</code>
 
-<b>Or speak to me naturally:</b>
-• <i>"Send an email explaining What searchbiz.co.za is all about to user@email.com"</i>
+<b>💬 Talk to me naturally in plain English:</b>
+• <i>"What is your name?"</i>
+• <i>"What is the day today?"</i>
+• <i>"What's the current price of BTC?"</i>
+• <i>"What is the weather in Durban?"</i>
+• <i>"Search this on Google and tell me: best tourist spots in South Africa"</i>
+• <i>"Send an email explaining what searchbiz.co.za is all about to user@email.com"</i>
 • <i>"Make an ad for Quick Towing in Pretoria, 0825551234, 24/7 breakdown recovery"</i>
-• <i>"Delete ad for Quick Towing"</i>
-• <i>"Tell one story"</i>
 • <i>"What are the pricing plans?"</i>
+• <i>"Tell me a story"</i>
 """
         send_telegram(chat_id, reply)
         return
@@ -648,11 +863,136 @@ or run <code>/restore_all</code> to recover all listings.""")
             send_telegram(chat_id, f"❌ DirectAdmin error: {res.get('error')}")
         return
 
+    # 9a. Live Weather Command (/weather)
+    if text.startswith("/weather"):
+        city = text.split(" ", 1)[-1].strip() if " " in text else "Durban"
+        send_chat_action(chat_id, "typing")
+        report = get_weather(city)
+        send_telegram(chat_id, report)
+        return
+
+    # 9b. Live Crypto Price Command (/crypto or /btc)
+    if text.startswith("/crypto") or text.startswith("/btc"):
+        symbol = text.split(" ", 1)[-1].strip() if " " in text else "BTC"
+        send_chat_action(chat_id, "typing")
+        report = get_crypto_price(symbol)
+        send_telegram(chat_id, report)
+        return
+
+    # 9c. Live Date & Time Command (/date or /time)
+    if text == "/date" or text == "/time":
+        send_chat_action(chat_id, "typing")
+        report = get_current_datetime_sast()
+        send_telegram(chat_id, report)
+        return
+
+    # 9d. Live Google / Web Search Command (/search or /google)
+    if text.startswith("/search") or text.startswith("/google"):
+        q = text.split(" ", 1)[-1].strip() if " " in text else ""
+        if not q:
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/search [what you want to look up]</code>")
+            return
+        send_chat_action(chat_id, "typing")
+        report = search_web(q)
+        send_telegram(chat_id, report)
+        return
+
     # -------------------------------------------------------------------------
     # Send typing status for natural conversation
     # -------------------------------------------------------------------------
     send_chat_action(chat_id, "typing")
     lower = text.lower()
+
+    # 9e. Name & Identity Recognition (e.g., "What's its name", "What is your name", "Who are you")
+    identity_triggers = [
+        "what is your name", "whats your name", "what's your name",
+        "whats its name", "what's its name", "what is its name",
+        "who are you", "who are u", "who made you", "who created you",
+        "tell me about yourself", "what are you", "what can you do",
+        "what do you do", "introduce yourself", "whats your purpose"
+    ]
+    if any(t in lower for t in identity_triggers):
+        base_url = get_active_api_base()
+        reply = f"""🏛️ <b>I am Hermes!</b>
+
+I am your autonomous, dedicated AI Executive Assistant for <b>SearchBiz</b> (<code>{base_url}</code>), running 24/7 directly on your server.
+
+✨ <b>My Live Superpowers:</b>
+🌐 <b>Live Internet Web Search:</b> Ask me to search Google or lookup any topic!
+🌦️ <b>Live Weather:</b> Real-time forecasts across South Africa and the globe.
+🪙 <b>Real-Time Crypto Ticker:</b> Spot Bitcoin, Ethereum & Solana prices in USD & ZAR.
+📅 <b>Calendar & Clock:</b> Precise South African Standard Time (SAST) and dates.
+🏢 <b>SearchBiz Directory Engine:</b> Create, delete, restore, search & audit verified ads.
+📧 <b>Executive Mail Service:</b> Send emails and check incoming mail via <code>ai@searchbiz.co.za</code>.
+📖 <b>Stories & Business Brain:</b> Ask me business questions, copywriting advice, or tell a story!
+
+How can I assist you right now, <b>{sender}</b>?"""
+        send_telegram(chat_id, reply)
+        return
+
+    # 9f. Live Date & Time Queries (e.g. "What is the day today", "What's today's date")
+    date_triggers = [
+        "what is the day today", "what day is it", "what day is today",
+        "what is today", "what's the day today", "whats the day today",
+        "what's today's date", "whats today's date", "what is today's date",
+        "what is the date", "what is the current date", "what time is it",
+        "current time", "what month is it", "what year is it", "what is the time",
+        "whats the time", "time in south africa"
+    ]
+    if any(t in lower for t in date_triggers):
+        reply = get_current_datetime_sast()
+        send_telegram(chat_id, reply)
+        return
+
+    # 9g. Real-Time Crypto & Bitcoin Price Queries (e.g. "What's the current price of btc")
+    crypto_triggers = [
+        "current price of btc", "price of btc", "btc price", "bitcoin price",
+        "price of bitcoin", "how much is btc", "how much is bitcoin",
+        "crypto price", "eth price", "price of eth", "ethereum price",
+        "solana price", "sol price", "xrp price", "crypto market",
+        "what is btc price", "what's btc", "current price of bitcoin"
+    ]
+    if any(t in lower for t in crypto_triggers):
+        sym = "BTC"
+        if "eth" in lower or "ethereum" in lower:
+            sym = "ETH"
+        elif "sol" in lower or "solana" in lower:
+            sym = "SOL"
+        elif "xrp" in lower or "ripple" in lower:
+            sym = "XRP"
+        elif "doge" in lower:
+            sym = "DOGE"
+        reply = get_crypto_price(sym)
+        send_telegram(chat_id, reply)
+        return
+
+    # 9h. Live Weather Queries (e.g. "Weather in Durban", "What's the weather today")
+    weather_triggers = [
+        "weather in ", "weather for ", "what is the weather", "what's the weather",
+        "whats the weather", "how is the weather", "how's the weather",
+        "temperature in ", "is it raining in ", "is it raining", "weather forecast"
+    ]
+    if any(t in lower for t in weather_triggers):
+        city = "Durban"
+        city_match = re.search(r'(?:in|for|at|around)\s+([a-zA-Z\s]+)', text, re.IGNORECASE)
+        if city_match:
+            city = city_match.group(1).strip()
+        reply = get_weather(city)
+        send_telegram(chat_id, reply)
+        return
+
+    # 9i. Live Web & Google Search Queries (e.g. "Search this on google...", "Search google for...", "Where can I find...")
+    web_search_triggers = [
+        "search this on google", "search on google", "search google for",
+        "google this", "google for ", "google ", "search the web",
+        "search the internet", "where can i find", "where to find",
+        "where can i buy", "find me information about", "find information about",
+        "search for "
+    ]
+    if any(t in lower for t in web_search_triggers):
+        reply = search_web(text)
+        send_telegram(chat_id, reply)
+        return
 
     # 10. Natural Language Email Sending
     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
@@ -1147,17 +1487,31 @@ Simply send me:
         send_telegram(chat_id, ai_reply)
         return
 
-    # 18. Fallback Guidance
-    send_telegram(chat_id, f"""🤖 <b>SearchBiz Executive Agent</b>
-I'm here, <b>{sender}</b>! 
+    # 18. Smart Web & Knowledge Fallback for "What is / Who is / Where is"
+    if any(lower.startswith(prefix) for prefix in ["what is ", "whats ", "what's ", "who is ", "who was ", "where is ", "where are ", "how does ", "how to ", "tell me about "]):
+        send_chat_action(chat_id, "typing")
+        search_result = search_web(text)
+        if search_result:
+            send_telegram(chat_id, search_result)
+            return
 
-You can talk to me naturally or give me any command:
-• <i>"Send an email explaining What searchbiz.co.za is all about to user@domain.com"</i>
-• <i>"Tell one story"</i>
-• <i>"Make an ad for Elite Plumbers in Durban, 0821234567, emergency repairs"</i>
-• <i>"Delete ad for Elite Plumbers"</i>
-• <code>/list_ads</code> to search directory listings
-• Send <code>/help</code> for full instructions.""")
+    # 19. Conversational Fallback with Personality (Never a cold robot)
+    if any(w in lower for w in ["how are you", "how r u", "how do you feel", "are you real", "are you there", "you there", "hello?", "help me"]):
+        send_telegram(chat_id, f"😊 <b>I'm feeling great and right here with you, {sender}!</b>\n\nAll systems on your server are green and running. Ask me anything — like <i>'What is the weather in Durban?'</i>, <i>'Current price of BTC'</i>, <i>'Search Google for...'</i>, or tell me to publish/manage your business listings!")
+        return
+
+    # 20. Executive Guidance
+    send_telegram(chat_id, f"""🏛️ <b>SearchBiz Hermes Executive Assistant</b>
+I'm here and listening, <b>{sender}</b>! 
+
+Try asking me any of these:
+🌐 <i>"Search Google for top safari lodges in Kruger"</i>
+🌦️ <i>"What's the weather in Durban?"</i>
+🪙 <i>"What's the current price of BTC?"</i>
+📅 <i>"What is the day today?"</i>
+🏢 <i>"Make an ad for Elite Plumbers in Durban, 0821234567, emergency repairs"</i>
+📧 <i>"Send an email explaining What searchbiz.co.za is all about to user@domain.com"</i>
+💬 <i>"What is your name?"</i> or <i>"Tell me a story"</i>""")
 
 
 def main():

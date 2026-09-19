@@ -4,30 +4,43 @@ This package connects **Hermes Agent**, **Ollama (`qwen2.5:3b`)**, and **Telegra
 
 ---
 
-## 1. Quick VPS Installation (1 Command)
+## 1. Quick VPS Installation & Update
 
-Upload or copy the files to your Linux VPS (Ubuntu/Debian) and run:
+### To Update an Existing VPS Agent (1 Command):
+```bash
+cd /opt/hermes-searchbiz || cd ~/vps-agent
+git pull || true
+sudo ./update_agent.sh
+```
+Or simply copy the updated `hermes_searchbiz_agent.py` to `/opt/hermes-searchbiz/` and run:
+```bash
+sudo systemctl restart hermes-agent
+```
 
+### Fresh Installation:
 ```bash
 cd vps-agent
 chmod +x install_vps.sh
 sudo ./install_vps.sh
 ```
 
-The script will automatically:
-1. Install **Ollama** and download the local **`qwen2.5:3b`** model (~2.2 GB RAM).
-2. Place the agent in `/opt/hermes-searchbiz/`.
-3. Set up the `hermes-agent` systemd background service.
-4. Connect to Telegram (`@Searchbiz_bot`).
+---
 
-### Check Live Status on VPS:
-```bash
-journalctl -u hermes-agent -f
-```
+## 2. Live Internet & Conversational Capabilities
+
+Hermes is now connected to the live internet, answering questions with real-time data:
+
+| Feature | Commands | Natural Language Examples |
+| :--- | :--- | :--- |
+| **Identity & Personality** | `/start`, `/help` | *"What is your name?"*, *"Who are you?"*, *"Tell me about yourself"* |
+| **Live Weather** | `/weather [city]` | *"What's the weather in Durban?"*, *"Temperature in Johannesburg"*, *"Is it raining in Cape Town?"* |
+| **Live Crypto / Bitcoin** | `/crypto [symbol]`, `/btc` | *"What's the current price of BTC?"*, *"Bitcoin price"*, *"Ethereum price in ZAR"* |
+| **Live Date & Time** | `/date`, `/time` | *"What is the day today?"*, *"What's today's date?"*, *"What time is it in South Africa?"* |
+| **Live Google / Web Search** | `/search [query]`, `/google [query]` | *"Search this on Google: best tourist spots in South Africa"*, *"Where can I find solar panels in Durban?"*, *"What is quantum computing?"* |
 
 ---
 
-## 2. Telegram Commands (`@Searchbiz_bot`)
+## 3. Telegram Directory & Email Commands (`@Searchbiz_bot`)
 
 You can control everything directly from your phone in Telegram:
 
