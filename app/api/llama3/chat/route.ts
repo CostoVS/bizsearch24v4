@@ -428,14 +428,21 @@ Please answer the user's inquiry based on this verified dataset.
       });
     }
 
-    if (searchTarget && searchTarget.length >= 3 && !searchTarget.includes("direct match")) {
+    // Only trigger directory missing message if user had clear directory/ad search intent
+    const hasSearchIntent = 
+      /^(?:what|which|show|list|find|any|do you have|search for|who has)\s+(?:ads|businesses|listings|services|plumbers|mechanics|electricians|shops)/i.test(normalizedQuery) ||
+      /\b(?:ads in|listings in|businesses in|services in)\b/i.test(normalizedQuery);
+
+    if (hasSearchIntent && searchTarget && searchTarget.length >= 3 && !searchTarget.includes("direct match")) {
       const formattedLocation = searchTarget.charAt(0).toUpperCase() + searchTarget.slice(1);
       return NextResponse.json({
         text: `🔍 I searched our verified directory, but there are currently no active listings published under **"${formattedLocation}"**.\n\nWould you like to place the first business advertisement in **${formattedLocation}**?\nJust tell me: *"Place an ad for [Business Name] in ${formattedLocation}, phone [082...], [description]"* and I will publish it immediately!`
       });
     }
 
-    return NextResponse.json({ text: `I couldn't find a direct match for "${message}" in our database, but I can assist you with:\n• **Services & Trades:** Search for active businesses or local services.\n• **Subscription Plans:** Ask about our Premium plans (R199.00 / month).\n• **Verification process:** Learn how to verify your business listing.\nCurrently registered verified categories in our index include: **${Array.from(new Set(activeAds.map(ad => ad.category).filter(Boolean))).join(", ") || "Trades, Services, Local Businesses"}**.\nPlease refine your search or ask about a specific category!` });
+    return NextResponse.json({ 
+      text: `I'm here and ready to help! As your SearchBiz executive assistant, I can:\n• **Find local services & trades:** Search for verified listings in any South African city.\n• **Publish an ad:** Tell me your business name, city, phone number, and services.\n• **Live Internet Tools:** Weather, crypto prices, live date/time, and web search.\n• **Business Plans:** Premium plans start at R199.00 / month with custom website & domain email.\n\nWhat would you like to explore or accomplish today?` 
+    });
 
   } catch (error: any) {
     console.error("AI Chat API General Error:", error);

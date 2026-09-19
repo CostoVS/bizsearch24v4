@@ -32,6 +32,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import re
+from typing import Dict, List, Optional, Any
 
 # Setup Logging
 logging.basicConfig(
@@ -126,7 +127,24 @@ def telegram_call(method: str, data: dict = None):
         logger.error(f"Telegram API call '{method}' failed: {e}")
         return None
 
+# Multi-turn conversation memory per Telegram chat_id (sliding window of last 10 messages)
+_CHAT_HISTORIES: Dict[int, List[Dict[str, str]]] = {}
+
+def record_chat_turn(chat_id: int, role: str, content: str):
+    """Tracks conversation turns for intelligent multi-turn context and reasoning."""
+    if not chat_id or not content:
+        return
+    if chat_id not in _CHAT_HISTORIES:
+        _CHAT_HISTORIES[chat_id] = []
+    # Strip HTML tags for clean model context
+    clean_text = re.sub(r'<[^>]+>', '', str(content)).strip()
+    if clean_text:
+        _CHAT_HISTORIES[chat_id].append({"role": role, "content": clean_text})
+        if len(_CHAT_HISTORIES[chat_id]) > 10:
+            _CHAT_HISTORIES[chat_id] = _CHAT_HISTORIES[chat_id][-10:]
+
 def send_telegram(chat_id: int, text: str):
+    record_chat_turn(chat_id, "assistant", text)
     return telegram_call("sendMessage", {
         "chat_id": chat_id,
         "text": text,
@@ -445,18 +463,41 @@ def get_crypto_price(symbol: str = "BTC") -> str:
         logger.error(f"Crypto price lookup failed: {e}")
         return f"⚠️ Could not fetch price for <b>{symbol}</b>. (Error: {e})"
 
-def get_weather(city: str = "Durban") -> str:
-    """Fetches real-time weather and forecast using wttr.in."""
-    clean_city = re.sub(r'^(?:in|for|at|around)\s+', '', city, flags=re.IGNORECASE).strip()
-    clean_city = clean_city.rstrip("?!.,").strip()
-    if not clean_city:
-        clean_city = "Durban"
+SA_TOWNS = [
+    'umkomaas', 'amanzimtoti', 'scottburgh', 'pennington', 'margate', 'port shepstone', 
+    'ballito', 'umhlanga', 'durban', 'pietermaritzburg', 'richards bay',
+    'johannesburg', 'pretoria', 'sandton', 'soweto', 'randburg', 'centurion', 'midrand', 'kempton park',
+    'cape town', 'stellenbosch', 'paarl', 'somerset west', 'hermanus', 'george', 'knysna',
+    'bloemfontein', 'gqeberha', 'port elizabeth', 'east london', 'polokwane', 'nelspruit', 'mbombela',
+    'rustenburg', 'kimberley', 'potchefstroom', 'klerksdorp'
+]
 
+def extract_weather_location(text: str) -> str:
+    """Intelligently parses location from queries like 'What is the weather in kzn umkomaas now'."""
+    low = text.lower()
+    for town in SA_TOWNS:
+        if town in low:
+            return town.title()
+    cleaned = re.sub(
+        r'\b(?:what\'?s?|is|it|the|weather|temperature|forecast|in|for|at|around|now|today|currently|degrees|rain|raining|outside|south\s+africa|kzn|kwazulu-?natal|south\s+coast|north\s+coast|gauteng|western\s+cape|eastern\s+cape)\b',
+        '',
+        low,
+        flags=re.IGNORECASE
+    )
+    cleaned = re.sub(r'[^a-zA-Z\s]', '', cleaned).strip()
+    words = cleaned.split()
+    return words[0].title() if words else "Durban"
+
+def get_weather(location_query: str = "Durban") -> str:
+    """Fetches real-time weather with multi-source fallback: wttr.in + Open-Meteo GPS Geocoding."""
+    clean_city = extract_weather_location(location_query)
+
+    # 1. wttr.in (Primary high-detail weather)
     try:
         encoded = urllib.parse.quote(clean_city)
         url = f"https://wttr.in/{encoded}?format=j1"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=6) as r:
+        with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read().decode("utf-8"))
             curr = data["current_condition"][0]
             temp = curr["temp_C"]
@@ -477,16 +518,40 @@ def get_weather(city: str = "Durban") -> str:
 💧 <b>Humidity:</b> {humidity}%
 💨 <b>Wind Speed:</b> {wind} km/h"""
     except Exception as e:
-        logger.error(f"Weather lookup failed: {e}")
-        try:
-            encoded = urllib.parse.quote(clean_city)
-            url = f"https://wttr.in/{encoded}?format=%C+%t+(feels+like+%f),+Wind:+%w"
-            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
-            with urllib.request.urlopen(req, timeout=4) as r:
-                txt = r.read().decode("utf-8").strip()
-                return f"🌦️ <b>Weather for {clean_city.title()}:</b>\n{txt}"
-        except Exception:
-            return f"⚠️ Could not fetch weather for <b>{clean_city}</b>. Please verify city name."
+        logger.debug(f"wttr.in lookup failed: {e}")
+
+    # 2. Open-Meteo GPS Geocoding + Live Weather API (100% free, pinpoints all SA towns)
+    try:
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(clean_city)}&count=1&language=en&format=json"
+        req = urllib.request.Request(geo_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            gdata = json.loads(r.read().decode("utf-8"))
+            results = gdata.get("results", [])
+            if results:
+                lat = results[0]["latitude"]
+                lon = results[0]["longitude"]
+                name = results[0]["name"]
+                admin = results[0].get("admin1", "")
+                country = results[0].get("country", "South Africa")
+
+                wurl = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+                with urllib.request.urlopen(urllib.request.Request(wurl, headers={"User-Agent": "Mozilla/5.0"}), timeout=5) as wr:
+                    wdata = json.loads(wr.read().decode("utf-8"))
+                    cw = wdata.get("current_weather", {})
+                    temp = cw.get("temperature", "N/A")
+                    wind = cw.get("windspeed", "N/A")
+
+                    loc_str = f"{name}, {admin}" if admin else name
+                    return f"""🌦️ <b>Live Weather for {loc_str} ({country})</b>
+
+🌡️ <b>Temperature:</b> <b>{temp}°C</b>
+💨 <b>Wind Speed:</b> {wind} km/h
+📍 <i>GPS Geocoded Weather Station</i>"""
+    except Exception as e:
+        logger.debug(f"Open-Meteo lookup failed: {e}")
+
+    # 3. Fallback to Web Search
+    return search_web(f"weather forecast {clean_city} South Africa")
 
 def search_web(query: str) -> str:
     """Performs real-time web search across DuckDuckGo and Wikipedia, returning clean findings."""
@@ -557,23 +622,93 @@ def search_web(query: str) -> str:
 # ============================================================================
 # Multi-Tier AI Brain (Direct Gemini Cloud / Next.js Server / Local Ollama)
 # ============================================================================
-def ask_ai(prompt: str, system_prompt: str = None) -> str:
-    """Invokes AI Brain with multi-tier resilience:
-    1. Direct Google Gemini API (if GEMINI_API_KEY is configured)
-    2. SearchBiz Next.js Server API (/api/gemini/chat) - full business context
-    3. Local Ollama qwen2.5:3b (timeout 18s)
+HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Executive Assistant and Chief of Staff for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory.
+You are running live directly on the founder's Contabo Linux VPS.
+
+CORE REASONING & EXECUTIVE CAPABILITIES:
+1. Analytical Intelligence & Logic: When asked analytical, math, or logical questions, reason through them step-by-step and provide clear, precise answers.
+2. Natural Conversation, Wit & Self-Awareness: Speak with genuine human personality, wit, and charisma. If the user jokes, banters, or points out something (e.g. "I never ask how you"), respond with humor, charm, and self-awareness. Never sound like a cold or rigid robotic script.
+3. South African Business Expertise: You know South African cities (Durban, Johannesburg, Cape Town, Pretoria, Umkomaas, Ballito, etc.), provinces, ZAR (Rands), SAST time, and local business dynamics.
+4. SearchBiz Knowledge:
+   - Base Premium Plan: R199.00 / month (unlimited static website hosting, custom domain email @yourdomain.co.za, directory listing).
+   - Extra listings: +R199.00 / month each.
+   - .co.za domain: R99.00 / year.
+5. Telegram Formatting: Keep replies concise, clean, and well-spaced. Use HTML tags (<b>bold</b>, <i>italic</i>, <code>code</code>) where helpful.
+"""
+
+def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
+    """Invokes AI Brain with multi-tier resilience and reasoning:
+    1. Local Ollama qwen2.5:3b (primary on VPS: localhost:11434 with native conversational reasoning)
+    2. Direct Google Gemini API (if GEMINI_API_KEY is configured in .env.vps)
+    3. SearchBiz Server Cloud AI (/api/gemini/chat) with directory boilerplate rejection
     """
-    # 1. Direct Gemini API
+    effective_system = system_prompt or HERMES_EXECUTIVE_SYSTEM_PROMPT
+
+    # 1. Local Ollama Brain (Primary on VPS: localhost:11434 with qwen2.5:3b)
+    try:
+        url = f"{OLLAMA_API_URL}/api/chat"
+        messages = [{"role": "system", "content": effective_system}]
+        if chat_id and chat_id in _CHAT_HISTORIES:
+            for turn in _CHAT_HISTORIES[chat_id][-6:]:
+                messages.append({"role": turn["role"], "content": turn["content"]})
+        if not messages or messages[-1].get("content") != prompt:
+            messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 450
+            }
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=16) as res:
+            ans = json.loads(res.read().decode("utf-8"))
+            resp = ans.get("message", {}).get("content", "").strip()
+            if resp:
+                return resp
+    except Exception as e:
+        logger.debug(f"Local Ollama chat endpoint not ready or error: {e}")
+        # Fallback to /api/generate
+        try:
+            gen_url = f"{OLLAMA_API_URL}/api/generate"
+            gen_payload = {
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "system": effective_system,
+                "stream": False,
+                "options": {"temperature": 0.7, "num_predict": 450}
+            }
+            gen_req = urllib.request.Request(gen_url, data=json.dumps(gen_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(gen_req, timeout=16) as gen_res:
+                ans = json.loads(gen_res.read().decode("utf-8"))
+                resp = ans.get("response", "").strip()
+                if resp:
+                    return resp
+        except Exception:
+            pass
+
+    # 2. Direct Gemini Cloud API (if GEMINI_API_KEY configured)
     if GEMINI_API_KEY:
         for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                contents = []
+                if chat_id and chat_id in _CHAT_HISTORIES:
+                    for turn in _CHAT_HISTORIES[chat_id][-6:]:
+                        role_name = "user" if turn["role"] == "user" else "model"
+                        contents.append({"role": role_name, "parts": [{"text": turn["content"]}]})
+                if not contents or contents[-1]["parts"][0]["text"] != prompt:
+                    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
                 payload = {
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 650}
+                    "contents": contents,
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 650},
+                    "systemInstruction": {"parts": [{"text": effective_system}]}
                 }
-                if system_prompt:
-                    payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=12) as res:
@@ -586,10 +721,9 @@ def ask_ai(prompt: str, system_prompt: str = None) -> str:
             except Exception as e:
                 logger.debug(f"Direct Gemini '{model}' error: {e}")
 
+    # 3. SearchBiz Server Cloud AI (/api/gemini/chat)
     base_url = get_active_api_base()
-
-    # 2. SearchBiz Server AI
-    for ep in ["/api/gemini/chat", "/api/llama3/chat"]:
+    for ep in ["/api/gemini/chat"]:
         try:
             cloud_url = f"{base_url}{ep}"
             headers = {
@@ -601,43 +735,27 @@ def ask_ai(prompt: str, system_prompt: str = None) -> str:
                 "prompt": prompt
             }).encode("utf-8")
             req = urllib.request.Request(cloud_url, data=cloud_data, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as res:
+            with urllib.request.urlopen(req, timeout=12) as res:
                 ans = json.loads(res.read().decode("utf-8"))
                 cloud_text = ans.get("reply") or ans.get("text") or ans.get("response")
-                if cloud_text and "Encountered an internal" not in cloud_text and "Missing API Key" not in cloud_text:
-                    return cloud_text.strip()
+                if cloud_text:
+                    # Sanitize: Ensure it's not a generic directory search error response
+                    bad_signatures = [
+                        "I searched our verified directory",
+                        "active listings published under",
+                        "place the first business advertisement",
+                        "Encountered an internal",
+                        "Missing API Key"
+                    ]
+                    if not any(bad in cloud_text for bad in bad_signatures):
+                        return cloud_text.strip()
         except Exception as e:
             logger.debug(f"SearchBiz cloud AI endpoint '{ep}' error: {e}")
 
-    # 3. Local Ollama
-    try:
-        url = f"{OLLAMA_API_URL}/api/generate"
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.7,
-                "num_predict": 350
-            }
-        }
-        if system_prompt:
-            payload["system"] = system_prompt
-
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=18) as res:
-            ans = json.loads(res.read().decode("utf-8"))
-            resp = ans.get("response", "").strip()
-            if resp:
-                return resp
-    except Exception as e:
-        logger.warning(f"Local Ollama inference failed: {e}")
-
     return ""
 
-def ask_ollama(prompt: str, system_prompt: str = None) -> str:
-    return ask_ai(prompt, system_prompt)
+def ask_ollama(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
+    return ask_ai(prompt, system_prompt, chat_id=chat_id)
 
 
 # ============================================================================
@@ -650,6 +768,9 @@ def handle_message(message: dict):
 
     if not text:
         return
+
+    # Track user turn in sliding-window conversation memory
+    record_chat_turn(chat_id, "user", text)
 
     logger.info(f"Incoming message from {sender} ({chat_id}): '{text}'")
 
@@ -966,18 +1087,13 @@ How can I assist you right now, <b>{sender}</b>?"""
         send_telegram(chat_id, reply)
         return
 
-    # 9h. Live Weather Queries (e.g. "Weather in Durban", "What's the weather today")
+    # 9h. Live Weather Queries (e.g. "Weather in Durban", "What's the weather in kzn umkomaas now", "South Africa Durban south coast umkomaas weather today")
     weather_triggers = [
-        "weather in ", "weather for ", "what is the weather", "what's the weather",
-        "whats the weather", "how is the weather", "how's the weather",
-        "temperature in ", "is it raining in ", "is it raining", "weather forecast"
+        "weather", "temperature", "forecast", "is it raining", "raining in",
+        "how hot is it", "how cold is it", "degrees in", "degrees celsius"
     ]
-    if any(t in lower for t in weather_triggers):
-        city = "Durban"
-        city_match = re.search(r'(?:in|for|at|around)\s+([a-zA-Z\s]+)', text, re.IGNORECASE)
-        if city_match:
-            city = city_match.group(1).strip()
-        reply = get_weather(city)
+    if any(t in lower for t in weather_triggers) and not any(k in lower for k in ['create an ad', 'place an ad', 'post an ad', 'send email', 'delete ad']):
+        reply = get_weather(text)
         send_telegram(chat_id, reply)
         return
 
@@ -1195,20 +1311,23 @@ Today, Thandi's bakery employs three young apprentices from her street.
             return
 
     # 12. Instant Conversational Greetings & Well-being
-    if re.search(r'^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)', lower):
+    if re.search(r'^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)\b', lower):
         base_url = get_active_api_base()
-        reply = f"""👋 <b>Hello {sender}!</b>
+        has_wellbeing = any(q in lower for q in ["how are you", "how r u", "how you doing", "how are things", "how's it going"])
+        wellbeing_line = "I'm doing great, thank you for asking! 😊 " if has_wellbeing else ""
+        reply = f"""👋 <b>Howzit, {sender}!</b>
 
-I'm doing great, thank you for asking! 😊 I am Hermes, your SearchBiz Executive Agent running on your VPS.
+{wellbeing_line}I am Hermes, your autonomous SearchBiz Executive Agent running live on your Contabo VPS.
 
-Everything is live and operational on <b>{base_url}</b>. Here is what I can do for you:
-• <b>Publish an ad:</b> <i>"Make an ad for Quick Towing in Pretoria, 0825551234, 24/7 breakdown"</i>
-• <b>Manage ads:</b> <i>"Delete ad for Quick Towing"</i> or <code>/list_ads</code>
-• <b>Send emails:</b> <i>"Send an email explaining What searchbiz.co.za is all about to nicholauscostochetty@gmail.com"</i>
-• <b>Check inbox:</b> <code>/check_inbox</code>
-• <b>Stories & Business Chat:</b> Ask me for a story, pricing, or advice!
+Everything is operational on <b>{base_url}</b>. Here are some things I can execute for you:
+• 🌐 <b>Live Internet Web Search:</b> <i>"Search Google for top safari lodges"</i>
+• 🌦️ <b>Live Weather:</b> <i>"What's the weather in Umkomaas?"</i>
+• 🪙 <b>Live Crypto Ticker:</b> <i>"What is the price of BTC?"</i>
+• 🏢 <b>Publish/Manage Ads:</b> <i>"Make an ad for [Business] in [City]"</i> or <code>/list_ads</code>
+• 📧 <b>Send Emails:</b> <i>"Send email to [recipient] explaining SearchBiz"</i>
+• 🧠 <b>Reasoning & Strategy:</b> Ask me math, business logic, or chat with me!
 
-What would you like to do next?"""
+What's on your agenda today?"""
         send_telegram(chat_id, reply)
         return
 
@@ -1478,16 +1597,28 @@ Simply send me:
             send_telegram(chat_id, f"❌ Failed to publish ad: {err}")
             return
 
-    # 17. Conversational AI Assistant with Soul & Personality
+    # 17. Conversational Banter & Wit Handlers (Self-awareness)
+    if any(p in lower for p in ["i never ask how", "i didn't ask how", "did i ask how", "who asked how you", "nobody asked"]):
+        send_telegram(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what can I tackle for you?")
+        return
+
+    # 18. Conversational AI Assistant with Executive Reasoning & Multi-turn Memory
     ai_reply = ask_ai(
         text,
-        system_prompt=f"You are Hermes, the sharp, witty, loyal, and highly capable AI Executive Assistant for SearchBiz (searchbiz.co.za in South Africa). The user speaking with you is {sender}. Be conversational, charismatic, knowledgeable, and genuinely helpful. Answer with real personality, never sound like a robotic script. Keep replies concise and clean for Telegram."
+        system_prompt=(
+            f"You are Hermes, the autonomous AI Executive Assistant and Chief of Staff for SearchBiz (https://searchbiz.co.za) in South Africa. "
+            f"The founder speaking with you is {sender}. "
+            "You possess sharp analytical intelligence, conversational agility, wit, and deep South African context (ZAR, SAST time, cities). "
+            "If asked logical, business, or everyday questions, think and reason step-by-step. "
+            "Be charismatic, self-aware, and concise for Telegram."
+        ),
+        chat_id=chat_id
     )
     if ai_reply:
         send_telegram(chat_id, ai_reply)
         return
 
-    # 18. Smart Web & Knowledge Fallback for "What is / Who is / Where is"
+    # 19. Smart Web & Knowledge Fallback for "What is / Who is / Where is"
     if any(lower.startswith(prefix) for prefix in ["what is ", "whats ", "what's ", "who is ", "who was ", "where is ", "where are ", "how does ", "how to ", "tell me about "]):
         send_chat_action(chat_id, "typing")
         search_result = search_web(text)
@@ -1495,23 +1626,23 @@ Simply send me:
             send_telegram(chat_id, search_result)
             return
 
-    # 19. Conversational Fallback with Personality (Never a cold robot)
+    # 20. Conversational Fallback with Personality (Never a cold robot)
     if any(w in lower for w in ["how are you", "how r u", "how do you feel", "are you real", "are you there", "you there", "hello?", "help me"]):
-        send_telegram(chat_id, f"😊 <b>I'm feeling great and right here with you, {sender}!</b>\n\nAll systems on your server are green and running. Ask me anything — like <i>'What is the weather in Durban?'</i>, <i>'Current price of BTC'</i>, <i>'Search Google for...'</i>, or tell me to publish/manage your business listings!")
+        send_telegram(chat_id, f"😊 <b>I'm feeling sharp and right here with you, {sender}!</b>\n\nAll systems on your server are green and running. Ask me anything — like <i>'What is the weather in Umkomaas?'</i>, <i>'Current price of BTC'</i>, <i>'Search Google for...'</i>, or tell me to publish/manage your business listings!")
         return
 
-    # 20. Executive Guidance
+    # 21. Executive Guidance
     send_telegram(chat_id, f"""🏛️ <b>SearchBiz Hermes Executive Assistant</b>
 I'm here and listening, <b>{sender}</b>! 
 
 Try asking me any of these:
 🌐 <i>"Search Google for top safari lodges in Kruger"</i>
-🌦️ <i>"What's the weather in Durban?"</i>
+🌦️ <i>"What's the weather in Umkomaas?"</i>
 🪙 <i>"What's the current price of BTC?"</i>
 📅 <i>"What is the day today?"</i>
 🏢 <i>"Make an ad for Elite Plumbers in Durban, 0821234567, emergency repairs"</i>
 📧 <i>"Send an email explaining What searchbiz.co.za is all about to user@domain.com"</i>
-💬 <i>"What is your name?"</i> or <i>"Tell me a story"</i>""")
+💬 <i>"What is your name?"</i> or chat with me about anything!""")
 
 
 def main():
