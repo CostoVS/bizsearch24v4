@@ -396,13 +396,23 @@ Please answer the user's inquiry based on this verified dataset.
 
     // Conversational, complaints, meta-inquiries or commands handling
     const isConversational = 
+      normalizedQuery.includes("understand") ||
+      normalizedQuery.includes("reasoning") ||
+      normalizedQuery.includes("human") ||
+      normalizedQuery.includes("talk to me") ||
       normalizedQuery.includes("you didn't") ||
       normalizedQuery.includes("why didn't") ||
       normalizedQuery.includes("why did you") ||
+      normalizedQuery.includes("why you") ||
+      normalizedQuery.includes("why don't") ||
+      normalizedQuery.includes("why dont") ||
       normalizedQuery.includes("what did you") ||
       normalizedQuery.includes("i told you") ||
       normalizedQuery.includes("i asked you") ||
       normalizedQuery.includes("not working") ||
+      normalizedQuery.includes("voice") ||
+      normalizedQuery.includes("accent") ||
+      normalizedQuery.includes("british") ||
       normalizedQuery.includes("delete") ||
       normalizedQuery.includes("remove") ||
       normalizedQuery.includes("restore") ||
@@ -413,6 +423,16 @@ Please answer the user's inquiry based on this verified dataset.
       normalizedQuery.includes("failed");
 
     if (isConversational) {
+      if (normalizedQuery.includes("understand") || normalizedQuery.includes("reasoning") || normalizedQuery.includes("human") || normalizedQuery.includes("talk to me")) {
+        return NextResponse.json({
+          text: `I completely hear you, and I apologize for any robotic miscommunication! I am your executive partner and I'm listening with full attention and human-like understanding. Tell me what you'd like adjusted or tackled—whether it's testing our new **Young British Lady voice** (/voice), checking weather with rain probabilities, managing Google Maps CSV leads, or tuning your VPS!`
+        });
+      }
+      if (normalizedQuery.includes("voice") || normalizedQuery.includes("accent") || normalizedQuery.includes("british")) {
+        return NextResponse.json({
+          text: `🎙️ **Young British Lady Voice Active!**\nI've enabled a charming young British lady voice for all speech requests. You can type \`/voice [any message]\` or \`/speak [any message]\` to hear me speak, or send \`/voice\` to hear my audio introduction!`
+        });
+      }
       if (normalizedQuery.includes("delete") || normalizedQuery.includes("remove")) {
         return NextResponse.json({
           text: `I understand you want to delete or remove an advertisement! To remove any ad immediately, you can tell me:\n• *"Delete the ad you just created"*\n• *"Delete the ad in [City]"*\n• Or use \`/delete_ad [ID or Business Name]\`\n\nIf you want me to remove the ad created in Umkomaas or the last created listing, simply say *"Delete the recent ad"* or send the ID!`
@@ -442,8 +462,9 @@ Please answer the user's inquiry based on this verified dataset.
       });
     }
 
-    // Only trigger directory missing message if user had clear directory/ad search intent
+    // Only trigger directory missing message if user had explicit directory/ad search intent
     const hasSearchIntent = 
+      !isConversational &&
       !normalizedQuery.includes("image") &&
       !normalizedQuery.includes("picture") &&
       !normalizedQuery.includes("flux") &&

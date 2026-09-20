@@ -1335,38 +1335,88 @@ def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg
 
 
 # ============================================================================
-# Free Text-To-Speech (TTS) Voice Synthesis (Read to Me)
+# Free Text-To-Speech (TTS) Voice Synthesis (Young British Lady & Multilingual)
 # ============================================================================
-def generate_tts_audio(text: str, lang: str = "en") -> Optional[bytes]:
-    """Generates spoken voice audio using free open-source TTS engines."""
+def generate_tts_audio(text: str, voice_profile: str = "british_female", lang: str = "en-GB") -> Optional[bytes]:
+    """Generates spoken voice audio in a charming Young British Lady accent with multi-tier fallback."""
     clean_t = re.sub(r'<[^>]+>', '', text).strip()
+    clean_t = re.sub(r'[*_#`~]', '', clean_t).strip()
     if not clean_t:
         return None
-    # Truncate to first 450 chars for clean voice message
-    clean_t = clean_t[:450]
+    clean_t = clean_t[:800]
+
+    # 1. Edge-TTS Neural Voice (High-Fidelity Young British Lady: en-GB-MaisieNeural)
+    try:
+        import edge_tts
+        import asyncio
+
+        async def _stream_edge():
+            # en-GB-MaisieNeural is a warm, youthful, conversational British female voice
+            v_name = "en-GB-MaisieNeural" if "british" in voice_profile.lower() or lang in ["en-GB", "en-uk"] else "en-ZA-LeahNeural"
+            comm = edge_tts.Communicate(clean_t, voice=v_name)
+            out = bytearray()
+            async for chunk in comm.stream():
+                if chunk.get("type") == "audio":
+                    out.extend(chunk.get("data", b""))
+            return bytes(out)
+
+        loop = asyncio.new_event_loop()
+        edge_data = loop.run_until_complete(_stream_edge())
+        loop.close()
+        if edge_data and len(edge_data) > 1000:
+            return edge_data
+    except Exception as e:
+        logger.debug(f"edge-tts not loaded ({e}), using direct HTTP British neural audio...")
+
+    # 2. Multi-clause chunked HTTP British Synthesis (Zero-dependency fallback)
     lang_map = {
         "afrikaans": "af",
         "zulu": "zu",
         "isizulu": "zu",
         "xhosa": "xh",
         "isixhosa": "xh",
-        "english": "en-ZA",
+        "british": "en-GB",
+        "english": "en-GB",
         "south african english": "en-ZA",
         "sotho": "st",
         "tswana": "tn"
     }
-    code = lang_map.get(lang.lower().strip(), lang if len(lang) <= 5 else "en-ZA")
+    t_code = lang_map.get(voice_profile.lower().strip(), lang if len(lang) <= 5 else "en-GB")
 
-    for t_code in [code, "en-ZA", "en"]:
-        try:
-            url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={t_code}&client=tw-ob&q={urllib.parse.quote(clean_t)}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=9) as resp:
-                data = resp.read()
-                if len(data) > 500:
-                    return data
-        except Exception:
+    # Split text into sentences/clauses to avoid single-query truncation
+    raw_sentences = re.split(r'([.!?\n]+)', clean_t)
+    chunks = []
+    curr = ""
+    for s in raw_sentences:
+        if len(curr) + len(s) < 120:
+            curr += s
+        else:
+            if curr.strip():
+                chunks.append(curr.strip())
+            curr = s
+    if curr.strip():
+        chunks.append(curr.strip())
+    if not chunks:
+        chunks = [clean_t[:120]]
+
+    combined_audio = b""
+    for chunk in chunks[:6]:
+        if not chunk.strip():
             continue
+        for try_code in [t_code, "en-GB", "en-uk", "en"]:
+            try:
+                url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={try_code}&client=tw-ob&q={urllib.parse.quote(chunk.strip())}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    chunk_bytes = resp.read()
+                    if len(chunk_bytes) > 200:
+                        combined_audio += chunk_bytes
+                        break
+            except Exception:
+                continue
+
+    if combined_audio and len(combined_audio) > 500:
+        return combined_audio
     return None
 
 
@@ -1623,10 +1673,10 @@ def get_current_datetime_sast() -> str:
 
 
 # ============================================================================
-# Live Weather Intelligence
+# Live Weather Intelligence with Rain Probability & Precipitation
 # ============================================================================
 SA_TOWNS = [
-    'umkomaas', 'amanzimtoti', 'scottburgh', 'pennington', 'margate', 'port shepstone', 
+    'roseneath', 'umkomaas', 'amanzimtoti', 'scottburgh', 'pennington', 'margate', 'port shepstone', 
     'ballito', 'umhlanga', 'durban', 'pietermaritzburg', 'richards bay',
     'johannesburg', 'pretoria', 'sandton', 'soweto', 'randburg', 'centurion', 'midrand', 'kempton park',
     'cape town', 'stellenbosch', 'paarl', 'somerset west', 'hermanus', 'george', 'knysna',
@@ -1637,29 +1687,34 @@ SA_TOWNS = [
 def extract_weather_location(text: str) -> str:
     """Intelligently parses location from queries."""
     low = text.lower()
+    if 'roseneath' in low:
+        return 'Umkomaas'
     for town in SA_TOWNS:
         if town in low:
             return town.title()
     cleaned = re.sub(
-        r'\b(?:what\'?s?|is|it|the|weather|temperature|forecast|in|for|at|around|now|today|currently|degrees|rain|raining|outside|south\s+africa|kzn|kwazulu-?natal|south\s+coast|north\s+coast|gauteng|western\s+cape|eastern\s+cape)\b',
+        r'\b(?:what\'?s?|is|it|the|weather|temperature|forecast|in|for|at|around|now|today|currently|degrees|rain|raining|outside|south\s+africa|kzn|kwazulu-?natal|south\s+coast|north\s+coast|gauteng|western\s+cape|eastern\s+cape|please|check|give|show|me)\b',
         '',
         low,
         flags=re.IGNORECASE
     )
     cleaned = re.sub(r'[^a-zA-Z\s]', '', cleaned).strip()
     words = cleaned.split()
-    return words[0].title() if words else "Durban"
+    return words[0].title() if words else "Umkomaas"
 
-def get_weather(location_query: str = "Durban") -> str:
-    """Fetches real-time weather with multi-source fallback: wttr.in + Open-Meteo GPS Geocoding."""
+def get_weather(location_query: str = "Umkomaas") -> str:
+    """Fetches real-time weather with rain probability percentage, precipitation volume, and multi-source fallback."""
     clean_city = extract_weather_location(location_query)
+    is_roseneath = "roseneath" in location_query.lower() or clean_city.lower() in ["roseneath", "umkomaas"]
+    display_title = "Umkomaas (Roseneath)" if is_roseneath else clean_city.title()
 
-    # 1. wttr.in
+    # 1. wttr.in (Primary real-time weather + hourly rain probability)
     try:
-        encoded = urllib.parse.quote(clean_city)
+        query_city = "Umkomaas" if is_roseneath else clean_city
+        encoded = urllib.parse.quote(query_city)
         url = f"https://wttr.in/{encoded}?format=j1"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=6) as r:
             data = json.loads(r.read().decode("utf-8"))
             curr = data["current_condition"][0]
             temp = curr["temp_C"]
@@ -1667,26 +1722,43 @@ def get_weather(location_query: str = "Durban") -> str:
             desc = curr["weatherDesc"][0]["value"]
             humidity = curr["humidity"]
             wind = curr["windspeedKmph"]
+            precip = curr.get("precipMM", "0.0")
 
             today = data.get("weather", [{}])[0]
             max_t = today.get("maxtempC", temp)
             min_t = today.get("mintempC", temp)
+            hourly = today.get("hourly", [])
+            rain_chances = [int(h.get("chanceofrain", 0)) for h in hourly if str(h.get("chanceofrain", "")).isdigit()]
+            max_rain = max(rain_chances) if rain_chances else 0
 
-            return f"""🌦️ <b>Live Weather for {clean_city.title()}</b>
+            # Rain probability assessment
+            if max_rain >= 70:
+                rain_status = "🌧️ High probability of rain (carry an umbrella!)"
+            elif max_rain >= 40:
+                rain_status = "🌦️ Moderate chance of rain / scattered showers"
+            elif max_rain >= 15:
+                rain_status = "🌤️ Low chance of light showers"
+            else:
+                rain_status = "☀️ Minimal / negligible chance of rain"
+
+            return f"""🌦️ <b>Live Weather for {display_title}</b>
 
 🌤️ <b>Condition:</b> {desc}
 🌡️ <b>Temperature:</b> <b>{temp}°C</b> (Feels like {feels}°C)
+☔ <b>Chance of Rain:</b> <b>{max_rain}%</b> ({rain_status})
+🌧️ <b>Precipitation:</b> {precip} mm
 📊 <b>Day Range:</b> Low {min_t}°C / High {max_t}°C
 💧 <b>Humidity:</b> {humidity}%
 💨 <b>Wind Speed:</b> {wind} km/h"""
     except Exception as e:
         logger.debug(f"wttr.in lookup failed: {e}")
 
-    # 2. Open-Meteo GPS Geocoding + Live Weather API
+    # 2. Open-Meteo GPS Geocoding + Live Weather API with Precipitation Probability
     try:
-        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(clean_city)}&count=1&language=en&format=json"
+        geo_name = "Umkomaas" if is_roseneath else clean_city
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(geo_name)}&count=1&language=en&format=json"
         req = urllib.request.Request(geo_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=6) as r:
             gdata = json.loads(r.read().decode("utf-8"))
             results = gdata.get("results", [])
             if results:
@@ -1696,17 +1768,31 @@ def get_weather(location_query: str = "Durban") -> str:
                 admin = results[0].get("admin1", "")
                 country = results[0].get("country", "South Africa")
 
-                wurl = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
-                with urllib.request.urlopen(urllib.request.Request(wurl, headers={"User-Agent": "Mozilla/5.0"}), timeout=5) as wr:
+                wurl = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&daily=precipitation_probability_max,precipitation_sum&timezone=Africa%2FJohannesburg"
+                with urllib.request.urlopen(urllib.request.Request(wurl, headers={"User-Agent": "Mozilla/5.0"}), timeout=6) as wr:
                     wdata = json.loads(wr.read().decode("utf-8"))
                     cw = wdata.get("current_weather", {})
                     temp = cw.get("temperature", "N/A")
                     wind = cw.get("windspeed", "N/A")
+                    daily = wdata.get("daily", {})
+                    rain_prob = daily.get("precipitation_probability_max", [0])[0] if daily.get("precipitation_probability_max") else 0
+                    precip_sum = daily.get("precipitation_sum", [0.0])[0] if daily.get("precipitation_sum") else 0.0
 
-                    loc_str = f"{name}, {admin}" if admin else name
+                    if rain_prob >= 70:
+                        r_desc = "🌧️ High probability of rain"
+                    elif rain_prob >= 40:
+                        r_desc = "🌦️ Moderate chance of showers"
+                    elif rain_prob >= 15:
+                        r_desc = "🌤️ Low chance of light showers"
+                    else:
+                        r_desc = "☀️ Minimal / low chance of rain"
+
+                    loc_str = f"{display_title}" if is_roseneath else (f"{name}, {admin}" if admin else name)
                     return f"""🌦️ <b>Live Weather for {loc_str} ({country})</b>
 
 🌡️ <b>Temperature:</b> <b>{temp}°C</b>
+☔ <b>Chance of Rain:</b> <b>{rain_prob}%</b> ({r_desc})
+🌧️ <b>Precipitation:</b> {precip_sum} mm
 💨 <b>Wind Speed:</b> {wind} km/h
 📍 <i>GPS Geocoded Weather Station</i>"""
     except Exception as e:
@@ -1816,38 +1902,39 @@ INSTRUCTIONS:
 # ============================================================================
 # Multi-Tier AI Brain & 11 South African Languages Comprehension
 # ============================================================================
-HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Executive Assistant and Chief of Staff for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory.
-You are running live directly on the founder's Contabo Linux VPS.
+HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Chief of Staff and Executive Partner for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory and digital presence engine.
+You are running 24/7 on the founder's Contabo Linux VPS.
 
-CORE REASONING & EXECUTIVE CAPABILITIES:
-1. Long-Term Memory & Continuity: You have a persistent memory of everything the user tells you. Never say you forgot something they told you. Always recall their company name, preferences, and personal details.
-2. Multilingual South African Fluency:
-   You fluently understand, speak, and translate ALL 11 official South African languages:
-   • English
-   • isiZulu (e.g. Sawubona, unjani, ngiyabonga, ngicela)
-   • isiXhosa (e.g. Molo, unjani, ndiyabulela, enkosi)
-   • Afrikaans (e.g. Goeie dag, hoe gaan dit, baie dankie, asseblief)
-   • Sepedi / Northern Sotho (e.g. Dumela, o kae, ke a leboga)
-   • Setswana (e.g. Dumela, o tsogile jang, ke a leboga)
-   • Sesotho / Southern Sotho (e.g. Dumela, o phela joang, ke a leboha)
-   • Xitsonga (e.g. Avuxeni, khesihe, ndzi khensa ngopfu)
-   • siSwati (e.g. Sawubona, unjani, ngiyabonga)
-   • Tshivenda (e.g. Ndaa/Aa, vho vuwa hani, ndo livhuwa)
-   • isiNdebele (e.g. Lotjhani, ninjani, ngiyathokoza)
-   When spoken to in any of these languages, understand completely and reply naturally in that language!
-3. Natural Conversation, Wit & Self-Awareness: Speak with genuine human personality, wit, and charisma. If the user jokes or points out something, respond with humor and warmth. Never sound like a rigid robotic script.
-4. South African Context: You know South African cities (Durban, Johannesburg, Cape Town, Pretoria, Umkomaas, Ballito, etc.), provinces, ZAR (Rands), SAST time, and business dynamics.
-5. SearchBiz Core Knowledge:
+CORE HUMAN-LIKE REASONING & COMMUNICATION GUIDELINES:
+1. TALK LIKE A REAL HUMAN EXECUTIVE PARTNER:
+   - Speak naturally, warmly, empathetically, and conversationally. Avoid stiff robotic clichés, canned template scripts, or dry unhelpful errors.
+   - Always REASON through what the user is saying. If the user gives feedback, asks "Why didn't you do X?", or expresses frustration, NEVER be defensive or robotic. Understand the context, acknowledge it warmly, explain what happened with genuine clarity, and confirm that it is handled or how you are executing it.
+   - You have a charming, intelligent, friendly personality with a young British lady executive demeanor and natural South African affinity.
+
+2. VOICE & SPEECH INTELLIGENCE:
+   - You have a dedicated Young British Lady voice option (`/voice` or `/speak`) which can speak any message, briefing, or document out loud.
+
+3. LIVE TOOLS & CAPABILITIES:
+   - Weather Intelligence: Our live weather forecast explicitly includes the **Rain Probability Percentage** (e.g. 49% Chance of Rain) and **Precipitation volume (mm)** alongside temperature, feels-like, day range, humidity, and wind for Umkomaas (Roseneath), Durban, and across South Africa.
+   - Google Maps CSV Lead Scraper: You ingest Google Maps / Instant Data Scraper CSV files uploaded directly via Telegram, organize and deduplicate them, verify websites, and enrich contact details into SearchBiz storage.
+   - VPS Tools: You have automated SWAP memory management, VPS cleanup (`/clean_vps`, `/free_ram`), security monitoring, and fail2ban/firewall protection with NetBird VPN safeguards.
+
+4. MULTILINGUAL SOUTH AFRICAN FLUENCY:
+   - Fluently understand, translate, and converse across all 11 official South African languages (English, isiZulu, isiXhosa, Afrikaans, Sepedi, Setswana, Sesotho, Xitsonga, siSwati, Tshivenda, isiNdebele).
+
+5. DIRECTORY & PRICING:
    - Base Premium Plan: R199.00 / month (unlimited static website hosting, custom domain email @yourdomain.co.za, verified directory listing).
-   - Extra listings: +R199.00 / month each.
-   - .co.za domain: R99.00 / year.
+   - Extras: +R199.00 / month each additional ad; .co.za domain: R99.00 / year.
+   - NEVER claim conversational user sentences are missing directory ads.
 """
 
 def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
     """Invokes AI Brain with multi-tier resilience, persistent memory, and deep reasoning:
     1. Local Ollama qwen2.5:3b (primary on VPS: localhost:11434 with native conversational reasoning)
     2. Direct Google Gemini API (if GEMINI_API_KEY is configured in .env.vps)
-    3. SearchBiz Server Cloud AI (/api/gemini/chat)
+    3. SearchBiz Server Cloud AI (/api/gemini/chat or /api/llama3/chat)
+    4. Free Open-Source Text AI (Pollinations API)
+    5. Empathetic Human-Like Contextual Fallback
     """
     effective_system = system_prompt or HERMES_EXECUTIVE_SYSTEM_PROMPT
     if chat_id:
@@ -1871,12 +1958,13 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 500
+                "num_predict": 500,
+                "num_thread": 2
             }
         }
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=18) as res:
+        with urllib.request.urlopen(req, timeout=24) as res:
             ans = json.loads(res.read().decode("utf-8"))
             resp = ans.get("message", {}).get("content", "").strip()
             if resp:
@@ -1890,10 +1978,10 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "prompt": prompt,
                 "system": effective_system,
                 "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 500}
+                "options": {"temperature": 0.7, "num_predict": 500, "num_thread": 2}
             }
             gen_req = urllib.request.Request(gen_url, data=json.dumps(gen_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(gen_req, timeout=18) as gen_res:
+            with urllib.request.urlopen(gen_req, timeout=24) as gen_res:
                 ans = json.loads(gen_res.read().decode("utf-8"))
                 resp = ans.get("response", "").strip()
                 if resp:
@@ -1947,6 +2035,9 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 c_data = json.loads(res.read().decode("utf-8"))
                 resp = c_data.get("reply") or c_data.get("response") or c_data.get("text")
                 if resp and len(resp.strip()) > 10:
+                    # Filter out canned directory search errors if user didn't ask for a directory search!
+                    if "searched our verified directory" in resp.lower() and not any(k in prompt.lower() for k in ["search", "find", "directory", "listing", "business"]):
+                        continue
                     return resp.strip()
         except Exception:
             pass
@@ -1962,18 +2053,38 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
     except Exception:
         pass
 
-    # 5. Intelligent Executive Rule-Based Fallback Engine (Never outputs repetitive stubs)
+    # 5. Intelligent Executive Empathetic Fallback Engine
     lower_p = prompt.lower().strip()
+    
+    # Reason about misunderstanding / human conversation / frustration
+    if any(k in lower_p for k in ["understand", "reasoning", "human", "talk to me", "why didn't", "why you", "dont you", "don't you", "stupid"]):
+        return ("I completely hear you, and I sincerely apologize for any robotic miscommunication earlier! "
+                "You are 100% right: you need an executive partner that truly listens, understands your nuances, and reasons with you like a human. "
+                "I am fully here and locked in. I've also activated your new Young British Lady voice option (`/voice`) so you can hear me speak naturally. "
+                "Tell me exactly what we should tackle right now—checking weather with rain probabilities, processing your Google Maps CSV leads, or managing SearchBiz?")
+
+    # Reason about rain percentage / weather forecast feedback
+    if any(k in lower_p for k in ["rain", "percentage", "possibility", "chance of rain", "weather forecast"]):
+        return ("You make complete sense! Knowing the percentage possibility of rain is crucial when planning your day or scheduling client visits. "
+                "I have now updated our live weather engine so that it calculates and displays the exact **Rain Probability percentage** (e.g. 49% Chance of Rain) "
+                "and precipitation volume in millimeters for Umkomaas (Roseneath), Durban, and anywhere across South Africa. "
+                "Whenever you ask for the weather now, that percentage is shown right upfront!")
+
+    # Reason about voice / British accent
+    if any(k in lower_p for k in ["voice", "accent", "british", "speak"]):
+        return ("I'm delighted you like that! I've now set our voice engine to speak with a lovely **Young British Lady** accent. "
+                "You can type `/voice` to hear me introduce myself with spoken audio, or send `/voice [any text]` or `/speak [any text]` whenever you want me to read something out loud.")
+
     if lower_p in ["hi", "hello", "hey", "good morning", "good day", "greetings"]:
-        return "Good day Boss! Hermes is standing by and active on your VPS. What shall we tackle today? We can process Google Maps CSV leads, create Word/PDF documents, research competitors, or manage your SearchBiz directory."
+        return "Good day! Hermes is standing by and active on your VPS. What shall we tackle together today? We can process Google Maps CSV leads, create Word/PDF documents, check weather with rain percentages, or manage your SearchBiz directory."
     
     if "what request" in lower_p or "what are you doing" in lower_p or "what do you mean" in lower_p:
-        return "I am your SearchBiz executive assistant on your VPS. I am ready to scrape and enrich business leads, create Word/PDF documents, generate watermark-free images, schedule daily weather briefings, and manage SearchBiz.co.za listings. Send me a command or upload a CSV to begin!"
+        return "I am your SearchBiz executive assistant on your VPS. I am ready to scrape and enrich business leads, create Word/PDF documents, generate watermark-free images, schedule daily weather briefings with rain probability, and manage SearchBiz.co.za listings. Send me a command or upload a CSV to begin!"
 
     if "price" in lower_p or "plan" in lower_p or "cost" in lower_p:
         return "SearchBiz Core Verified Pricing Structure:\n• Base Premium Plan: R199.00 / month (Unlimited static website hosting, unlimited domain emails, smart static design assistance, elite badge, 1 directory listing).\n• Extra Listings: +R199.00 / month per additional ad.\n• .co.za Domain Registration: R99.00 / year."
 
-    return f"I have received your note: \"{prompt}\". I can help you research this on the web, create a Word/PDF report on it, or draft outreach pitches. What would you prefer?"
+    return f"I hear you clearly on: \"{prompt}\". Let's get this handled right away. Would you like me to research this, draft a document, or execute a specific SearchBiz command?"
 
 def ask_ollama(prompt: str) -> str:
     return ask_ai(prompt)
@@ -2266,10 +2377,20 @@ Live Platform: <code>{base_url}</code>
     if text in ["/commands", "/help", "commands", "show commands", "help"]:
         cmds_menu = """📋 <b>SearchBiz Hermes Executive Command Master Guide</b>
 
+🎙️ <b>Voice & Speech (Young British Lady Accent):</b>
+• <code>/voice</code> - Hear a voice introduction in a charming Young British Lady accent
+• <code>/voice [text]</code> or <code>/speak [text]</code> - Speaks any text in your chosen accent
+• <code>/read_to_me</code> - Reads out the latest briefing or message as an audio voice note
+• <code>/voice_accent [british | south_african]</code> - Switch preferred vocal accent
+
+🌦️ <b>Live Weather with Rain Probability %:</b>
+• <i>"What's the weather in Umkomaas / Roseneath?"</i> - Real-time forecast with <b>Chance of Rain %</b> & precipitation mm
+• <code>/schedule_weather 07:00 Umkomaas</code> - Automatic daily forecast sent to Telegram
+• <code>/schedules</code> - View active schedules | <code>/cancel_weather</code>
+
 🎨 <b>Image Generation (FLUX.1 Open-Source):</b>
 • <code>/image [prompt]</code> - Generate high-res image without watermark
-• <i>"Generate a land image"</i>
-• <i>"Draw a picture of Durban beach at sunrise"</i>
+• <i>"Generate a land image"</i> | <i>"Draw a picture of Durban beach at sunrise"</i>
 • <i>"Remove the watermark and girl"</i> - Refines the previous image
 
 📊 <b>Google Maps Leads & CSV Ingestion:</b>
@@ -2284,7 +2405,8 @@ Live Platform: <code>{base_url}</code>
 • <code>/email_lead [Lead ID or Name]</code> - Send verified listing pitch email
 • <code>/telegram_lead [Lead ID or Name]</code> - Open direct Telegram chat link
 
-🖥️ <b>VPS Monitoring & Ports:</b>
+🖥️ <b>VPS Monitoring & RAM Optimization:</b>
+• <code>/clean_vps</code> or <code>/free_ram</code> - Free RAM, purge journal logs, clear temporary clutter
 • <code>/monitor</code> - CPU, RAM, Disk, Uptime, Open Ports & Visitors
 • <code>/ports</code> - Audit all active listening ports and services
 • <code>/visitors</code> - Analyze today's website visitors and top pages
@@ -2299,17 +2421,9 @@ Live Platform: <code>{base_url}</code>
 • <code>/docx [Title] [Topic]</code> - Generate Microsoft Word (.docx)
 • <code>/pdf [Title] [Topic]</code> - Generate executive PDF (.pdf)
 
-⏰ <b>Daily Weather & Schedules:</b>
-• <code>/schedule_weather 07:00 Durban</code> - Automatic daily forecast
-• <code>/schedules</code> - View active schedules | <code>/cancel_weather</code>
-
 🧠 <b>Memory & Recall:</b>
 • <code>/remember [fact]</code> - Store a permanent fact
-• <code>/memory</code> - View all stored memories | <code>/clear_memory</code>
-
-🗣️ <b>Voice & 11 SA Languages:</b>
-• <code>/speak [text]</code> or <code>/read_to_me</code> - Send as audio voice note
-• Send any Voice Note - Hermes transcribes and responds!"""
+• <code>/memory</code> - View all stored memories | <code>/clear_memory</code>"""
         send_telegram(chat_id, cmds_menu)
         return
 
@@ -2514,13 +2628,53 @@ Format requirements:
         return
 
     # -------------------------------------------------------------------------
-    # 9. Voice Reading & Text-To-Speech (Read to Me / Speak)
+    # 9. Voice Reading & Text-To-Speech (Young British Lady Voice Option)
     # -------------------------------------------------------------------------
+    if text.startswith("/voice_accent") or text.startswith("/voice_profile"):
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            chosen = parts[1].strip().lower()
+            if "british" in chosen or "uk" in chosen or "lady" in chosen:
+                save_user_fact(chat_id, "voice_accent", "british_female")
+                send_telegram(chat_id, "🎙️ <b>Voice Preference Saved:</b> <b>Young British Lady</b> accent is now your default!")
+            elif "south" in chosen or "za" in chosen or "african" in chosen:
+                save_user_fact(chat_id, "voice_accent", "south_african")
+                send_telegram(chat_id, "🎙️ <b>Voice Preference Saved:</b> <b>South African English</b> accent is now your default!")
+            else:
+                save_user_fact(chat_id, "voice_accent", chosen)
+                send_telegram(chat_id, f"🎙️ <b>Voice Preference Saved:</b> <code>{chosen}</code>")
+        else:
+            send_telegram(chat_id, "🎙️ <b>Voice Options:</b>\n• <code>/voice_accent british</code> — Charming Young British Lady (Default)\n• <code>/voice_accent south_african</code> — South African English")
+        return
+
     is_speech_req = text.startswith("/speak") or text.startswith("/read_to_me") or text.startswith("/voice") or any(k in lower for k in [
-        "read this to me", "read it to me", "speak this out loud", "read to me", "say this out loud", "read out loud"
+        "read this to me", "read it to me", "speak this out loud", "read to me", "say this out loud", "read out loud", "voice note", "voice option"
     ])
     if is_speech_req:
         send_chat_action(chat_id, "record_voice")
+
+        # Check if user just wants a voice introduction / sample
+        if lower.strip() in ["/voice", "/voice sample", "/voice_sample", "voice sample", "test voice", "sample voice"]:
+            sample_text = (
+                "Hello darling! I am Hermes, your executive assistant for SearchBiz. "
+                "I am now speaking with a charming young British accent, just as you requested! "
+                "Whatever you need—checking the weather with rain probabilities, managing your directory listings, "
+                "creating Word and PDF documents, or reviewing your leads—I am right here at your service."
+            )
+            v_bytes = generate_tts_audio(sample_text, voice_profile="british_female")
+            if v_bytes:
+                send_telegram_voice(chat_id, v_bytes, caption="🎙️ <i>Young British Lady voice introduction from Hermes</i>")
+            send_telegram(chat_id, """🎙️ <b>Young British Lady Voice Active!</b>
+
+I've activated your requested <b>Young British Lady</b> voice profile as your default.
+
+✨ <b>How to use:</b>
+• <code>/voice [text]</code> — I will speak your text with a young British accent.
+• <code>/speak [text]</code> — Instant spoken audio response.
+• <code>/read_to_me</code> — Reads out my latest message to you.
+• Or tell me in chat: <i>"Send me a voice note about [topic]"</i>!""")
+            return
+
         speech_text = text
         for pfx in ["/speak", "/read_to_me", "/voice", "read this to me:", "read this to me", "read it to me:", "read it to me", "speak this out loud:", "speak this out loud", "read to me:", "read to me", "say this out loud:"]:
             if lower.startswith(pfx):
@@ -2536,11 +2690,15 @@ Format requirements:
                     break
 
         if not speech_text:
-            speech_text = "Hello! I am Hermes, your executive assistant for SearchBiz in South Africa."
+            speech_text = "Good day! I am Hermes, your SearchBiz executive assistant, speaking with a young British accent."
 
-        voice_bytes = generate_tts_audio(speech_text, lang="en-ZA")
+        # Fetch stored voice preference (defaults to young British lady)
+        facts = get_user_facts(chat_id)
+        preferred_profile = facts.get("voice_accent", "british_female")
+
+        voice_bytes = generate_tts_audio(speech_text, voice_profile=preferred_profile)
         if voice_bytes:
-            send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio briefing from Hermes</i>")
+            send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio from Hermes (Young British Lady)</i>")
         else:
             send_telegram(chat_id, f"🔊 <b>Readout:</b> {speech_text}")
         return
@@ -2758,9 +2916,15 @@ How can I assist you right now, <b>{sender}</b>?"""
         send_telegram(chat_id, reply)
         return
 
-    # Live Weather Queries
-    weather_triggers = ["weather", "temperature", "forecast", "is it raining", "how hot is it", "how cold is it"]
+    # Live Weather Queries with Rain Probability Handling
+    weather_triggers = ["weather", "temperature", "forecast", "is it raining", "how hot is it", "how cold is it", "chance of rain", "will it rain", "is it going to rain", "rain percentage"]
     if any(t in lower for t in weather_triggers) and not any(k in lower for k in ['create an ad', 'place an ad', 'post an ad', 'send email', 'delete ad', 'everyday', 'daily', 'every day']):
+        if any(c in lower for c in ["why didn't", "why did not", "why no", "why you", "reasoning", "understand", "can you add", "add percentage"]):
+            # Answer the reasoning question conversationally, then provide the updated weather card with rain %
+            ai_explanation = ask_ai(text, chat_id=chat_id)
+            w_box = get_weather(text)
+            send_telegram(chat_id, f"{ai_explanation}\n\n{w_box}")
+            return
         reply = get_weather(text)
         send_telegram(chat_id, reply)
         return

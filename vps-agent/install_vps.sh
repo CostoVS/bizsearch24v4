@@ -17,7 +17,7 @@ elif command -v yum &> /dev/null; then
 fi
 
 # Optional Python extras (the agent uses pure Python Standard Library by default)
-pip3 install --break-system-packages reportlab python-docx requests gtts pillow 2>/dev/null || true
+pip3 install --break-system-packages edge-tts reportlab python-docx requests gtts pillow 2>/dev/null || true
 
 # 2. Install Ollama if not present
 if ! command -v ollama &> /dev/null; then
