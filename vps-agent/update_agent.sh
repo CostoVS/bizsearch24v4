@@ -43,6 +43,13 @@ if [ -f "setup_security.sh" ]; then
     chmod +x "${APP_DIR}/setup_security.sh"
 fi
 
+if [ -f "clean_vps.sh" ]; then
+    cp clean_vps.sh "${APP_DIR}/clean_vps.sh"
+    chmod +x "${APP_DIR}/clean_vps.sh"
+    cp clean_vps.sh /usr/local/bin/clean_vps 2>/dev/null || true
+    chmod +x /usr/local/bin/clean_vps 2>/dev/null || true
+fi
+
 # Ensure .env has active ai@searchbiz.co.za credentials
 if [ -f "${APP_DIR}/.env" ]; then
     sed -i '/SMTP_/d' "${APP_DIR}/.env"

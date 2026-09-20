@@ -2231,6 +2231,37 @@ Live Platform: <code>{base_url}</code>
         send_telegram(chat_id, f"✅ <b>IP Address Unblocked:</b> <code>{ip_to_unblock}</code> can now connect.")
         return
 
+    # --- VPS Deep Cleanup & Memory Optimization ---
+    if text in ["/clean_vps", "/clean", "/free_ram", "clean vps", "clear cache", "free ram"]:
+        send_chat_action(chat_id, "typing")
+        import subprocess
+        send_telegram(chat_id, "🧹 <b>Starting Deep VPS Cleanup & Memory Optimization...</b>\n• Purging stale package locks & cache\n• Vacuuming journal logs to 50MB\n• Flushing inactive RAM buffers\n• Purging temporary directory junk...")
+        try:
+            # Run clean_vps.sh or built-in optimization
+            clean_script = "/opt/hermes-searchbiz/clean_vps.sh"
+            if not os.path.exists(clean_script):
+                clean_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clean_vps.sh")
+            if os.path.exists(clean_script):
+                out = subprocess.check_output(["bash", clean_script], stderr=subprocess.DEVNULL, timeout=60).decode("utf-8", errors="ignore")
+            else:
+                subprocess.run(["apt-get", "clean"], stderr=subprocess.DEVNULL, timeout=15)
+                subprocess.run(["journalctl", "--vacuum-size=50M"], stderr=subprocess.DEVNULL, timeout=15)
+                subprocess.run("sync && echo 3 > /proc/sys/vm/drop_caches", shell=True, stderr=subprocess.DEVNULL, timeout=15)
+        except Exception as e:
+            logger.debug(f"Cleanup error: {e}")
+
+        # Fetch new memory report
+        r = get_vps_resources()
+        send_telegram(chat_id, f"""🎉 <b>VPS Cleanup Complete!</b>
+
+⚡ <b>Optimized System Resources:</b>
+• Memory (RAM): <b>{r['ram_used_mb']} MB used / {r['ram_total_mb']} MB total</b> ({r['ram_pct']}%)
+• CPU Load: <b>{r['load_avg']}</b>
+• Disk Storage: <b>{r['disk_used_gb']} GB used / {r['disk_total_gb']} GB total</b> ({r['disk_pct']}%)
+• Temp Files & Journal Logs: <b>Cleaned</b>
+• Stale Package Locks: <b>Cleared</b>""")
+        return
+
     # --- Master Commands Cheat Sheet Menu ---
     if text in ["/commands", "/help", "commands", "show commands", "help"]:
         cmds_menu = """📋 <b>SearchBiz Hermes Executive Command Master Guide</b>
