@@ -38,6 +38,8 @@ import urllib.parse
 import urllib.error
 import re
 import sqlite3
+import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import zipfile
 import io
 import uuid
@@ -75,8 +77,16 @@ DIRECTADMIN_URL = os.getenv("DIRECTADMIN_URL", "https://localhost:2222").rstrip(
 DIRECTADMIN_USER = os.getenv("DIRECTADMIN_USER", "admin")
 DIRECTADMIN_PASS = os.getenv("DIRECTADMIN_PASS", "")
 
+
 # SQLite Persistent Memory Database
 DB_PATH = os.getenv("HERMES_DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes_data.db"))
+
+# Lead Storage Directory for Scraped CSV files
+LEADS_DIR = os.getenv("HERMES_LEADS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "leads_storage"))
+os.makedirs(LEADS_DIR, exist_ok=True)
+
+# Image prompt memory cache per chat
+_LAST_IMAGE_PROMPTS: Dict[int, str] = {}
 
 # Active Endpoint Cache
 _CACHED_API_URL = None
@@ -122,6 +132,41 @@ def init_memory_db():
                     params TEXT,
                     active INTEGER DEFAULT 1,
                     last_run_date TEXT DEFAULT ''
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS lead_datasets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    filename TEXT,
+                    total_count INTEGER DEFAULT 0,
+                    enriched_count INTEGER DEFAULT 0,
+                    file_path TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS business_leads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id INTEGER,
+                    chat_id INTEGER,
+                    name TEXT,
+                    phone TEXT,
+                    website TEXT,
+                    category TEXT,
+                    address TEXT,
+                    city TEXT,
+                    province TEXT,
+                    rating TEXT DEFAULT '',
+                    reviews TEXT DEFAULT '',
+                    found_email TEXT DEFAULT '',
+                    found_whatsapp TEXT DEFAULT '',
+                    found_description TEXT DEFAULT '',
+                    social_links TEXT DEFAULT '',
+                    searchbiz_ad_id TEXT DEFAULT '',
+                    status TEXT DEFAULT 'new',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             conn.commit()
@@ -433,7 +478,12 @@ def send_telegram_document(chat_id: int, filename: str, file_bytes: bytes, capti
     if caption:
         fields["caption"] = caption
         fields["parse_mode"] = "HTML"
-    ctype = "application/pdf" if filename.endswith(".pdf") else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if filename.endswith(".pdf"):
+        ctype = "application/pdf"
+    elif filename.endswith(".csv"):
+        ctype = "text/csv"
+    else:
+        ctype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     body, content_type = make_multipart_body(fields, {"document": (filename, file_bytes, ctype)})
     req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
     try:
@@ -474,6 +524,460 @@ def download_telegram_file(file_id: str) -> Optional[bytes]:
         logger.error(f"Failed to download telegram file {file_path}: {e}")
         return None
 
+
+
+# ============================================================================
+# Google Maps & Instant Data Scraper Lead Engine
+# ============================================================================
+def normalize_sa_phone(raw_phone: str) -> str:
+    """Normalizes phone string to international South African format (27XXXXXXXXX) or returns cleaned phone."""
+    if not raw_phone:
+        return ""
+    digits = re.sub(r'\D', '', str(raw_phone))
+    if digits.startswith("27") and len(digits) >= 11:
+        return digits
+    if digits.startswith("0") and len(digits) == 10:
+        return "27" + digits[1:]
+    return digits or raw_phone.strip()
+
+def detect_sa_city_and_province(text_to_scan: str) -> Tuple[str, str]:
+    """Detects South African city and province from address strings or category fields."""
+    if not text_to_scan:
+        return ("Durban", "kwazulu-natal")
+    lower = text_to_scan.lower()
+    
+    city_map = {
+        "umkomaas": ("Umkomaas", "kwazulu-natal"),
+        "durban": ("Durban", "kwazulu-natal"),
+        "ballito": ("Ballito", "kwazulu-natal"),
+        "umhlanga": ("Umhlanga", "kwazulu-natal"),
+        "amanzimtoti": ("Amanzimtoti", "kwazulu-natal"),
+        "scottburgh": ("Scottburgh", "kwazulu-natal"),
+        "pietermaritzburg": ("Pietermaritzburg", "kwazulu-natal"),
+        "port shepstone": ("Port Shepstone", "kwazulu-natal"),
+        "richards bay": ("Richards Bay", "kwazulu-natal"),
+        "johannesburg": ("Johannesburg", "gauteng"),
+        "sandton": ("Sandton", "gauteng"),
+        "randburg": ("Randburg", "gauteng"),
+        "midrand": ("Midrand", "gauteng"),
+        "pretoria": ("Pretoria", "gauteng"),
+        "centurion": ("Centurion", "gauteng"),
+        "soweto": ("Soweto", "gauteng"),
+        "cape town": ("Cape Town", "western-cape"),
+        "stellenbosch": ("Stellenbosch", "western-cape"),
+        "bellville": ("Bellville", "western-cape"),
+        "somerset west": ("Somerset West", "western-cape"),
+        "george": ("George", "western-cape"),
+        "gqeberha": ("Gqeberha", "eastern-cape"),
+        "port elizabeth": ("Port Elizabeth", "eastern-cape"),
+        "east london": ("East London", "eastern-cape"),
+        "bloemfontein": ("Bloemfontein", "free-state"),
+        "polokwane": ("Polokwane", "limpopo"),
+        "nelspruit": ("Nelspruit", "mpumalanga"),
+        "mbombela": ("Mbombela", "mpumalanga"),
+        "rustenburg": ("Rustenburg", "north-west"),
+        "kimberley": ("Kimberley", "northern-cape")
+    }
+    for c_key, (c_name, prov) in city_map.items():
+        if c_key in lower:
+            return (c_name, prov)
+            
+    if "gauteng" in lower:
+        return ("Johannesburg", "gauteng")
+    if "western cape" in lower:
+        return ("Cape Town", "western-cape")
+    if "kwazulu" in lower or "kzn" in lower:
+        return ("Durban", "kwazulu-natal")
+    return ("Durban", "kwazulu-natal")
+
+def parse_and_store_csv_leads(chat_id: int, filename: str, file_bytes: bytes) -> dict:
+    """Parses Google Maps / Instant Data Scraper CSV files and persists them into SQLite."""
+    text_content = ""
+    for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+        try:
+            text_content = file_bytes.decode(enc)
+            break
+        except Exception:
+            continue
+    if not text_content:
+        return {"success": False, "error": "Could not decode CSV text content."}
+
+    # Save physical copy for storage
+    chat_lead_dir = os.path.join(LEADS_DIR, str(chat_id))
+    os.makedirs(chat_lead_dir, exist_ok=True)
+    clean_fn = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    saved_csv_path = os.path.join(chat_lead_dir, f"{timestamp}_{clean_fn}")
+    with open(saved_csv_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Detect delimiter
+    sample = text_content[:4096]
+    delimiter = ","
+    if sample.count(";") > sample.count(",") and sample.count(";") > sample.count("\t"):
+        delimiter = ";"
+    elif sample.count("\t") > sample.count(","):
+        delimiter = "\t"
+
+    reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
+    if not reader.fieldnames:
+        return {"success": False, "error": "CSV file does not contain a valid header row."}
+
+    # Column mapping heuristic for Google Maps & Instant Data Scraper
+    def find_col(possible_names: List[str]) -> Optional[str]:
+        for p in possible_names:
+            for field in reader.fieldnames:
+                clean_field = field.strip().lower()
+                if clean_field == p.lower() or p.lower() in clean_field:
+                    return field
+        return None
+
+    col_name = find_col(["name", "title", "business name", "place name", "company", "heading", "qbf1pd"])
+    col_phone = find_col(["phone", "telephone", "phone number", "tel", "mobile", "cell", "contact", "usdlk"])
+    col_website = find_col(["website", "url", "link", "web", "site", "domain", "lcrjte"])
+    col_category = find_col(["category", "type", "industry", "categories", "primary category", "w4efsd"])
+    col_address = find_col(["address", "full address", "full_address", "location", "street", "street address"])
+    col_city = find_col(["city", "town", "suburb"])
+    col_province = find_col(["province", "state", "region"])
+    col_rating = find_col(["rating", "stars", "score", "mw4pbf"])
+    col_reviews = find_col(["reviews", "review count", "user ratings", "uy7f9"])
+
+    extracted_leads = []
+    for row in reader:
+        name = (row.get(col_name) or "").strip() if col_name else ""
+        if not name or len(name) < 2:
+            continue
+
+        phone = (row.get(col_phone) or "").strip() if col_phone else ""
+        website = (row.get(col_website) or "").strip() if col_website else ""
+        category = (row.get(col_category) or "").strip() if col_category else "Local Business"
+        address = (row.get(col_address) or "").strip() if col_address else ""
+        rating = (row.get(col_rating) or "").strip() if col_rating else ""
+        reviews = (row.get(col_reviews) or "").strip() if col_reviews else ""
+
+        city = (row.get(col_city) or "").strip() if col_city else ""
+        province = (row.get(col_province) or "").strip() if col_province else ""
+        if not city:
+            detected_city, detected_prov = detect_sa_city_and_province(f"{address} {name}")
+            city = detected_city
+            if not province:
+                province = detected_prov
+
+        extracted_leads.append({
+            "name": name,
+            "phone": phone,
+            "website": website,
+            "category": category,
+            "address": address,
+            "city": city,
+            "province": province,
+            "rating": rating,
+            "reviews": reviews
+        })
+
+    if not extracted_leads:
+        return {"success": False, "error": "No business records could be extracted from the CSV rows."}
+
+    # Store into SQLite
+    try:
+        with get_db() as conn:
+            cur = conn.execute(
+                "INSERT INTO lead_datasets (chat_id, filename, total_count, file_path) VALUES (?, ?, ?, ?)",
+                (chat_id, filename, len(extracted_leads), saved_csv_path)
+            )
+            dataset_id = cur.lastrowid
+
+            for lead in extracted_leads:
+                conn.execute("""
+                    INSERT INTO business_leads 
+                    (dataset_id, chat_id, name, phone, website, category, address, city, province, rating, reviews)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    dataset_id, chat_id, lead["name"], lead["phone"], lead["website"],
+                    lead["category"], lead["address"], lead["city"], lead["province"],
+                    lead["rating"], lead["reviews"]
+                ))
+            conn.commit()
+
+        count_web = sum(1 for l in extracted_leads if l["website"])
+        count_phone = sum(1 for l in extracted_leads if l["phone"])
+        return {
+            "success": True,
+            "dataset_id": dataset_id,
+            "total": len(extracted_leads),
+            "with_website": count_web,
+            "with_phone": count_phone,
+            "saved_path": saved_csv_path,
+            "sample": extracted_leads[:3]
+        }
+    except Exception as e:
+        logger.error(f"Failed to store leads in SQLite: {e}")
+        return {"success": False, "error": str(e)}
+
+def scrape_website_info(url: str) -> dict:
+    """Visits a business website to extract emails, WhatsApp numbers, descriptions, and social links."""
+    if not url:
+        return {}
+    target_url = url.strip()
+    if not target_url.startswith("http://") and not target_url.startswith("https://"):
+        target_url = f"https://{target_url}"
+
+    info = {
+        "emails": [],
+        "whatsapp": [],
+        "description": "",
+        "facebook": "",
+        "instagram": "",
+        "linkedin": "",
+        "status": "checked"
+    }
+
+    try:
+        req = urllib.request.Request(
+            target_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+        )
+        ctx = ssl._create_unverified_context()
+        with urllib.request.urlopen(req, timeout=7, context=ctx) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        # Extract Emails
+        mailtos = re.findall(r'mailto:([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', html, re.IGNORECASE)
+        general_emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b', html)
+        all_emails = set(mailtos + general_emails)
+        clean_emails = []
+        for em in all_emails:
+            em_low = em.lower().strip()
+            if not em_low.endswith((".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", "sentry.io", "wixpress.com", "example.com", "domain.com")):
+                clean_emails.append(em)
+        info["emails"] = list(clean_emails)
+
+        # Extract WhatsApp
+        wa_matches = re.findall(r'(?:wa\.me/|api\.whatsapp\.com/send\?phone=)(\+?[0-9]{9,15})', html, re.IGNORECASE)
+        info["whatsapp"] = list(set(wa_matches))
+
+        # Extract Meta Description
+        meta_desc = re.search(r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+        if not meta_desc:
+            meta_desc = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+        if meta_desc:
+            info["description"] = meta_desc.group(1).strip()
+
+        # Extract Socials
+        fb = re.search(r'https?://(?:www\.)?facebook\.com/([a-zA-Z0-9._-]+)', html, re.IGNORECASE)
+        ig = re.search(r'https?://(?:www\.)?instagram\.com/([a-zA-Z0-9._-]+)', html, re.IGNORECASE)
+        li = re.search(r'https?://(?:www\.)?linkedin\.com/company/([a-zA-Z0-9._-]+)', html, re.IGNORECASE)
+        if fb:
+            info["facebook"] = fb.group(0)
+        if ig:
+            info["instagram"] = ig.group(0)
+        if li:
+            info["linkedin"] = li.group(0)
+
+    except Exception as e:
+        info["status"] = f"unreachable: {str(e)[:40]}"
+
+    return info
+
+def enrich_dataset_websites(chat_id: int, dataset_id: Optional[int] = None) -> dict:
+    """Checks all business websites in a dataset, enriches their records with emails & WhatsApp, and produces an enriched CSV."""
+    with get_db() as conn:
+        if dataset_id:
+            cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND dataset_id = ?", (chat_id, dataset_id))
+            ds_info = conn.execute("SELECT filename FROM lead_datasets WHERE id = ?", (dataset_id,)).fetchone()
+            orig_fn = ds_info["filename"] if ds_info else f"dataset_{dataset_id}.csv"
+        else:
+            cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? ORDER BY id DESC LIMIT 50", (chat_id,))
+            orig_fn = "recent_leads.csv"
+        leads = [dict(r) for r in cursor.fetchall()]
+
+    if not leads:
+        return {"success": False, "error": "No business leads found in this dataset."}
+
+    leads_with_websites = [l for l in leads if l.get("website")]
+    enriched_results = {}
+
+    def worker(lead):
+        lead_id = lead["id"]
+        web_info = scrape_website_info(lead["website"])
+        return lead_id, web_info
+
+    # Concurrently crawl with timeout
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(worker, lead): lead for lead in leads_with_websites}
+        for future in as_completed(futures):
+            try:
+                lid, res = future.result()
+                enriched_results[lid] = res
+            except Exception:
+                pass
+
+    # Update database
+    emails_found_count = 0
+    wa_found_count = 0
+    with get_db() as conn:
+        for lead in leads:
+            lid = lead["id"]
+            if lid in enriched_results:
+                wdata = enriched_results[lid]
+                em_str = ", ".join(wdata.get("emails", []))
+                wa_str = ", ".join(wdata.get("whatsapp", []))
+                desc_str = wdata.get("description", "")
+                soc_parts = []
+                if wdata.get("facebook"):
+                    soc_parts.append(f"FB: {wdata['facebook']}")
+                if wdata.get("instagram"):
+                    soc_parts.append(f"IG: {wdata['instagram']}")
+                if wdata.get("linkedin"):
+                    soc_parts.append(f"LI: {wdata['linkedin']}")
+                soc_str = " | ".join(soc_parts)
+
+                if em_str:
+                    emails_found_count += 1
+                if wa_str:
+                    wa_found_count += 1
+
+                conn.execute("""
+                    UPDATE business_leads 
+                    SET found_email = ?, found_whatsapp = ?, found_description = ?, social_links = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (em_str, wa_str, desc_str, soc_str, lid))
+        if dataset_id:
+            conn.execute("UPDATE lead_datasets SET enriched_count = ? WHERE id = ?", (len(enriched_results), dataset_id))
+        conn.commit()
+
+    # Generate Enriched CSV bytes
+    enriched_fn, csv_bytes = export_leads_to_csv(chat_id, dataset_id, suffix="_enriched")
+    return {
+        "success": True,
+        "scanned": len(leads_with_websites),
+        "total_leads": len(leads),
+        "emails_found": emails_found_count,
+        "whatsapp_found": wa_found_count,
+        "filename": enriched_fn,
+        "csv_bytes": csv_bytes
+    }
+
+def export_leads_to_csv(chat_id: int, dataset_id: Optional[int] = None, suffix: str = "") -> Tuple[str, bytes]:
+    """Exports SQLite leads into a clean, formatted CSV file bytes."""
+    with get_db() as conn:
+        if dataset_id:
+            cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND dataset_id = ? ORDER BY id ASC", (chat_id, dataset_id))
+            ds = conn.execute("SELECT filename FROM lead_datasets WHERE id = ?", (dataset_id,)).fetchone()
+            base_name = ds["filename"] if ds else f"leads_dataset_{dataset_id}"
+        else:
+            cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? ORDER BY id DESC LIMIT 200", (chat_id,))
+            base_name = "searchbiz_leads"
+        leads = [dict(r) for r in cursor.fetchall()]
+
+    clean_base = re.sub(r'\.csv$', '', base_name, flags=re.IGNORECASE)
+    out_filename = f"{clean_base}{suffix}.csv"
+
+    out_io = io.StringIO()
+    fieldnames = [
+        "Lead_ID", "Business_Name", "Category", "Phone", "Normalized_WhatsApp",
+        "Discovered_Email", "Website", "Address", "City", "Province",
+        "Rating", "Reviews", "Discovered_Description", "Social_Media", "SearchBiz_Ad_ID"
+    ]
+    writer = csv.DictWriter(out_io, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for l in leads:
+        norm_wa = normalize_sa_phone(l.get("found_whatsapp") or l.get("phone") or "")
+        writer.writerow({
+            "Lead_ID": l["id"],
+            "Business_Name": l["name"],
+            "Category": l["category"],
+            "Phone": l["phone"],
+            "Normalized_WhatsApp": norm_wa,
+            "Discovered_Email": l["found_email"],
+            "Website": l["website"],
+            "Address": l["address"],
+            "City": l["city"],
+            "Province": l["province"],
+            "Rating": l["rating"],
+            "Reviews": l["reviews"],
+            "Discovered_Description": l["found_description"],
+            "Social_Media": l["social_links"],
+            "SearchBiz_Ad_ID": l["searchbiz_ad_id"]
+        })
+
+    return out_filename, out_io.getvalue().encode("utf-8-sig")
+
+def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
+    """Bulk creates active listings on searchbiz.co.za from scraped Google Maps leads."""
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND dataset_id = ?", (chat_id, dataset_id))
+        leads = [dict(r) for r in cursor.fetchall()]
+
+    if not leads:
+        return {"success": False, "error": "No leads found for this dataset."}
+
+    success_count = 0
+    created_ads = []
+    for lead in leads:
+        # Use found_description or default South African directory description
+        desc = lead.get("found_description") or f"Verified {lead.get('category')} service provider operating in {lead.get('city')}, {lead.get('province')}. Call {lead.get('phone')} for appointments and quotes."
+        res = searchbiz_create_ad(
+            title=lead["name"],
+            category=lead["category"] or "Services",
+            city=lead["city"] or "Durban",
+            phone=lead["phone"] or "0821234567",
+            description=desc
+        )
+        if res.get("success") and "ad" in res:
+            ad_id = str(res["ad"].get("id"))
+            success_count += 1
+            created_ads.append({"name": lead["name"], "id": ad_id})
+            with get_db() as conn:
+                conn.execute("UPDATE business_leads SET searchbiz_ad_id = ?, status = 'imported' WHERE id = ?", (ad_id, lead["id"]))
+                conn.commit()
+
+    return {"success": True, "imported_count": success_count, "total": len(leads), "created_ads": created_ads}
+
+def get_lead_by_id_or_name(chat_id: int, query: str) -> Optional[dict]:
+    """Finds a lead in SQLite by ID or business name."""
+    clean_q = query.strip().lower()
+    with get_db() as conn:
+        if clean_q.isdigit():
+            r = conn.execute("SELECT * FROM business_leads WHERE id = ? AND chat_id = ?", (int(clean_q), chat_id)).fetchone()
+            if r:
+                return dict(r)
+        # Search by partial name
+        r = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND LOWER(name) LIKE ? ORDER BY id DESC LIMIT 1", (chat_id, f"%{clean_q}%")).fetchone()
+        if r:
+            return dict(r)
+    return None
+
+def generate_whatsapp_pitch_url(lead: dict) -> Tuple[str, str]:
+    """Generates a click-to-chat WhatsApp link with a high-converting SearchBiz South Africa sales proposal."""
+    name = lead.get("name", "Business Owner")
+    city = lead.get("city", "South Africa")
+    category = lead.get("category", "services")
+    raw_phone = lead.get("found_whatsapp") or lead.get("phone") or ""
+    norm_phone = normalize_sa_phone(raw_phone)
+
+    pitch_text = f"""Good day {name}!
+
+I found your business on Google Maps in {city}.
+
+SearchBiz (https://searchbiz.co.za) is featuring top verified {category} businesses across South Africa.
+
+We can set up your verified directory profile, plus unlimited website hosting and branded @yourdomain.co.za emails for only R199.00 / month.
+
+Would you like us to activate your profile today?"""
+
+    encoded_text = urllib.parse.quote(pitch_text)
+    link = f"https://wa.me/{norm_phone}?text={encoded_text}"
+    return link, pitch_text
+
+def generate_telegram_outreach_link(lead: dict) -> Tuple[str, str]:
+    """Generates direct Telegram contact link and sales message."""
+    name = lead.get("name", "Business Owner")
+    norm_phone = normalize_sa_phone(lead.get("phone") or "")
+    link = f"https://t.me/+{norm_phone}"
+    msg = f"Greetings {name}! I noticed your business on Google Maps and wanted to connect regarding SearchBiz.co.za verified listings."
+    return link, msg
 
 # ============================================================================
 # Document Generation: Microsoft Word (.docx) & PDF (.pdf)
@@ -713,21 +1217,32 @@ def generate_pdf_document(title: str, body_text: str) -> bytes:
 # ============================================================================
 # Free Open-Source Image Generation (Flux.1 / Stable Diffusion)
 # ============================================================================
-def generate_image_flux(prompt: str) -> Optional[bytes]:
-    """Generates an image using free open-source Flux.1 / Stable Diffusion models via Pollinations."""
+def generate_image_flux(prompt: str, negative_prompt: str = "") -> Optional[bytes]:
+    """Generates an image using free open-source Flux.1 / Stable Diffusion models via Pollinations without watermarks."""
     clean_p = re.sub(
-        r'^(?:please\s+)?(?:generate|create|make|draw)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of\s+)?',
+        r'^(?:please\s+)?(?:generate|create|make|draw|show\s+me)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of\s+)?',
         '',
         prompt,
         flags=re.IGNORECASE
     ).strip()
     if not clean_p:
         clean_p = prompt
+
+    # Ensure watermark suppression & high quality aesthetic
+    prompt_enhancements = []
+    if "watermark" not in clean_p.lower():
+        prompt_enhancements.append("no watermark, no logo, no text")
+    if "photorealistic" not in clean_p.lower() and "8k" not in clean_p.lower():
+        prompt_enhancements.append("photorealistic 8k, pristine quality, natural lighting")
+    if prompt_enhancements:
+        clean_p = f"{clean_p}, {', '.join(prompt_enhancements)}"
+
     encoded = urllib.parse.quote(clean_p)
     urls = [
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true",
-        f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=768",
-        f"https://pollinations.ai/p/{encoded}"
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&enhance=true&model=flux",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&seed=42",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=800&nologo=true",
+        f"https://image.pollinations.ai/prompt/{encoded}?nologo=true"
     ]
     for url in urls:
         try:
@@ -1418,7 +1933,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
     # 3. SearchBiz Server Cloud AI
     base_url = get_active_api_base()
-    for ep in ["/api/gemini/chat"]:
+    for ep in ["/api/gemini/chat", "/api/llama3/chat"]:
         try:
             cloud_url = f"{base_url}{ep}"
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"}
@@ -1428,7 +1943,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "history": get_chat_history(chat_id, limit=6) if chat_id else []
             }).encode("utf-8")
             req = urllib.request.Request(cloud_url, data=body, headers=headers)
-            with urllib.request.urlopen(req, timeout=12) as res:
+            with urllib.request.urlopen(req, timeout=10) as res:
                 c_data = json.loads(res.read().decode("utf-8"))
                 resp = c_data.get("reply") or c_data.get("response") or c_data.get("text")
                 if resp and len(resp.strip()) > 10:
@@ -1436,7 +1951,29 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         except Exception:
             pass
 
-    return "I'm processing your request. What task would you like me to tackle next?"
+    # 4. Free Open-Source Text AI Fallback (Pollinations Text API)
+    try:
+        poll_url = f"https://text.pollinations.ai/{urllib.parse.quote(prompt)}?model=openai"
+        p_req = urllib.request.Request(poll_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(p_req, timeout=8) as p_res:
+            p_text = p_res.read().decode("utf-8").strip()
+            if p_text and len(p_text) > 8 and "error" not in p_text.lower():
+                return p_text
+    except Exception:
+        pass
+
+    # 5. Intelligent Executive Rule-Based Fallback Engine (Never outputs repetitive stubs)
+    lower_p = prompt.lower().strip()
+    if lower_p in ["hi", "hello", "hey", "good morning", "good day", "greetings"]:
+        return "Good day Boss! Hermes is standing by and active on your VPS. What shall we tackle today? We can process Google Maps CSV leads, create Word/PDF documents, research competitors, or manage your SearchBiz directory."
+    
+    if "what request" in lower_p or "what are you doing" in lower_p or "what do you mean" in lower_p:
+        return "I am your SearchBiz executive assistant on your VPS. I am ready to scrape and enrich business leads, create Word/PDF documents, generate watermark-free images, schedule daily weather briefings, and manage SearchBiz.co.za listings. Send me a command or upload a CSV to begin!"
+
+    if "price" in lower_p or "plan" in lower_p or "cost" in lower_p:
+        return "SearchBiz Core Verified Pricing Structure:\n• Base Premium Plan: R199.00 / month (Unlimited static website hosting, unlimited domain emails, smart static design assistance, elite badge, 1 directory listing).\n• Extra Listings: +R199.00 / month per additional ad.\n• .co.za Domain Registration: R99.00 / year."
+
+    return f"I have received your note: \"{prompt}\". I can help you research this on the web, create a Word/PDF report on it, or draft outreach pitches. What would you prefer?"
 
 def ask_ollama(prompt: str) -> str:
     return ask_ai(prompt)
@@ -1482,6 +2019,56 @@ def handle_message(message: dict):
         else:
             send_telegram(chat_id, "⚠️ Could not download the voice note from Telegram. Please try speaking again.")
         return
+
+    # 3. Check if user uploaded a Document (CSV Lead Lists from Google Maps / Instant Data Scraper)
+    if "document" in message and message["document"]:
+        send_chat_action(chat_id, "upload_document")
+        doc_info = message["document"]
+        file_id = doc_info["file_id"]
+        file_name = doc_info.get("file_name", "leads.csv")
+        mime = doc_info.get("mime_type", "")
+
+        if file_name.lower().endswith(".csv") or "csv" in mime or "text" in mime:
+            send_telegram(chat_id, f"📥 <b>Receiving CSV Leads File:</b> <code>{file_name}</code>\n<i>Parsing Google Maps businesses and persisting to SQLite...</i>")
+            file_bytes = download_telegram_file(file_id)
+            if not file_bytes:
+                send_telegram(chat_id, "⚠️ Could not download the CSV file from Telegram servers. Please re-upload.")
+                return
+
+            res = parse_and_store_csv_leads(chat_id, file_name, file_bytes)
+            if not res.get("success"):
+                send_telegram(chat_id, f"❌ <b>CSV Parsing Failed:</b> {res.get('error')}")
+                return
+
+            ds_id = res["dataset_id"]
+            total = res["total"]
+            with_web = res["with_website"]
+            with_phone = res["with_phone"]
+
+            sample_lines = []
+            for idx, item in enumerate(res.get("sample", [])):
+                sample_lines.append(f"<b>{idx+1}. {item['name']}</b>\n🏷️ {item['category']} | 📍 {item['city']}\n📞 <code>{item['phone'] or 'No phone'}</code> | 🌐 {item['website'] or 'No website'}")
+
+            preview_text = "\n\n".join(sample_lines)
+
+            reply = f"""📊 <b>Google Maps Leads Ingested!</b>
+📁 Dataset ID: <code>{ds_id}</code> (File: <code>{file_name}</code>)
+🔢 <b>{total} Businesses Extracted</b> ({with_web} with websites, {with_phone} with phones)
+
+<b>Sample Preview:</b>
+{preview_text}
+
+<b>⚡ Available Actions:</b>
+🌐 <code>/enrich {ds_id}</code> - Check websites, extract emails & WhatsApp numbers
+🚀 <code>/import_searchbiz {ds_id}</code> - Import all businesses to SearchBiz directory
+📥 <code>/export_leads {ds_id}</code> - Download clean/enriched CSV
+💬 <code>/whatsapp 1</code> - Generate instant WhatsApp pitch link for Lead #1
+✉️ <code>/email_lead 1</code> - Draft outreach email for Lead #1"""
+            send_telegram(chat_id, reply)
+            return
+        else:
+            send_telegram(chat_id, f"📄 Received document <code>{file_name}</code>. If this is a business lead export, please upload it as a <b>.CSV</b> file.")
+            return
 
     text = message.get("text", "").strip()
     if not text:
@@ -1747,6 +2334,7 @@ Format requirements:
         send_telegram(chat_id, f"🎨 <b>Generating image using open-source FLUX.1 engine...</b>\nPrompt: <i>'{prompt}'</i>")
         img_bytes = generate_image_flux(prompt)
         if img_bytes:
+            _LAST_IMAGE_PROMPTS[chat_id] = prompt
             send_telegram_photo(chat_id, img_bytes, caption=f"🎨 <b>Generated Image:</b> <i>'{prompt}'</i>\n⚡ <i>Open-source FLUX.1 Engine</i>")
         else:
             send_telegram(chat_id, "⚠️ The free open-source image generation service is temporarily busy. Please try another prompt in a moment!")

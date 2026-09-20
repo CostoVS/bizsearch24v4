@@ -6,6 +6,22 @@ set -e
 
 APP_DIR="/opt/hermes-searchbiz"
 mkdir -p "${APP_DIR}"
+mkdir -p "${APP_DIR}/leads_storage"
+
+echo "Ensuring Python dependencies and local Ollama are ready..."
+if command -v pip3 &> /dev/null; then
+    pip3 install --break-system-packages requests python-docx reportlab pillow 2>/dev/null || true
+fi
+
+# Ensure Ollama service is running if installed
+if command -v ollama &> /dev/null; then
+    systemctl start ollama 2>/dev/null || true
+    # Check if a model is installed; if not, pull qwen2.5:3b in background
+    if ! ollama list 2>/dev/null | grep -q -E 'qwen2.5|llama3|mistral'; then
+        echo "Pulling lightweight qwen2.5:3b model for Ollama..."
+        ollama pull qwen2.5:3b || true
+    fi
+fi
 
 echo "Updating /opt/hermes-searchbiz/hermes_searchbiz_agent.py..."
 cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
@@ -36,3 +52,4 @@ systemctl restart hermes-agent
 
 echo "✅ Hermes Agent updated and running!"
 systemctl status hermes-agent --no-pager
+
