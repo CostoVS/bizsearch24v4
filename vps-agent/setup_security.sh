@@ -6,16 +6,24 @@ set -e
 
 echo "🛡️ Configuring SearchBiz VPS Security & Open-Source Protection Suite..."
 
-# 1. Install Essential Open-Source Security Packages
-echo "📦 Installing UFW firewall, Fail2ban, ClamAV Antivirus, and Net Tools..."
-apt-get update -y
-apt-get install -y ufw fail2ban clamav clamav-daemon net-tools iptables
+# 1. Install Essential Open-Source Security Packages (with fast timeout so it never hangs)
+echo "📦 Verifying security packages (UFW, Fail2ban, ClamAV, Net Tools)..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    -o Acquire::http::Timeout="10" \
+    -o Acquire::ftp::Timeout="10" \
+    ufw fail2ban clamav net-tools iptables 2>/dev/null || true
 
 # 2. Configure UFW (Uncomplicated Firewall)
 echo "🔒 Configuring Strict Firewall Rules..."
 # Default policies: block all incoming, allow all outgoing
 ufw default deny incoming
 ufw default allow outgoing
+
+# --- CRITICAL: NetBird VPN Mesh & Remote Admin Safeguards ---
+# Your terminal logs in from NetBird (100.127.x.x). Never block NetBird!
+ufw allow in on wt0 comment "NetBird Mesh Interface" 2>/dev/null || true
+ufw allow from 100.64.0.0/10 comment "NetBird CGNAT VPN Subnet" 2>/dev/null || true
+ufw allow 51820/udp comment "NetBird / WireGuard UDP" 2>/dev/null || true
 
 # Core VPS Infrastructure Ports
 ufw allow 22/tcp comment "SSH Remote Management"

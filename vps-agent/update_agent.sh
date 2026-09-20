@@ -23,6 +23,9 @@ if command -v ollama &> /dev/null; then
     fi
 fi
 
+# Ensure all scripts are executable in both working directory and install directory
+chmod +x *.sh 2>/dev/null || true
+
 echo "Updating /opt/hermes-searchbiz scripts and tools..."
 cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
 chmod +x "${APP_DIR}/hermes_searchbiz_agent.py"
