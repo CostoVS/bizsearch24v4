@@ -8,13 +8,16 @@ echo "=========================================================="
 echo "🚀 Installing Hermes Executive Agent for SearchBiz..."
 echo "=========================================================="
 
-# 1. Update packages and install python3
+# 1. Update packages and install python3 & dependencies
 if command -v apt-get &> /dev/null; then
     apt-get update -y
-    apt-get install -y python3 curl git
+    apt-get install -y python3 python3-pip sqlite3 curl git || true
 elif command -v yum &> /dev/null; then
-    yum install -y python3 curl git
+    yum install -y python3 python3-pip sqlite curl git || true
 fi
+
+# Optional Python extras (the agent uses pure Python Standard Library by default)
+pip3 install --break-system-packages reportlab python-docx requests gtts pillow 2>/dev/null || true
 
 # 2. Install Ollama if not present
 if ! command -v ollama &> /dev/null; then

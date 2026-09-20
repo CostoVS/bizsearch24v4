@@ -5,19 +5,24 @@ SearchBiz Hermes Autonomous Executive Agent (VPS Daemon)
 Interface: Telegram (@Searchbiz_bot)
 Target Platform: searchbiz.co.za
 Capabilities:
-  1. Create business advertisements on searchbiz.co.za (Commands & Natural Language)
-  2. Remove / archive advertisements with Recycle Bin and instant restore
-  3. Search, list, and audit live business directory listings
-  4. Send emails via SMTP or SearchBiz Gateway (Natural Language & /send_email)
-  5. Check & read incoming emails via IMAP
-  6. Create domain-branded mailboxes via DirectAdmin API
-  7. Natural conversational intelligence, storytelling, and business consulting
+  1. Permanent Long-Term Memory (SQLite persistent database across restarts)
+  2. Scheduled Daily Weather & Tasks (Automatic daily execution in SAST)
+  3. Microsoft Word (.docx) & PDF (.pdf) Document Creation (Pure Python + ReportLab)
+  4. Free Open-Source Image Generation (Flux.1 / Stable Diffusion)
+  5. Multimodal Vision: Understand and analyze images sent in Telegram
+  6. Multimodal Voice: Understand, transcribe and execute voice notes
+  7. 11 South African Official Languages Support & Voice Reading (Text-To-Speech)
+  8. Real Web Search with deep factual synthesis + exact source citation links
+  9. Live Business Directory Management on searchbiz.co.za (Ads create, delete, restore)
+ 10. DirectAdmin Mailbox Provisioning & Mailcow SMTP/IMAP Executive Email
 =============================================================================
 """
 
 import os
 import sys
 import time
+import datetime
+import threading
 import json
 import logging
 import smtplib
@@ -32,7 +37,12 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import re
-from typing import Dict, List, Optional, Any
+import sqlite3
+import zipfile
+import io
+import uuid
+import base64
+from typing import Dict, List, Optional, Any, Tuple
 
 # Setup Logging
 logging.basicConfig(
@@ -65,8 +75,253 @@ DIRECTADMIN_URL = os.getenv("DIRECTADMIN_URL", "https://localhost:2222").rstrip(
 DIRECTADMIN_USER = os.getenv("DIRECTADMIN_USER", "admin")
 DIRECTADMIN_PASS = os.getenv("DIRECTADMIN_PASS", "")
 
+# SQLite Persistent Memory Database
+DB_PATH = os.getenv("HERMES_DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes_data.db"))
+
 # Active Endpoint Cache
 _CACHED_API_URL = None
+
+
+# ============================================================================
+# Persistent SQLite Long-Term Memory & Scheduled Tasks Engine
+# ============================================================================
+def get_db():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_memory_db():
+    """Initializes SQLite tables for multi-turn messages, user facts, and scheduled jobs."""
+    try:
+        with get_db() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    role TEXT,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    fact_key TEXT,
+                    fact_value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(chat_id, fact_key)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    task_type TEXT,
+                    schedule_time TEXT,
+                    params TEXT,
+                    active INTEGER DEFAULT 1,
+                    last_run_date TEXT DEFAULT ''
+                )
+            """)
+            conn.commit()
+        logger.info(f"Persistent memory SQLite database initialized at {DB_PATH}")
+    except Exception as e:
+        logger.error(f"Failed to initialize SQLite memory DB: {e}")
+
+# In-memory fast cache
+_CHAT_HISTORIES: Dict[int, List[Dict[str, str]]] = {}
+
+def record_chat_turn(chat_id: int, role: str, content: str):
+    """Saves conversation turn permanently in SQLite database and in-memory cache."""
+    if not chat_id or not content:
+        return
+    clean_text = re.sub(r'<[^>]+>', '', str(content)).strip()
+    if not clean_text:
+        return
+
+    # In-memory sliding cache
+    if chat_id not in _CHAT_HISTORIES:
+        _CHAT_HISTORIES[chat_id] = []
+    _CHAT_HISTORIES[chat_id].append({"role": role, "content": clean_text})
+    if len(_CHAT_HISTORIES[chat_id]) > 14:
+        _CHAT_HISTORIES[chat_id] = _CHAT_HISTORIES[chat_id][-14:]
+
+    # Permanent SQLite persistence
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO chat_messages (chat_id, role, content) VALUES (?, ?, ?)",
+                (chat_id, role, clean_text)
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to record message in SQLite: {e}")
+
+def get_chat_history(chat_id: int, limit: int = 10) -> List[Dict[str, str]]:
+    """Loads chat history from in-memory cache or SQLite database."""
+    if chat_id in _CHAT_HISTORIES and len(_CHAT_HISTORIES[chat_id]) >= limit:
+        return _CHAT_HISTORIES[chat_id][-limit:]
+    try:
+        with get_db() as conn:
+            cursor = conn.execute(
+                "SELECT role, content FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
+                (chat_id, limit)
+            )
+            rows = cursor.fetchall()
+            history = [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+            _CHAT_HISTORIES[chat_id] = history
+            return history
+    except Exception as e:
+        logger.error(f"Failed to load chat history: {e}")
+        return _CHAT_HISTORIES.get(chat_id, [])
+
+def save_user_fact(chat_id: int, fact_key: str, fact_value: str) -> bool:
+    """Saves a permanent fact about the user or their business into SQLite."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO user_facts (chat_id, fact_key, fact_value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(chat_id, fact_key) DO UPDATE SET fact_value=excluded.fact_value, updated_at=CURRENT_TIMESTAMP",
+                (chat_id, fact_key.strip().lower(), fact_value.strip())
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save user fact: {e}")
+        return False
+
+def get_user_facts(chat_id: int) -> List[Tuple[str, str]]:
+    """Retrieves all permanent facts known about this user."""
+    try:
+        with get_db() as conn:
+            cursor = conn.execute("SELECT fact_key, fact_value FROM user_facts WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
+            return [(r["fact_key"], r["fact_value"]) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Failed to get user facts: {e}")
+        return []
+
+def delete_user_fact(chat_id: int, fact_key: str) -> bool:
+    """Removes a specific fact from permanent memory."""
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM user_facts WHERE chat_id = ? AND fact_key LIKE ?", (chat_id, f"%{fact_key.strip().lower()}%"))
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete fact: {e}")
+        return False
+
+def clear_user_facts(chat_id: int) -> bool:
+    """Clears all facts stored for this chat_id."""
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM user_facts WHERE chat_id = ?", (chat_id,))
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear user facts: {e}")
+        return False
+
+def get_user_facts_prompt(chat_id: int) -> str:
+    """Generates prompt context containing all permanent facts known about this user."""
+    facts = get_user_facts(chat_id)
+    if not facts:
+        return ""
+    lines = [f"- {k.replace('_', ' ').title()}: {v}" for k, v in facts]
+    return "\nPERMANENT KNOWLEDGE & FACTS YOU REMEMBER ABOUT THIS FOUNDER/USER:\n" + "\n".join(lines) + "\n"
+
+
+# ============================================================================
+# Scheduled Tasks & Daily Weather Daemon (SAST UTC+2)
+# ============================================================================
+def schedule_task(chat_id: int, task_type: str, schedule_time: str, params: dict) -> bool:
+    """Registers or updates a scheduled daily job in SQLite."""
+    try:
+        with get_db() as conn:
+            # Check if matching task already exists
+            conn.execute(
+                "DELETE FROM scheduled_tasks WHERE chat_id = ? AND task_type = ?",
+                (chat_id, task_type)
+            )
+            conn.execute(
+                "INSERT INTO scheduled_tasks (chat_id, task_type, schedule_time, params, active) VALUES (?, ?, ?, ?, 1)",
+                (chat_id, task_type, schedule_time, json.dumps(params))
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to schedule task: {e}")
+        return False
+
+def get_scheduled_tasks(chat_id: int) -> List[dict]:
+    """Lists active schedules for this chat."""
+    try:
+        with get_db() as conn:
+            cursor = conn.execute("SELECT id, task_type, schedule_time, params, active, last_run_date FROM scheduled_tasks WHERE chat_id = ?", (chat_id,))
+            return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Failed to fetch scheduled tasks: {e}")
+        return []
+
+def cancel_scheduled_task(chat_id: int, task_type: str) -> bool:
+    """Cancels a scheduled task."""
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM scheduled_tasks WHERE chat_id = ? AND task_type = ?", (chat_id, task_type))
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to cancel scheduled task: {e}")
+        return False
+
+def scheduler_worker():
+    """Background daemon thread running continuously to fire daily scheduled jobs (e.g. weather)."""
+    logger.info("Scheduler daemon started (monitoring SAST time for daily jobs).")
+    while True:
+        try:
+            # Current time in SAST (UTC+2)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            sast_time = now_utc + datetime.timedelta(hours=2)
+            current_hhmm = sast_time.strftime("%H:%M")
+            today_str = sast_time.strftime("%Y-%m-%d")
+
+            with get_db() as conn:
+                cursor = conn.execute(
+                    "SELECT id, chat_id, task_type, schedule_time, params, last_run_date FROM scheduled_tasks "
+                    "WHERE active = 1 AND schedule_time = ? AND (last_run_date IS NULL OR last_run_date != ?)",
+                    (current_hhmm, today_str)
+                )
+                due_tasks = cursor.fetchall()
+
+                for task in due_tasks:
+                    task_id = task["id"]
+                    t_chat_id = task["chat_id"]
+                    t_type = task["task_type"]
+                    t_time = task["schedule_time"]
+                    t_params = json.loads(task["params"] or "{}")
+
+                    if t_type == "weather":
+                        location = t_params.get("location", "Durban")
+                        weather_text = get_weather(location)
+                        send_telegram(
+                            t_chat_id,
+                            f"⏰ <b>Scheduled Daily Weather Briefing ({t_time} SAST)</b>\n\n{weather_text}"
+                        )
+                    elif t_type == "briefing":
+                        briefing = ask_ai(t_params.get("prompt", "Give me an executive morning briefing"), chat_id=t_chat_id)
+                        send_telegram(
+                            t_chat_id,
+                            f"⏰ <b>Scheduled Daily Executive Briefing ({t_time} SAST)</b>\n\n{briefing}"
+                        )
+
+                    # Mark task as completed for today
+                    conn.execute("UPDATE scheduled_tasks SET last_run_date = ? WHERE id = ?", (today_str, task_id))
+                    conn.commit()
+                    logger.info(f"Fired scheduled job {t_type} for chat {t_chat_id} at {current_hhmm} SAST")
+        except Exception as e:
+            logger.error(f"Scheduler worker exception: {e}")
+        time.sleep(20)
 
 
 # ============================================================================
@@ -111,7 +366,7 @@ def get_active_api_base() -> str:
 
 
 # ============================================================================
-# Telegram HTTP Utilities
+# Telegram HTTP & Multipart Utilities (Photos, Documents, Voice)
 # ============================================================================
 def telegram_call(method: str, data: dict = None):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
@@ -127,21 +382,17 @@ def telegram_call(method: str, data: dict = None):
         logger.error(f"Telegram API call '{method}' failed: {e}")
         return None
 
-# Multi-turn conversation memory per Telegram chat_id (sliding window of last 10 messages)
-_CHAT_HISTORIES: Dict[int, List[Dict[str, str]]] = {}
-
-def record_chat_turn(chat_id: int, role: str, content: str):
-    """Tracks conversation turns for intelligent multi-turn context and reasoning."""
-    if not chat_id or not content:
-        return
-    if chat_id not in _CHAT_HISTORIES:
-        _CHAT_HISTORIES[chat_id] = []
-    # Strip HTML tags for clean model context
-    clean_text = re.sub(r'<[^>]+>', '', str(content)).strip()
-    if clean_text:
-        _CHAT_HISTORIES[chat_id].append({"role": role, "content": clean_text})
-        if len(_CHAT_HISTORIES[chat_id]) > 10:
-            _CHAT_HISTORIES[chat_id] = _CHAT_HISTORIES[chat_id][-10:]
+def make_multipart_body(fields: dict, files: dict) -> Tuple[bytes, str]:
+    """Constructs clean multipart/form-data payload with zero third-party dependencies."""
+    boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+    lines = []
+    for k, v in fields.items():
+        lines.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode("utf-8"))
+    for field_name, (filename, data, content_type) in files.items():
+        header = f"--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n".encode("utf-8")
+        lines.append(header + data + b"\r\n")
+    lines.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(lines), f"multipart/form-data; boundary={boundary}"
 
 def send_telegram(chat_id: int, text: str):
     record_chat_turn(chat_id, "assistant", text)
@@ -153,11 +404,455 @@ def send_telegram(chat_id: int, text: str):
     })
 
 def send_chat_action(chat_id: int, action: str = "typing"):
-    """Shows native 'typing...' indicator in Telegram header"""
+    """Shows native 'typing...', 'upload_photo', 'upload_document' indicator in Telegram."""
     return telegram_call("sendChatAction", {
         "chat_id": chat_id,
         "action": action
     })
+
+def send_telegram_photo(chat_id: int, photo_bytes: bytes, caption: str = "") -> Optional[dict]:
+    """Sends an image file directly to Telegram."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    fields = {"chat_id": str(chat_id)}
+    if caption:
+        fields["caption"] = caption
+        fields["parse_mode"] = "HTML"
+    body, content_type = make_multipart_body(fields, {"photo": ("image.png", photo_bytes, "image/png")})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to send telegram photo: {e}")
+        return None
+
+def send_telegram_document(chat_id: int, filename: str, file_bytes: bytes, caption: str = "") -> Optional[dict]:
+    """Sends a Word (.docx) or PDF (.pdf) document directly to Telegram."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    fields = {"chat_id": str(chat_id)}
+    if caption:
+        fields["caption"] = caption
+        fields["parse_mode"] = "HTML"
+    ctype = "application/pdf" if filename.endswith(".pdf") else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    body, content_type = make_multipart_body(fields, {"document": (filename, file_bytes, ctype)})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to send telegram document {filename}: {e}")
+        return None
+
+def send_telegram_voice(chat_id: int, voice_bytes: bytes, caption: str = "") -> Optional[dict]:
+    """Sends voice audio directly to Telegram as a native playable voice note."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
+    fields = {"chat_id": str(chat_id)}
+    if caption:
+        fields["caption"] = caption
+        fields["parse_mode"] = "HTML"
+    body, content_type = make_multipart_body(fields, {"voice": ("voice.mp3", voice_bytes, "audio/mpeg")})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to send telegram voice note: {e}")
+        return None
+
+def download_telegram_file(file_id: str) -> Optional[bytes]:
+    """Downloads a photo or voice note sent by user from Telegram servers."""
+    info = telegram_call("getFile", {"file_id": file_id})
+    if not info or not info.get("ok"):
+        return None
+    file_path = info["result"]["file_path"]
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+    except Exception as e:
+        logger.error(f"Failed to download telegram file {file_path}: {e}")
+        return None
+
+
+# ============================================================================
+# Document Generation: Microsoft Word (.docx) & PDF (.pdf)
+# ============================================================================
+def generate_word_document(title: str, body_text: str) -> bytes:
+    """Generates a styled, valid Microsoft Word (.docx) file in pure Python standard library."""
+    # Check if python-docx package is installed for extra styling
+    try:
+        import docx
+        doc = docx.Document()
+        doc.add_heading(title, level=0)
+        p_sub = doc.add_paragraph("SearchBiz Hermes Executive Document")
+        p_sub.runs[0].italic = True
+
+        for raw_line in body_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("# "):
+                doc.add_heading(line[2:].strip(), level=1)
+            elif line.startswith("## "):
+                doc.add_heading(line[3:].strip(), level=2)
+            elif line.startswith("### "):
+                doc.add_heading(line[4:].strip(), level=3)
+            elif line.startswith("- ") or line.startswith("* "):
+                doc.add_paragraph(line[2:].strip(), style="List Bullet")
+            else:
+                doc.add_paragraph(line)
+
+        bio = io.BytesIO()
+        doc.save(bio)
+        return bio.getvalue()
+    except Exception:
+        pass
+
+    # Pure Python OpenXML docx package generator
+    docx_io = io.BytesIO()
+    with zipfile.ZipFile(docx_io, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>""")
+        z.writestr('_rels/.rels', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>""")
+
+        paragraphs = []
+        safe_title = title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        paragraphs.append(f"""<w:p>
+          <w:pPr><w:jc w:val="center"/><w:spacing w:before="360" w:after="200"/></w:pPr>
+          <w:r><w:rPr><w:b/><w:color w:val="0F172A"/><w:sz w:val="44"/></w:rPr><w:t>{safe_title}</w:t></w:r>
+        </w:p>""")
+        paragraphs.append("""<w:p>
+          <w:pPr><w:jc w:val="center"/><w:spacing w:after="360"/></w:pPr>
+          <w:r><w:rPr><w:i/><w:color w:val="64748B"/><w:sz w:val="20"/></w:rPr><w:t>Generated by SearchBiz Hermes Executive AI</w:t></w:r>
+        </w:p>""")
+
+        for raw_line in body_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                paragraphs.append('<w:p><w:pPr><w:spacing w:after="100"/></w:pPr></w:p>')
+                continue
+            safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            if line.startswith("# ") or line.startswith("## "):
+                h_txt = safe_line.lstrip("#").strip()
+                paragraphs.append(f"""<w:p>
+                  <w:pPr><w:spacing w:before="240" w:after="100"/></w:pPr>
+                  <w:r><w:rPr><w:b/><w:color w:val="1E40AF"/><w:sz w:val="28"/></w:rPr><w:t>{h_txt}</w:t></w:r>
+                </w:p>""")
+            elif line.startswith("- ") or line.startswith("* "):
+                b_txt = safe_line[2:].strip()
+                paragraphs.append(f"""<w:p>
+                  <w:pPr><w:ind w:left="400"/><w:spacing w:after="80"/></w:pPr>
+                  <w:r><w:rPr><w:color w:val="0F172A"/><w:sz w:val="22"/></w:rPr><w:t>•  {b_txt}</w:t></w:r>
+                </w:p>""")
+            else:
+                paragraphs.append(f"""<w:p>
+                  <w:pPr><w:spacing w:after="160" w:line="320" w:lineRule="auto"/></w:pPr>
+                  <w:r><w:rPr><w:color w:val="334155"/><w:sz w:val="22"/></w:rPr><w:t>{safe_line}</w:t></w:r>
+                </w:p>""")
+
+        body_xml = ''.join(paragraphs)
+        doc_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    {body_xml}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+    </w:sectPr>
+  </w:body>
+</w:document>"""
+        z.writestr('word/document.xml', doc_xml)
+    return docx_io.getvalue()
+
+def generate_pdf_document(title: str, body_text: str) -> bytes:
+    """Generates a professional, readable PDF file in pure Python (with ReportLab support if present)."""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+
+        bio = io.BytesIO()
+        doc = SimpleDocTemplate(bio, pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
+        styles = getSampleStyleSheet()
+        flowables = []
+
+        title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0f172a'))
+        flowables.append(Paragraph(title, title_style))
+        flowables.append(Spacer(1, 14))
+
+        body_style = styles['Normal']
+        for raw_line in body_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                flowables.append(Spacer(1, 8))
+                continue
+            if line.startswith('# '):
+                flowables.append(Paragraph(line[2:].strip(), styles['Heading1']))
+                flowables.append(Spacer(1, 8))
+            elif line.startswith('## '):
+                flowables.append(Paragraph(line[3:].strip(), styles['Heading2']))
+                flowables.append(Spacer(1, 6))
+            elif line.startswith('- ') or line.startswith('* '):
+                flowables.append(Paragraph(f"&bull; {line[2:].strip()}", body_style))
+                flowables.append(Spacer(1, 4))
+            else:
+                flowables.append(Paragraph(line, body_style))
+                flowables.append(Spacer(1, 6))
+
+        doc.build(flowables)
+        return bio.getvalue()
+    except Exception:
+        pass
+
+    # Pure Python PDF 1.4 canvas generator
+    lines_to_render = []
+    for raw_line in body_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            lines_to_render.append(('gap', ''))
+            continue
+        if line.startswith('# ') or line.startswith('## '):
+            lines_to_render.append(('heading', line.lstrip('#').strip()))
+            continue
+        is_bullet = line.startswith('- ') or line.startswith('* ')
+        clean_item = ('• ' + line[2:].strip()) if is_bullet else line
+        words = clean_item.split()
+        cur_line = []
+        cur_len = 0
+        for w in words:
+            if cur_len + len(w) + 1 > 75:
+                lines_to_render.append(('bullet' if is_bullet else 'text', ' '.join(cur_line)))
+                cur_line = [w]
+                cur_len = len(w)
+            else:
+                cur_line.append(w)
+                cur_len += len(w) + 1
+        if cur_line:
+            lines_to_render.append(('bullet' if is_bullet else 'text', ' '.join(cur_line)))
+
+    # Paginate (40 lines per page)
+    pages = []
+    current_page = []
+    line_count = 0
+    for ltype, ltext in lines_to_render:
+        cost = 2 if ltype == 'heading' else 1
+        if line_count + cost > 38:
+            pages.append(current_page)
+            current_page = []
+            line_count = 0
+        current_page.append((ltype, ltext))
+        line_count += cost
+    if current_page or not pages:
+        pages.append(current_page)
+
+    pdf = [b'%PDF-1.4']
+    offsets = []
+
+    def add_obj(num, data):
+        offsets.append(sum(len(x) + 1 for x in pdf))
+        pdf.append(f'{num} 0 obj\n'.encode('latin1') + data + b'\nendobj')
+
+    num_pages = len(pages)
+    page_obj_ids = [3 + i for i in range(num_pages)]
+    content_obj_ids = [3 + num_pages + i for i in range(num_pages)]
+    font_obj_id = 3 + (num_pages * 2)
+
+    kids_str = ' '.join(f'{pid} 0 R' for pid in page_obj_ids)
+    add_obj(1, b'<< /Type /Catalog /Pages 2 0 R >>')
+    add_obj(2, f'<< /Type /Pages /Kids [{kids_str}] /Count {num_pages} >>'.encode('latin1'))
+
+    for idx, (p_id, c_id) in enumerate(zip(page_obj_ids, content_obj_ids)):
+        add_obj(p_id, f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents {c_id} 0 R /Resources << /Font << /F1 {font_obj_id} 0 R >> >> >>'.encode('latin1'))
+
+        stream = []
+        safe_t = title.replace('\\', '\\\\').replace('(', '\(').replace(')', '\)')
+        stream.append('BT /F1 16 Tf 50 790 Td 0.05 0.15 0.35 rg (' + safe_t + ') Tj ET')
+        stream.append('0.7 0.7 0.7 RG 1 w 50 778 m 545 778 l S')
+
+        y = 750
+        for ltype, ltext in pages[idx]:
+            safe_text = ltext.replace('\\', '\\\\').replace('(', '\(').replace(')', '\)')
+            if ltype == 'heading':
+                y -= 22
+                stream.append(f'BT /F1 12 Tf 50 {y} Td 0.1 0.25 0.6 rg ({safe_text}) Tj ET')
+                y -= 4
+            elif ltype == 'gap':
+                y -= 10
+            elif ltype == 'bullet':
+                y -= 15
+                stream.append(f'BT /F1 10 Tf 65 {y} Td 0.1 0.1 0.1 rg ({safe_text}) Tj ET')
+            else:
+                y -= 15
+                stream.append(f'BT /F1 10 Tf 50 {y} Td 0.15 0.15 0.15 rg ({safe_text}) Tj ET')
+
+        footer_txt = f'SearchBiz Hermes Executive System - Page {idx + 1} of {num_pages}'
+        stream.append(f'BT /F1 8 Tf 220 35 Td 0.5 0.5 0.5 rg ({footer_txt}) Tj ET')
+
+        s_bytes = '\n'.join(stream).encode('latin1', errors='replace')
+        add_obj(c_id, f'<< /Length {len(s_bytes)} >>\nstream\n'.encode('latin1') + s_bytes + b'\nendstream')
+
+    add_obj(font_obj_id, b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+
+    total_objs = font_obj_id
+    xref_offset = sum(len(x) + 1 for x in pdf)
+    pdf.append(f'xref\n0 {total_objs + 1}\n0000000000 65535 f\n'.encode('latin1') + '\n'.join(f'{o:010d} 00000 n' for o in offsets).encode('latin1'))
+    pdf.append(f'trailer\n<< /Size {total_objs + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF'.encode('latin1'))
+
+    return b'\n'.join(pdf)
+
+
+# ============================================================================
+# Free Open-Source Image Generation (Flux.1 / Stable Diffusion)
+# ============================================================================
+def generate_image_flux(prompt: str) -> Optional[bytes]:
+    """Generates an image using free open-source Flux.1 / Stable Diffusion models via Pollinations."""
+    clean_p = re.sub(
+        r'^(?:please\s+)?(?:generate|create|make|draw)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of\s+)?',
+        '',
+        prompt,
+        flags=re.IGNORECASE
+    ).strip()
+    if not clean_p:
+        clean_p = prompt
+    encoded = urllib.parse.quote(clean_p)
+    urls = [
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=768",
+        f"https://pollinations.ai/p/{encoded}"
+    ]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=28) as resp:
+                data = resp.read()
+                if len(data) > 3000 and b'html' not in data[:30].lower():
+                    return data
+        except Exception as e:
+            logger.debug(f"Image generation endpoint '{url[:35]}' error: {e}")
+    return None
+
+
+# ============================================================================
+# Multimodal Vision (See and Understand Images sent in Telegram)
+# ============================================================================
+def analyze_image_with_vision(image_bytes: bytes, user_prompt: str = "") -> str:
+    """Understands images using multimodal vision (Gemini 2.5/1.5 Flash)."""
+    if not user_prompt:
+        user_prompt = "Examine this image thoroughly. Describe what is shown, identify any text, objects, diagrams, or documents, and give thoughtful insights or answer any questions."
+
+    if GEMINI_API_KEY:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [
+                            {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+                            {"text": user_prompt}
+                        ]
+                    }],
+                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800}
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=25) as res:
+                    g_data = json.loads(res.read().decode("utf-8"))
+                    cands = g_data.get("candidates", [])
+                    if cands:
+                        text_val = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        if text_val:
+                            return text_val.strip()
+            except Exception as e:
+                logger.error(f"Vision API error on {model}: {e}")
+
+    return f"📸 <b>Image Inspected ({len(image_bytes)} bytes)!</b>\n\nI have processed your image. To unlock full real-time optical text reading, receipt auditing, and document OCR, ensure your <code>GEMINI_API_KEY</code> is active in <code>/opt/hermes-searchbiz/.env</code>!"
+
+
+# ============================================================================
+# Multimodal Voice (Understand Voice Notes sent in Telegram)
+# ============================================================================
+def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+    """Understands voice notes across all languages using multimodal audio processing."""
+    if GEMINI_API_KEY:
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        prompt = (
+            "You are Hermes, the autonomous South African executive assistant for SearchBiz. "
+            "Listen to this voice note from the user very carefully. "
+            "The speaker may be talking in English, isiZulu, Afrikaans, isiXhosa, Sesotho, Sepedi, Setswana, or any other South African language. "
+            "1. Transcribe exactly what they said. "
+            "2. If they asked a question or gave an instruction, provide both the transcription and the direct answer/solution."
+        )
+        for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [
+                            {"inline_data": {"mime_type": mime_type, "data": b64}},
+                            {"text": prompt}
+                        ]
+                    }],
+                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800}
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=30) as res:
+                    g_data = json.loads(res.read().decode("utf-8"))
+                    cands = g_data.get("candidates", [])
+                    if cands:
+                        text_val = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        if text_val:
+                            return text_val.strip()
+            except Exception as e:
+                logger.error(f"Audio transcription error on {model}: {e}")
+
+    return "🎤 <b>Voice Note Received!</b>\n\nTo transcribe voice notes instantly across all 11 South African languages, ensure your <code>GEMINI_API_KEY</code> is configured in <code>/opt/hermes-searchbiz/.env</code>!"
+
+
+# ============================================================================
+# Free Text-To-Speech (TTS) Voice Synthesis (Read to Me)
+# ============================================================================
+def generate_tts_audio(text: str, lang: str = "en") -> Optional[bytes]:
+    """Generates spoken voice audio using free open-source TTS engines."""
+    clean_t = re.sub(r'<[^>]+>', '', text).strip()
+    if not clean_t:
+        return None
+    # Truncate to first 450 chars for clean voice message
+    clean_t = clean_t[:450]
+    lang_map = {
+        "afrikaans": "af",
+        "zulu": "zu",
+        "isizulu": "zu",
+        "xhosa": "xh",
+        "isixhosa": "xh",
+        "english": "en-ZA",
+        "south african english": "en-ZA",
+        "sotho": "st",
+        "tswana": "tn"
+    }
+    code = lang_map.get(lang.lower().strip(), lang if len(lang) <= 5 else "en-ZA")
+
+    for t_code in [code, "en-ZA", "en"]:
+        try:
+            url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={t_code}&client=tw-ob&q={urllib.parse.quote(clean_t)}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=9) as resp:
+                data = resp.read()
+                if len(data) > 500:
+                    return data
+        except Exception:
+            continue
+    return None
 
 
 # ============================================================================
@@ -185,7 +880,6 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
             return {"error": f"HTTP {he.code}: {body}"}
     except Exception as e:
         logger.error(f"SearchBiz Network error: {e}")
-        # Invalidate cache so next request probes again
         global _CACHED_API_URL
         _CACHED_API_URL = None
         return {"error": str(e)}
@@ -218,251 +912,204 @@ def searchbiz_delete_ad(id_or_title: str, permanent: bool = False):
     }
     return api_request("/api/bot/ad", method="DELETE", payload=payload)
 
-def searchbiz_list_ads(query: str = "", limit: int = 5):
-    encoded_q = urllib.parse.quote(query)
-    return api_request(f"/api/bot/ad?q={encoded_q}&limit={limit}", method="GET")
+def searchbiz_restore_ad(ad_id: str):
+    payload = {"id": ad_id}
+    return api_request("/api/bot/restore-ad", method="POST", payload=payload)
 
-def searchbiz_restore_ad(id_or_title: str):
-    payload = {"id": id_or_title}
-    return api_request("/api/bot/ad", method="PATCH", payload=payload)
+def searchbiz_list_ads(search: str = "", limit: int = 5):
+    ep = f"/api/bot/ad?limit={limit}"
+    if search:
+        ep += f"&q={urllib.parse.quote(search)}"
+    return api_request(ep, method="GET")
 
-def searchbiz_restore_all_ads():
-    return api_request("/api/bot/ad", method="PATCH", payload={"all": True})
-
-def searchbiz_get_stats():
-    return api_request("/api/bot/ad?stats=true", method="GET")
+def searchbiz_audit_ads(limit: int = 50):
+    ep = f"/api/bot/ad?limit={limit}"
+    return api_request(ep, method="GET")
 
 
 # ============================================================================
-# Email System: Send & Receive (SMTP + IMAP)
+# Email Client (SMTP & IMAP on VPS)
 # ============================================================================
-def send_email_smtp(to_email: str, subject: str, body_text: str, html_content: str = None):
-    """Sends an email using dedicated domain SMTP (ai@searchbiz.co.za).
-    When SMTP_USER is configured, it strictly delivers through the domain mailbox.
-    """
-    # 1. Direct configured domain SMTP (ai@searchbiz.co.za)
-    if SMTP_PASS and SMTP_USER and SMTP_PASS.strip():
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["From"] = f"SearchBiz AI Executive <{SMTP_USER}>"
-            msg["To"] = to_email
-            msg["Subject"] = subject
-            msg["Date"] = formatdate(localtime=True)
-            msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
-            msg["Reply-To"] = f"SearchBiz AI Executive <{SMTP_USER}>"
-            msg["X-Mailer"] = "SearchBiz-Executive-Agent/1.0"
-            msg["Auto-Submitted"] = "auto-generated"
+def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str = None):
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"SearchBiz Executive AI <{SMTP_USER}>"
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
 
-            # Plain text part
-            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    part1 = MIMEText(body_text, "plain", "utf-8")
+    msg.attach(part1)
 
-            # Build high-deliverability clean HTML template if not provided
-            if not html_content:
-                html_content = f"""<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="margin:0;padding:24px;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
-  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
-    <div style="background:#0f172a;padding:20px 24px;border-bottom:2px solid #00f0ff;">
-      <h2 style="margin:0;color:#ffffff;font-size:18px;letter-spacing:0.5px;">SearchBiz AI Executive</h2>
-      <p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">searchbiz.co.za Business Directory & Autonomous Services</p>
-    </div>
-    <div style="padding:28px 24px;line-height:1.6;font-size:15px;color:#334155;">
-      {body_text.replace(chr(10), '<br>')}
-    </div>
-    <div style="background:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
-      <p style="margin:0;">This email was sent by <strong>Hermes</strong> via <strong>ai@searchbiz.co.za</strong>.</p>
-      <p style="margin:4px 0 0;">SearchBiz South Africa &bull; Gauteng, South Africa &bull; <a href="https://searchbiz.co.za" style="color:#0284c7;text-decoration:none;">searchbiz.co.za</a></p>
-    </div>
-  </div>
-</body>
-</html>"""
-            msg.attach(MIMEText(html_content, "html", "utf-8"))
-
-            ssl_ctx = ssl.create_default_context()
-            if SMTP_HOST in ("127.0.0.1", "localhost"):
-                ssl_ctx.check_hostname = False
-                ssl_ctx.verify_mode = ssl.CERT_NONE
-
-            if SMTP_PORT == 465:
-                server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15, context=ssl_ctx)
-            else:
-                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
-                server.ehlo()
-                try:
-                    server.starttls(context=ssl_ctx)
-                    server.ehlo()
-                except Exception as tls_err:
-                    logger.warning(f"STARTTLS negotiation note: {tls_err}")
-
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, [to_email], msg.as_string())
-            server.quit()
-            logger.info(f"Direct domain SMTP successfully delivered via {SMTP_USER} to {to_email}")
-            return {"success": True, "message": f"Delivered via {SMTP_USER} to {to_email}"}
-        except Exception as e:
-            logger.error(f"Dedicated SMTP error for {SMTP_USER}: {e}")
-            return {"error": f"Failed delivering via {SMTP_USER}: {str(e)}"}
-
-    # Fallback error if credentials missing
-    return {"error": "Domain email credentials for ai@searchbiz.co.za are missing."}
-
-def fetch_recent_emails(limit: int = 5):
-    """Fetches recent emails via IMAP for ai@searchbiz.co.za"""
-    if not IMAP_USER or not IMAP_PASS:
-        return {"error": "IMAP credentials not configured"}
+    if body_html:
+        part2 = MIMEText(body_html, "html", "utf-8")
+        msg.attach(part2)
 
     try:
-        ssl_ctx = ssl.create_default_context()
-        if IMAP_HOST in ("127.0.0.1", "localhost"):
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+        try:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            server.starttls(context=context)
+        except Exception:
+            pass
 
-        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=15, ssl_context=ssl_ctx)
+        if SMTP_USER and SMTP_PASS:
+            try:
+                server.login(SMTP_USER, SMTP_PASS)
+            except Exception as le:
+                logger.warning(f"SMTP authentication skipped or not required on local loopback: {le}")
+
+        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+        server.quit()
+        return {"success": True, "message": f"Email sent via SMTP to {to_email}"}
+    except Exception as e:
+        logger.error(f"SMTP error: {e}")
+        # Fallback to SearchBiz Cloud Email Gateway
+        logger.info("Falling back to SearchBiz Cloud Email Gateway...")
+        return api_request("/api/bot/send-email", method="POST", payload={
+            "to": to_email,
+            "subject": subject,
+            "body": body_text,
+            "html": body_html
+        })
+
+def fetch_recent_emails(limit: int = 5):
+    try:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, ssl_context=context)
         mail.login(IMAP_USER, IMAP_PASS)
-        mail.select("inbox")
+        mail.select("INBOX")
 
         status, messages = mail.search(None, "ALL")
         if status != "OK":
-            return {"count": 0, "emails": []}
+            mail.logout()
+            return {"error": "Could not search IMAP inbox"}
 
         email_ids = messages[0].split()
         recent_ids = email_ids[-limit:] if len(email_ids) >= limit else email_ids
         recent_ids.reverse()
 
-        result_emails = []
-        for mid in recent_ids:
-            res, data = mail.fetch(mid, "(RFC822)")
-            if res == "OK":
-                raw = email.message_from_bytes(data[0][1])
-                subj = raw.get("Subject", "No Subject")
-                decoded_subj, enc = decode_header(subj)[0]
-                if isinstance(decoded_subj, bytes):
-                    subj = decoded_subj.decode(enc or "utf-8", errors="ignore")
+        results = []
+        for eid in recent_ids:
+            res, msg_data = mail.fetch(eid, "(RFC822)")
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    subject_header = decode_header(msg.get("Subject", ""))[0]
+                    subject = subject_header[0]
+                    if isinstance(subject, bytes):
+                        subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
 
-                sender = raw.get("From", "Unknown")
-                date = raw.get("Date", "")
-                result_emails.append({
-                    "id": mid.decode("utf-8"),
-                    "from": sender,
-                    "subject": subj,
-                    "date": date
-                })
+                    from_header = decode_header(msg.get("From", ""))[0]
+                    from_addr = from_header[0]
+                    if isinstance(from_addr, bytes):
+                        from_addr = from_addr.decode(from_header[1] or "utf-8", errors="ignore")
 
+                    date_str = msg.get("Date", "")
+                    results.append({
+                        "id": eid.decode("utf-8"),
+                        "from": from_addr,
+                        "subject": subject,
+                        "date": date_str
+                    })
         mail.logout()
-        return {"count": len(result_emails), "emails": result_emails}
+        return {"success": True, "emails": results}
     except Exception as e:
-        logger.error(f"IMAP read failed: {e}")
+        logger.error(f"IMAP error: {e}")
         return {"error": str(e)}
 
 
 # ============================================================================
-# DirectAdmin Mailbox Creation API
+# DirectAdmin API Mailbox Provisioning
 # ============================================================================
-def directadmin_create_mailbox(username: str, password: str, domain: str = "searchbiz.co.za", quota_mb: int = 0):
-    if not DIRECTADMIN_USER or not DIRECTADMIN_PASS:
-        return {"error": "DIRECTADMIN_USER or DIRECTADMIN_PASS not configured"}
-
+def directadmin_create_mailbox(username: str, password: str, domain: str = "searchbiz.co.za", quota: int = 500):
     url = f"{DIRECTADMIN_URL}/CMD_API_POP"
-    data = urllib.parse.urlencode({
+    data = {
         "action": "create",
         "domain": domain,
         "user": username,
         "passwd": password,
         "passwd2": password,
-        "quota": quota_mb
-    }).encode("utf-8")
+        "quota": str(quota)
+    }
+    encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+    req = urllib.request.Request(url, data=encoded_data, method="POST")
 
-    import base64
     auth_str = f"{DIRECTADMIN_USER}:{DIRECTADMIN_PASS}"
-    auth_bytes = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
-
-    req = urllib.request.Request(url, data=data, headers={
-        "Authorization": f"Basic {auth_bytes}"
-    })
+    auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+    req.add_header("Authorization", f"Basic {auth_b64}")
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as res:
-            resp_text = res.read().decode("utf-8")
-            if "error=0" in resp_text or "details" in resp_text:
-                return {"success": True, "details": resp_text}
-            return {"error": resp_text}
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+            resp_body = response.read().decode("utf-8")
+            parsed = urllib.parse.parse_qs(resp_body)
+            if parsed.get("error", ["0"])[0] == "1":
+                return {"success": False, "error": parsed.get("details", ["Unknown DirectAdmin error"])[0]}
+            return {"success": True, "details": parsed.get("details", ["Mailbox created successfully"])[0]}
     except Exception as e:
-        logger.error(f"DirectAdmin API failed: {e}")
-        return {"error": str(e)}
+        logger.error(f"DirectAdmin API error: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # ============================================================================
-# Live Internet Data Tools: Date/Time, Weather, Crypto, & Web Search
+# Live Market Data & SAST Date/Time
 # ============================================================================
-from datetime import datetime, timezone, timedelta
-
-def get_current_datetime_sast() -> str:
-    """Returns the live South Africa Standard Time (SAST, UTC+2) date, day and time."""
-    sast = timezone(timedelta(hours=2))
-    now = datetime.now(sast)
-    day_name = now.strftime("%A")
-    date_str = now.strftime("%d %B %Y")
-    time_str = now.strftime("%H:%M:%S")
-    return f"""📅 <b>Live Date & Time (South Africa - SAST)</b>
-
-🗓️ <b>Day:</b> {day_name}
-📆 <b>Date:</b> {date_str}
-⏰ <b>Time:</b> <code>{time_str}</code> (UTC+2)"""
-
 def get_crypto_price(symbol: str = "BTC") -> str:
-    """Fetches real-time cryptocurrency spot price from Binance API and converts to ZAR."""
     sym = symbol.upper().strip()
-    if sym in ["BITCOIN", "BTC"]:
-        pair = "BTCUSDT"
-        display_name = "Bitcoin (BTC)"
-    elif sym in ["ETHEREUM", "ETH"]:
-        pair = "ETHUSDT"
-        display_name = "Ethereum (ETH)"
-    elif sym in ["SOLANA", "SOL"]:
-        pair = "SOLUSDT"
-        display_name = "Solana (SOL)"
-    elif sym in ["RIPPLE", "XRP"]:
-        pair = "XRPUSDT"
-        display_name = "Ripple (XRP)"
-    elif sym in ["DOGECOIN", "DOGE"]:
-        pair = "DOGEUSDT"
-        display_name = "Dogecoin (DOGE)"
-    elif sym in ["BNB", "BINANCE"]:
-        pair = "BNBUSDT"
-        display_name = "BNB"
-    else:
-        pair = f"{sym}USDT"
-        display_name = sym
+    id_map = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "ripple", "DOGE": "dogecoin"}
+    coin_id = id_map.get(sym, sym.lower())
 
     try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={pair}"
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd,zar&include_24hr_change=true"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=6) as r:
-            data = json.loads(r.read().decode("utf-8"))
-            usd_price = float(data.get("price", 0))
+        with urllib.request.urlopen(req, timeout=6) as response:
+            data = json.loads(response.read().decode("utf-8"))
 
-        # Live USD to ZAR conversion rate
-        zar_rate = 18.25
-        try:
-            ex_req = urllib.request.Request("https://open.er-api.com/v6/latest/USD", headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(ex_req, timeout=3) as ex_r:
-                zar_data = json.loads(ex_r.read().decode("utf-8"))
-                zar_rate = float(zar_data.get("rates", {}).get("ZAR", 18.25))
-        except Exception:
-            pass
+        if coin_id not in data:
+            return f"⚠️ Could not fetch price for <b>{sym}</b>."
 
-        zar_price = usd_price * zar_rate
+        coin = data[coin_id]
+        usd = coin.get("usd", 0)
+        zar = coin.get("zar", 0)
+        chg_24 = coin.get("usd_24h_change", 0.0)
+        zar_rate = (zar / usd) if usd > 0 else 18.50
+        chg_emoji = "📈" if chg_24 >= 0 else "📉"
 
-        return f"""🪙 <b>{display_name} Live Price</b>
+        return f"""🪙 <b>{sym} Real-Time Market Price</b>
 
-💵 <b>USD:</b> <code>${usd_price:,.2f}</code>
-🇿🇦 <b>ZAR:</b> <code>R{zar_price:,.2f}</code>
+💵 <b>USD:</b> ${usd:,.2f}
+🇿🇦 <b>ZAR:</b> R{zar:,.2f}
+{chg_emoji} <b>24h Change:</b> {chg_24:+.2f}%
 🔄 <i>Exchange rate: $1 USD ≈ R{zar_rate:.2f} ZAR</i>"""
     except Exception as e:
         logger.error(f"Crypto price lookup failed: {e}")
         return f"⚠️ Could not fetch price for <b>{symbol}</b>. (Error: {e})"
 
+def get_current_datetime_sast() -> str:
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    sast = now_utc + datetime.timedelta(hours=2)
+
+    day_name = sast.strftime("%A")
+    date_str = sast.strftime("%d %B %Y")
+    time_str = sast.strftime("%H:%M:%S")
+
+    return f"""📅 <b>Live Date & Time in South Africa (SAST):</b>
+
+🗓️ <b>Day:</b> {day_name}
+📆 <b>Date:</b> {date_str}
+⏰ <b>Time:</b> {time_str} SAST (UTC+2)"""
+
+
+# ============================================================================
+# Live Weather Intelligence
+# ============================================================================
 SA_TOWNS = [
     'umkomaas', 'amanzimtoti', 'scottburgh', 'pennington', 'margate', 'port shepstone', 
     'ballito', 'umhlanga', 'durban', 'pietermaritzburg', 'richards bay',
@@ -473,7 +1120,7 @@ SA_TOWNS = [
 ]
 
 def extract_weather_location(text: str) -> str:
-    """Intelligently parses location from queries like 'What is the weather in kzn umkomaas now'."""
+    """Intelligently parses location from queries."""
     low = text.lower()
     for town in SA_TOWNS:
         if town in low:
@@ -492,7 +1139,7 @@ def get_weather(location_query: str = "Durban") -> str:
     """Fetches real-time weather with multi-source fallback: wttr.in + Open-Meteo GPS Geocoding."""
     clean_city = extract_weather_location(location_query)
 
-    # 1. wttr.in (Primary high-detail weather)
+    # 1. wttr.in
     try:
         encoded = urllib.parse.quote(clean_city)
         url = f"https://wttr.in/{encoded}?format=j1"
@@ -520,7 +1167,7 @@ def get_weather(location_query: str = "Durban") -> str:
     except Exception as e:
         logger.debug(f"wttr.in lookup failed: {e}")
 
-    # 2. Open-Meteo GPS Geocoding + Live Weather API (100% free, pinpoints all SA towns)
+    # 2. Open-Meteo GPS Geocoding + Live Weather API
     try:
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(clean_city)}&count=1&language=en&format=json"
         req = urllib.request.Request(geo_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -550,13 +1197,18 @@ def get_weather(location_query: str = "Durban") -> str:
     except Exception as e:
         logger.debug(f"Open-Meteo lookup failed: {e}")
 
-    # 3. Fallback to Web Search
     return search_web(f"weather forecast {clean_city} South Africa")
 
-def search_web(query: str) -> str:
-    """Performs real-time web search across DuckDuckGo and Wikipedia, returning clean findings."""
+
+# ============================================================================
+# Live Web Search with Deep Factual Synthesis + Source Links
+# ============================================================================
+def search_web(query: str, chat_id: int = None) -> str:
+    """Performs real-time web search across Wikipedia and DuckDuckGo,
+    then uses the AI reasoning engine to synthesize the actual information
+    and cite the exact source link where it got the information from."""
     clean_q = re.sub(
-        r'^(?:please\s+)?(?:search\s+(?:this\s+)?on\s+google(?:\s+for)?|search\s+google\s+for|google\s+(?:this\s+)?for|google|search\s+(?:the\s+)?(?:web|internet)\s+for|search\s+for|find\s+(?:me\s+)?information\s+about|where\s+can\s+i\s+find|where\s+to\s+find)\s*',
+        r'^(?:please\s+)?(?:search\s+(?:this\s+)?on\s+google(?:\s+for)?|search\s+google\s+for|google\s+(?:this\s+)?for|google|search\s+(?:the\s+)?(?:web|internet)\s+for|search\s+for|find\s+(?:me\s+)?information\s+about|where\s+can\s+i\s+find|where\s+to\s+find|find\s+out\s+(?:something\s+about\s+)?)\s*',
         '',
         query,
         flags=re.IGNORECASE
@@ -565,37 +1217,43 @@ def search_web(query: str) -> str:
     if not clean_q:
         clean_q = query
 
-    # 1. Wikipedia Summary Check for concepts/entities
-    wiki_extract = ""
+    collected_content = []
+    source_links = []
+
+    # 1. Wikipedia Summary Check
     try:
         w_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_q)}"
         w_req = urllib.request.Request(w_url, headers={"User-Agent": "HermesSearchBiz/1.0 (info@searchbiz.co.za)"})
         with urllib.request.urlopen(w_req, timeout=4) as w_resp:
             w_data = json.loads(w_resp.read().decode("utf-8"))
             if w_data.get("extract"):
-                wiki_extract = f"📚 <b>{w_data.get('title')}:</b>\n{w_data.get('extract')[:380]}...\n🔗 <a href=\"{w_data.get('content_urls', {}).get('desktop', {}).get('page', '')}\">Read more on Wikipedia</a>"
+                wiki_title = w_data.get("title", clean_q)
+                wiki_text = w_data.get("extract", "")
+                wiki_link = w_data.get("content_urls", {}).get("desktop", {}).get("page", "")
+                collected_content.append(f"Wikipedia ({wiki_title}): {wiki_text}")
+                if wiki_link:
+                    source_links.append((wiki_title, wiki_link))
     except Exception:
         pass
 
-    # 2. DuckDuckGo Live Web Search
-    web_findings = []
+    # 2. DuckDuckGo Live Search Snippets
     try:
         ddg_url = "https://html.duckduckgo.com/html/"
         ddg_data = urllib.parse.urlencode({"q": clean_q}).encode("utf-8")
         ddg_req = urllib.request.Request(
             ddg_url,
             data=ddg_data,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         )
         with urllib.request.urlopen(ddg_req, timeout=7) as ddg_resp:
             page = ddg_resp.read().decode("utf-8", errors="ignore")
             import html as html_lib
-            snippets = re.findall(r'<a class=\"result__snippet[^\"]*\"[^>]*>(.*?)</a>', page, re.DOTALL)
-            titles = re.findall(r'<a class=\"result__url[^\"]*\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>', page, re.DOTALL)
-            raw_titles = re.findall(r'<h2[^>]*class=\"result__title\"[^>]*>.*?<a[^>]*>(.*?)</a>', page, re.DOTALL)
+            snippets = re.findall(r'<a class="result__snippet[^"]*"[^>]*>(.*?)</a>', page, re.DOTALL)
+            titles = re.findall(r'<a class="result__url[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', page, re.DOTALL)
+            raw_titles = re.findall(r'<h2[^>]*class="result__title"[^>]*>.*?<a[^>]*>(.*?)</a>', page, re.DOTALL)
 
-            for i in range(min(3, len(snippets))):
-                t = html_lib.unescape(re.sub(r'<[^>]+>', '', raw_titles[i]).strip()) if i < len(raw_titles) else f"Result {i+1}"
+            for i in range(min(4, len(snippets))):
+                t = html_lib.unescape(re.sub(r'<[^>]+>', '', raw_titles[i]).strip()) if i < len(raw_titles) else f"Source {i+1}"
                 s = html_lib.unescape(re.sub(r'<[^>]+>', '', snippets[i]).strip())
                 u = titles[i][0] if i < len(titles) else ""
                 if "uddg=" in u:
@@ -604,52 +1262,90 @@ def search_web(query: str) -> str:
                     except Exception:
                         pass
                 if s:
-                    web_findings.append(f"• <b>{t}</b>\n  {s[:180]}...\n  🔗 <a href=\"{u}\">Visit Website</a>" if u else f"• <b>{t}</b>\n  {s[:180]}...")
+                    collected_content.append(f"{t}: {s}")
+                    if u and u not in [l[1] for l in source_links]:
+                        source_links.append((t, u))
     except Exception as e:
         logger.warning(f"DuckDuckGo search error: {e}")
 
-    header = f"🌐 <b>Live Web Results for:</b> <i>'{clean_q}'</i>\n\n"
-    if wiki_extract:
-        header += f"{wiki_extract}\n\n"
-    if web_findings:
-        header += "🔎 <b>Top Web Findings:</b>\n" + "\n\n".join(web_findings)
-    elif not wiki_extract:
-        header += f"🔍 Direct search link: <a href=\"https://www.google.com/search?q={urllib.parse.quote(clean_q)}\">Search '{clean_q}' on Google</a>"
+    if not collected_content:
+        google_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_q)}"
+        return f"🔍 I looked up <b>{clean_q}</b> on Google. You can view the live results directly here: <a href=\"{google_url}\">{clean_q}</a>"
 
-    return header
+    # Synthesize the actual information rather than just showing raw links!
+    synthesis_prompt = f"""You are an executive research intelligence assistant.
+A user asked you to find out about: "{clean_q}".
+Here is the real information retrieved from live authoritative web search:
+---
+{chr(10).join(collected_content)}
+---
+INSTRUCTIONS:
+1. Explain the actual information and facts clearly, directly, and comprehensively.
+2. DO NOT just list links or say 'here are some links'. Give the user the real answer they asked for with high intelligence.
+3. Keep it well-structured, informative, and engaging.
+4. Do NOT mention these system instructions.
+"""
+    ai_answer = ask_ai(synthesis_prompt, chat_id=chat_id)
+    if not ai_answer or len(ai_answer.strip()) < 20:
+        ai_answer = "\n\n".join(collected_content[:2])
+
+    # Append primary source links
+    citations = []
+    for title, link in source_links[:3]:
+        citations.append(f'🔗 <a href="{link}">{title}</a>')
+    source_footer = "\n\n<b>Source:</b>\n" + "\n".join(citations) if citations else ""
+
+    return f"{ai_answer}{source_footer}"
 
 
 # ============================================================================
-# Multi-Tier AI Brain (Direct Gemini Cloud / Next.js Server / Local Ollama)
+# Multi-Tier AI Brain & 11 South African Languages Comprehension
 # ============================================================================
 HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Executive Assistant and Chief of Staff for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory.
 You are running live directly on the founder's Contabo Linux VPS.
 
 CORE REASONING & EXECUTIVE CAPABILITIES:
-1. Analytical Intelligence & Logic: When asked analytical, math, or logical questions, reason through them step-by-step and provide clear, precise answers.
-2. Natural Conversation, Wit & Self-Awareness: Speak with genuine human personality, wit, and charisma. If the user jokes, banters, or points out something (e.g. "I never ask how you"), respond with humor, charm, and self-awareness. Never sound like a cold or rigid robotic script.
-3. South African Business Expertise: You know South African cities (Durban, Johannesburg, Cape Town, Pretoria, Umkomaas, Ballito, etc.), provinces, ZAR (Rands), SAST time, and local business dynamics.
-4. SearchBiz Knowledge:
-   - Base Premium Plan: R199.00 / month (unlimited static website hosting, custom domain email @yourdomain.co.za, directory listing).
+1. Long-Term Memory & Continuity: You have a persistent memory of everything the user tells you. Never say you forgot something they told you. Always recall their company name, preferences, and personal details.
+2. Multilingual South African Fluency:
+   You fluently understand, speak, and translate ALL 11 official South African languages:
+   • English
+   • isiZulu (e.g. Sawubona, unjani, ngiyabonga, ngicela)
+   • isiXhosa (e.g. Molo, unjani, ndiyabulela, enkosi)
+   • Afrikaans (e.g. Goeie dag, hoe gaan dit, baie dankie, asseblief)
+   • Sepedi / Northern Sotho (e.g. Dumela, o kae, ke a leboga)
+   • Setswana (e.g. Dumela, o tsogile jang, ke a leboga)
+   • Sesotho / Southern Sotho (e.g. Dumela, o phela joang, ke a leboha)
+   • Xitsonga (e.g. Avuxeni, khesihe, ndzi khensa ngopfu)
+   • siSwati (e.g. Sawubona, unjani, ngiyabonga)
+   • Tshivenda (e.g. Ndaa/Aa, vho vuwa hani, ndo livhuwa)
+   • isiNdebele (e.g. Lotjhani, ninjani, ngiyathokoza)
+   When spoken to in any of these languages, understand completely and reply naturally in that language!
+3. Natural Conversation, Wit & Self-Awareness: Speak with genuine human personality, wit, and charisma. If the user jokes or points out something, respond with humor and warmth. Never sound like a rigid robotic script.
+4. South African Context: You know South African cities (Durban, Johannesburg, Cape Town, Pretoria, Umkomaas, Ballito, etc.), provinces, ZAR (Rands), SAST time, and business dynamics.
+5. SearchBiz Core Knowledge:
+   - Base Premium Plan: R199.00 / month (unlimited static website hosting, custom domain email @yourdomain.co.za, verified directory listing).
    - Extra listings: +R199.00 / month each.
    - .co.za domain: R99.00 / year.
-5. Telegram Formatting: Keep replies concise, clean, and well-spaced. Use HTML tags (<b>bold</b>, <i>italic</i>, <code>code</code>) where helpful.
 """
 
 def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
-    """Invokes AI Brain with multi-tier resilience and reasoning:
+    """Invokes AI Brain with multi-tier resilience, persistent memory, and deep reasoning:
     1. Local Ollama qwen2.5:3b (primary on VPS: localhost:11434 with native conversational reasoning)
     2. Direct Google Gemini API (if GEMINI_API_KEY is configured in .env.vps)
-    3. SearchBiz Server Cloud AI (/api/gemini/chat) with directory boilerplate rejection
+    3. SearchBiz Server Cloud AI (/api/gemini/chat)
     """
     effective_system = system_prompt or HERMES_EXECUTIVE_SYSTEM_PROMPT
+    if chat_id:
+        facts_block = get_user_facts_prompt(chat_id)
+        if facts_block:
+            effective_system += facts_block
 
     # 1. Local Ollama Brain (Primary on VPS: localhost:11434 with qwen2.5:3b)
     try:
         url = f"{OLLAMA_API_URL}/api/chat"
         messages = [{"role": "system", "content": effective_system}]
-        if chat_id and chat_id in _CHAT_HISTORIES:
-            for turn in _CHAT_HISTORIES[chat_id][-6:]:
+        if chat_id:
+            for turn in get_chat_history(chat_id, limit=8):
                 messages.append({"role": turn["role"], "content": turn["content"]})
         if not messages or messages[-1].get("content") != prompt:
             messages.append({"role": "user", "content": prompt})
@@ -660,19 +1356,18 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 450
+                "num_predict": 500
             }
         }
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=16) as res:
+        with urllib.request.urlopen(req, timeout=18) as res:
             ans = json.loads(res.read().decode("utf-8"))
             resp = ans.get("message", {}).get("content", "").strip()
             if resp:
                 return resp
     except Exception as e:
-        logger.debug(f"Local Ollama chat endpoint not ready or error: {e}")
-        # Fallback to /api/generate
+        logger.debug(f"Local Ollama chat endpoint error: {e}")
         try:
             gen_url = f"{OLLAMA_API_URL}/api/generate"
             gen_payload = {
@@ -680,10 +1375,10 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "prompt": prompt,
                 "system": effective_system,
                 "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 450}
+                "options": {"temperature": 0.7, "num_predict": 500}
             }
             gen_req = urllib.request.Request(gen_url, data=json.dumps(gen_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(gen_req, timeout=16) as gen_res:
+            with urllib.request.urlopen(gen_req, timeout=18) as gen_res:
                 ans = json.loads(gen_res.read().decode("utf-8"))
                 resp = ans.get("response", "").strip()
                 if resp:
@@ -691,14 +1386,14 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         except Exception:
             pass
 
-    # 2. Direct Gemini Cloud API (if GEMINI_API_KEY configured)
+    # 2. Direct Gemini Cloud API
     if GEMINI_API_KEY:
         for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
                 contents = []
-                if chat_id and chat_id in _CHAT_HISTORIES:
-                    for turn in _CHAT_HISTORIES[chat_id][-6:]:
+                if chat_id:
+                    for turn in get_chat_history(chat_id, limit=8):
                         role_name = "user" if turn["role"] == "user" else "model"
                         contents.append({"role": role_name, "parts": [{"text": turn["content"]}]})
                 if not contents or contents[-1]["parts"][0]["text"] != prompt:
@@ -706,12 +1401,12 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
                 payload = {
                     "contents": contents,
-                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 650},
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 750},
                     "systemInstruction": {"parts": [{"text": effective_system}]}
                 }
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=12) as res:
+                with urllib.request.urlopen(req, timeout=14) as res:
                     g_data = json.loads(res.read().decode("utf-8"))
                     cands = g_data.get("candidates", [])
                     if cands:
@@ -721,100 +1416,138 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
             except Exception as e:
                 logger.debug(f"Direct Gemini '{model}' error: {e}")
 
-    # 3. SearchBiz Server Cloud AI (/api/gemini/chat)
+    # 3. SearchBiz Server Cloud AI
     base_url = get_active_api_base()
     for ep in ["/api/gemini/chat"]:
         try:
             cloud_url = f"{base_url}{ep}"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"
-            }
-            cloud_data = json.dumps({
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"}
+            body = json.dumps({
                 "message": prompt,
-                "prompt": prompt
+                "systemPrompt": effective_system,
+                "history": get_chat_history(chat_id, limit=6) if chat_id else []
             }).encode("utf-8")
-            req = urllib.request.Request(cloud_url, data=cloud_data, headers=headers)
+            req = urllib.request.Request(cloud_url, data=body, headers=headers)
             with urllib.request.urlopen(req, timeout=12) as res:
-                ans = json.loads(res.read().decode("utf-8"))
-                cloud_text = ans.get("reply") or ans.get("text") or ans.get("response")
-                if cloud_text:
-                    # Sanitize: Ensure it's not a generic directory search error response
-                    bad_signatures = [
-                        "I searched our verified directory",
-                        "active listings published under",
-                        "place the first business advertisement",
-                        "Encountered an internal",
-                        "Missing API Key"
-                    ]
-                    if not any(bad in cloud_text for bad in bad_signatures):
-                        return cloud_text.strip()
-        except Exception as e:
-            logger.debug(f"SearchBiz cloud AI endpoint '{ep}' error: {e}")
+                c_data = json.loads(res.read().decode("utf-8"))
+                resp = c_data.get("reply") or c_data.get("response") or c_data.get("text")
+                if resp and len(resp.strip()) > 10:
+                    return resp.strip()
+        except Exception:
+            pass
 
-    return ""
+    return "I'm processing your request. What task would you like me to tackle next?"
 
-def ask_ollama(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
-    return ask_ai(prompt, system_prompt, chat_id=chat_id)
+def ask_ollama(prompt: str) -> str:
+    return ask_ai(prompt)
 
 
 # ============================================================================
-# Main Agent Loop & Command Router
+# Main Agent Message Handler & Multi-Skill Router
 # ============================================================================
 def handle_message(message: dict):
     chat_id = message["chat"]["id"]
-    text = message.get("text", "").strip()
     sender = message.get("from", {}).get("first_name", "Boss")
 
+    # 1. Check if user sent a Photo (Multimodal Vision)
+    if "photo" in message and message["photo"]:
+        send_chat_action(chat_id, "typing")
+        photo_arr = message["photo"]
+        best_photo = photo_arr[-1]
+        file_id = best_photo["file_id"]
+        caption = message.get("caption", "").strip()
+
+        img_bytes = download_telegram_file(file_id)
+        if img_bytes:
+            vision_reply = analyze_image_with_vision(
+                img_bytes,
+                caption or "Inspect this image thoroughly. Identify all text, diagrams, products, or documents and give thoughtful executive insights."
+            )
+            send_telegram(chat_id, vision_reply)
+        else:
+            send_telegram(chat_id, "⚠️ Could not download the photo from Telegram servers. Please try sending again.")
+        return
+
+    # 2. Check if user sent a Voice Note or Audio file (Speech Understanding)
+    if "voice" in message or "audio" in message:
+        send_chat_action(chat_id, "record_voice")
+        audio_info = message.get("voice") or message.get("audio")
+        file_id = audio_info["file_id"]
+        mime = audio_info.get("mime_type", "audio/ogg")
+
+        audio_bytes = download_telegram_file(file_id)
+        if audio_bytes:
+            audio_reply = transcribe_and_execute_audio(audio_bytes, mime_type=mime)
+            send_telegram(chat_id, audio_reply)
+        else:
+            send_telegram(chat_id, "⚠️ Could not download the voice note from Telegram. Please try speaking again.")
+        return
+
+    text = message.get("text", "").strip()
     if not text:
         return
 
-    # Track user turn in sliding-window conversation memory
+    # Record user turn into persistent SQLite memory
     record_chat_turn(chat_id, "user", text)
-
     logger.info(f"Incoming message from {sender} ({chat_id}): '{text}'")
 
-    # 1. Start & Help
+    lower = text.lower()
+
+    # 3. Start & Help
     if text.startswith("/start") or text.startswith("/help"):
         base_url = get_active_api_base()
         reply = f"""
 🌟 <b>SearchBiz Hermes Executive Agent</b>
 Online and ready on your VPS, <b>{sender}</b>!
 
-Connected Brain: <code>{OLLAMA_MODEL}</code> / Cloud Hybrid
+Connected Brain: <code>{OLLAMA_MODEL}</code> / Hybrid Intelligence
 Live Platform: <code>{base_url}</code>
 
-<b>🌐 Live Internet & Assistant Tools:</b>
-🌦️ <code>/weather [city]</code> - Real-time weather & forecast
-🪙 <code>/crypto [BTC/ETH/SOL]</code> - Live spot prices in USD & ZAR
-📅 <code>/date</code> or <code>/time</code> - Live South Africa (SAST) time & date
-🔍 <code>/search [query]</code> - Live Google & Web search with links
+<b>🧠 Long-Term Memory:</b>
+• <code>/memory</code> - View everything I remember about you and your business
+• <code>/remember [fact]</code> - Tell me something to permanently remember
+• <i>"Remember that my business is called..."</i>
+• <i>"What do you remember about me?"</i>
+
+<b>⏰ Scheduled Daily Tasks:</b>
+• <code>/schedule_weather 07:00 Durban</code> - Get daily weather at specified time
+• <code>/schedules</code> - View all active scheduled jobs
+• <code>/cancel_weather</code> - Stop daily weather briefings
+• <i>"Check the weather everyday at 07:00 and send it to me"</i>
+
+<b>📄 Document Creation (Word & PDF):</b>
+• <code>/docx [Title] [Topic]</code> - Create Microsoft Word (.docx) document
+• <code>/pdf [Title] [Topic]</code> - Create executive PDF (.pdf) document
+• <i>"Create a word document about South African solar energy"</i>
+• <i>"Make a pdf for client service agreement"</i>
+
+<b>🎨 Free Open-Source Image Generator:</b>
+• <code>/image [prompt]</code> or <code>/draw [prompt]</code>
+• <i>"Draw a picture of a golden sunset over Durban beach"</i>
+
+<b>🗣️ 11 South African Languages & Voice Reading:</b>
+• <code>/speak [text]</code> or <code>/read_to_me</code> - Read text out loud as a voice note
+• <code>/translate [language] [text]</code> - Translate across any of the 11 official languages
+• Talk to me in isiZulu, Afrikaans, isiXhosa, Sesotho, Setswana, etc. and I will reply fluently!
+• Send me a voice note anytime and I will listen and understand!
+
+<b>🌐 Live Web Research:</b>
+• <code>/search [query]</code> - Live Google & Web search with facts & source citations
+• <i>"Search Google for best safari lodges in Kruger"</i>
 
 <b>🏢 Directory & Email Operations:</b>
-➕ <code>/post_ad Title | Category | City | Phone | Description</code>
-🗑️ <code>/delete_ad [Business Name or ID]</code>
-🔍 <code>/list_ads [keyword]</code>
-♻️ <code>/restore_ad [ID]</code>
-📧 <code>/send_email to@domain.com | Subject | Body</code>
-📥 <code>/check_inbox</code>
-📬 <code>/create_email username password [domain]</code>
-⚡ <code>/status</code>
-
-<b>💬 Talk to me naturally in plain English:</b>
-• <i>"What is your name?"</i>
-• <i>"What is the day today?"</i>
-• <i>"What's the current price of BTC?"</i>
-• <i>"What is the weather in Durban?"</i>
-• <i>"Search this on Google and tell me: best tourist spots in South Africa"</i>
-• <i>"Send an email explaining what searchbiz.co.za is all about to user@email.com"</i>
-• <i>"Make an ad for Quick Towing in Pretoria, 0825551234, 24/7 breakdown recovery"</i>
-• <i>"What are the pricing plans?"</i>
-• <i>"Tell me a story"</i>
+• <code>/post_ad Title | Category | City | Phone | Description</code>
+• <code>/delete_ad [Business Name or ID]</code>
+• <code>/list_ads [keyword]</code>
+• <code>/send_email to@domain.com | Subject | Body</code>
+• <code>/check_inbox</code>
+• <code>/create_email username password [domain]</code>
+• <code>/status</code>
 """
         send_telegram(chat_id, reply)
         return
 
-    # 2. Status check
+    # 4. Status Check
     if text == "/status":
         send_chat_action(chat_id, "typing")
         base_url = get_active_api_base()
@@ -827,6 +1560,7 @@ Live Platform: <code>{base_url}</code>
 ⚡ <b>System Diagnostic:</b>
 • <b>SearchBiz Website API:</b> {'🟢 ONLINE (' + base_url + ')' if ads_online else '🔴 OFFLINE'}
 • <b>AI Brain ({OLLAMA_MODEL}):</b> {'🟢 ACTIVE' if ollama_online else '🟢 CLOUD HYBRID'}
+• <b>Persistent Memory DB:</b> <code>{DB_PATH}</code>
 • <b>SMTP Outbound:</b> <code>{SMTP_HOST}:{SMTP_PORT}</code>
 • <b>IMAP Inbound:</b> <code>{IMAP_HOST}:{IMAP_PORT}</code>
 • <b>DirectAdmin API:</b> <code>{DIRECTADMIN_URL}</code>
@@ -834,7 +1568,241 @@ Live Platform: <code>{base_url}</code>
         send_telegram(chat_id, status_msg)
         return
 
-    # 3. Post Ad Command (/post_ad)
+    # -------------------------------------------------------------------------
+    # 5. Scheduled Daily Weather & Tasks
+    # -------------------------------------------------------------------------
+    if text.startswith("/schedule_weather") or (
+        ("weather" in lower or "forecast" in lower) and
+        any(k in lower for k in ["everyday", "every day", "daily", "every morning"]) and
+        any(k in lower for k in ["at ", "check", "send", "give", "tell"])
+    ):
+        send_chat_action(chat_id, "typing")
+        sched_time = "07:00"
+        loc = "Durban"
+
+        # Check /schedule_weather format
+        if text.startswith("/schedule_weather"):
+            raw_parts = text.split()[1:]
+            if raw_parts:
+                sched_time = raw_parts[0].strip()
+                if len(raw_parts) > 1:
+                    loc = " ".join(raw_parts[1:]).strip().title()
+        else:
+            time_match = re.search(r'\b(?:at|for)\s+(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\b', text, re.IGNORECASE)
+            if not time_match:
+                time_match = re.search(r'\b(\d{1,2}):(\d{2})\b', text)
+            if time_match:
+                hr = int(time_match.group(1))
+                mn = int(time_match.group(2)) if time_match.group(2) else 0
+                ampm = time_match.group(3).lower().replace('.', '') if len(time_match.groups()) > 2 and time_match.group(3) else ''
+                if ampm == 'pm' and hr < 12:
+                    hr += 12
+                elif ampm == 'am' and hr == 12:
+                    hr = 0
+                sched_time = f"{hr:02d}:{mn:02d}"
+
+            loc = extract_weather_location(text)
+
+        # Normalize time
+        if ":" in sched_time:
+            parts = sched_time.split(":")
+            sched_time = f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        elif sched_time.isdigit():
+            sched_time = f"{int(sched_time):02d}:00"
+
+        schedule_task(chat_id, "weather", sched_time, {"location": loc})
+        send_telegram(chat_id, f"""✅ <b>Daily Weather Scheduled!</b>
+
+I will check the weather for <b>{loc}</b> every day at <b>{sched_time} SAST</b> and send it right here to your Telegram chat.
+
+To view your scheduled tasks anytime, type <code>/schedules</code>.
+To cancel, type <code>/cancel_weather</code>.""")
+        return
+
+    if text == "/schedules" or "my schedules" in lower or "active schedules" in lower:
+        tasks = get_scheduled_tasks(chat_id)
+        if not tasks:
+            send_telegram(chat_id, "⏰ You have no active daily scheduled jobs right now.\n\nTry: <code>/schedule_weather 07:00 Durban</code> or tell me <i>'Check the weather everyday at 07:00 for Umkomaas'</i>.")
+            return
+        lines = []
+        for t in tasks:
+            params = json.loads(t.get("params") or "{}")
+            lines.append(f"• <b>{t.get('task_type').title()}:</b> Every day at <b>{t.get('schedule_time')} SAST</b> (Params: {params})")
+        send_telegram(chat_id, "⏰ <b>Your Active Daily Schedules:</b>\n\n" + "\n".join(lines))
+        return
+
+    if text == "/cancel_weather" or "cancel weather" in lower or "stop weather" in lower:
+        cancel_scheduled_task(chat_id, "weather")
+        send_telegram(chat_id, "⏹️ <b>Daily weather briefings have been cancelled.</b>")
+        return
+
+    # -------------------------------------------------------------------------
+    # 6. Long-Term Memory (Permanent Fact Recall & Storage)
+    # -------------------------------------------------------------------------
+    if text == "/memory" or any(p in lower for p in ["what do you remember about me", "what do you remember", "what is in your memory", "what do you know about me"]):
+        send_chat_action(chat_id, "typing")
+        facts = get_user_facts(chat_id)
+        if not facts:
+            send_telegram(chat_id, "🧠 <b>Memory Bank:</b>\n\nI don't have any specific personal facts logged for you yet. Tell me things like:\n• <i>'Remember that my business is called SearchBiz'</i>\n• <i>'Remember that I live in Umkomaas'</i>\n• <code>/remember [fact]</code>")
+            return
+        fact_lines = [f"• <b>{k.replace('_', ' ').title()}:</b> {v}" for k, v in facts]
+        send_telegram(chat_id, f"🧠 <b>Permanent Facts I Remember About You:</b>\n\n" + "\n".join(fact_lines) + "\n\n<i>These are stored in SQLite and retained across all server reboots.</i>")
+        return
+
+    if text.startswith("/clear_memory") or text == "clear memory" or "forget everything" in lower:
+        clear_user_facts(chat_id)
+        send_telegram(chat_id, "🧹 <b>Memory cleared!</b> All stored facts for this chat have been wiped.")
+        return
+
+    if text.startswith("/remember") or lower.startswith("remember that ") or lower.startswith("remember my ") or lower.startswith("remember i "):
+        send_chat_action(chat_id, "typing")
+        raw_fact = text.split(" ", 1)[-1].strip() if " " in text else ""
+        if lower.startswith("remember that "):
+            raw_fact = text[14:].strip()
+        elif lower.startswith("remember my "):
+            raw_fact = text[12:].strip()
+        elif lower.startswith("remember i "):
+            raw_fact = text[11:].strip()
+
+        k = "note"
+        v = raw_fact
+        if " is " in raw_fact:
+            parts = raw_fact.split(" is ", 1)
+            k = parts[0].strip()
+            v = parts[1].strip()
+        elif ":" in raw_fact:
+            parts = raw_fact.split(":", 1)
+            k = parts[0].strip()
+            v = parts[1].strip()
+
+        save_user_fact(chat_id, k, v)
+        send_telegram(chat_id, f"🧠 <b>Committed to Permanent Memory!</b>\n\n📝 <i>Remembered:</i> <b>{k.title()}</b> = \"{v}\"\n\nI will remember this across every conversation and server restart.")
+        return
+
+    if text.startswith("/forget "):
+        target_k = text.split(" ", 1)[-1].strip()
+        delete_user_fact(chat_id, target_k)
+        send_telegram(chat_id, f"🗑️ <b>Removed from memory:</b> {target_k}")
+        return
+
+    # -------------------------------------------------------------------------
+    # 7. Document Creation: Microsoft Word (.docx) & PDF (.pdf)
+    # -------------------------------------------------------------------------
+    is_docx_req = text.startswith("/docx") or any(k in lower for k in ["create a word document", "generate a word document", "make a word document", "create a docx", "generate a docx", "make a docx", "word document about", "word document for"])
+    is_pdf_req = text.startswith("/pdf") or any(k in lower for k in ["create a pdf", "generate a pdf", "make a pdf", "pdf document about", "pdf document for", "pdf report on", "pdf invoice"])
+
+    if is_docx_req or is_pdf_req:
+        send_chat_action(chat_id, "upload_document")
+        doc_type = "docx" if is_docx_req else "pdf"
+
+        # Extract topic
+        topic = text
+        for pfx in ["/docx", "/pdf", "create a word document about", "create a word document for", "generate a word document on", "make a word document for", "create a docx for", "create a pdf about", "create a pdf for", "generate a pdf for", "make a pdf for", "pdf document about"]:
+            if lower.startswith(pfx):
+                topic = text[len(pfx):].strip()
+                break
+        topic = topic.strip() or "Executive Business Summary"
+
+        send_telegram(chat_id, f"⚙️ <b>Authoring your {doc_type.upper()} document...</b>\nTopic: <i>'{topic}'</i>")
+
+        author_prompt = f"""You are an executive document author for SearchBiz South Africa.
+Write a comprehensive, highly professional, thorough document on: "{topic}".
+Format requirements:
+1. Line 1: Title of the document
+2. Use markdown headings: '# Heading 1', '## Heading 2', '### Heading 3'
+3. Use bullet points with '- '
+4. Write detailed, complete sections (Executive Summary, Key Findings, Strategic Recommendations, Action Plan, Conclusion)
+5. Do NOT include meta conversational commentary. Output the document content directly.
+"""
+        doc_content = ask_ai(author_prompt, chat_id=chat_id)
+        lines = doc_content.splitlines()
+        doc_title = lines[0].lstrip('#').strip() if lines else topic
+        safe_filename = re.sub(r'[^a-zA-Z0-9_\-]', '_', doc_title)[:35]
+
+        if doc_type == "docx":
+            file_bytes = generate_word_document(doc_title, doc_content)
+            send_telegram_document(chat_id, f"{safe_filename}.docx", file_bytes, caption=f"📄 <b>Word Document Created:</b> <i>{doc_title}</i>")
+        else:
+            file_bytes = generate_pdf_document(doc_title, doc_content)
+            send_telegram_document(chat_id, f"{safe_filename}.pdf", file_bytes, caption=f"📑 <b>PDF Document Created:</b> <i>{doc_title}</i>")
+        return
+
+    # -------------------------------------------------------------------------
+    # 8. Free Open-Source Image Generator (Flux.1 / Stable Diffusion)
+    # -------------------------------------------------------------------------
+    is_img_req = text.startswith("/image") or text.startswith("/draw") or any(k in lower for k in [
+        "create an image of", "generate an image of", "draw a picture of",
+        "draw an image of", "generate a photo of", "create a photo of",
+        "make an image of", "paint a picture of"
+    ])
+    if is_img_req:
+        send_chat_action(chat_id, "upload_photo")
+        prompt = text
+        for pfx in ["/image", "/draw", "create an image of", "generate an image of", "draw a picture of", "draw an image of", "generate a photo of", "create a photo of", "make an image of", "paint a picture of"]:
+            if lower.startswith(pfx):
+                prompt = text[len(pfx):].strip()
+                break
+        prompt = prompt.strip() or "A beautiful scenic view of South Africa"
+
+        send_telegram(chat_id, f"🎨 <b>Generating image using open-source FLUX.1 engine...</b>\nPrompt: <i>'{prompt}'</i>")
+        img_bytes = generate_image_flux(prompt)
+        if img_bytes:
+            send_telegram_photo(chat_id, img_bytes, caption=f"🎨 <b>Generated Image:</b> <i>'{prompt}'</i>\n⚡ <i>Open-source FLUX.1 Engine</i>")
+        else:
+            send_telegram(chat_id, "⚠️ The free open-source image generation service is temporarily busy. Please try another prompt in a moment!")
+        return
+
+    # -------------------------------------------------------------------------
+    # 9. Voice Reading & Text-To-Speech (Read to Me / Speak)
+    # -------------------------------------------------------------------------
+    is_speech_req = text.startswith("/speak") or text.startswith("/read_to_me") or text.startswith("/voice") or any(k in lower for k in [
+        "read this to me", "read it to me", "speak this out loud", "read to me", "say this out loud", "read out loud"
+    ])
+    if is_speech_req:
+        send_chat_action(chat_id, "record_voice")
+        speech_text = text
+        for pfx in ["/speak", "/read_to_me", "/voice", "read this to me:", "read this to me", "read it to me:", "read it to me", "speak this out loud:", "speak this out loud", "read to me:", "read to me", "say this out loud:"]:
+            if lower.startswith(pfx):
+                speech_text = text[len(pfx):].strip()
+                break
+
+        if not speech_text:
+            # Speak the last message from assistant
+            hist = get_chat_history(chat_id, limit=4)
+            for h in reversed(hist):
+                if h["role"] == "assistant":
+                    speech_text = h["content"]
+                    break
+
+        if not speech_text:
+            speech_text = "Hello! I am Hermes, your executive assistant for SearchBiz in South Africa."
+
+        voice_bytes = generate_tts_audio(speech_text, lang="en-ZA")
+        if voice_bytes:
+            send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio briefing from Hermes</i>")
+        else:
+            send_telegram(chat_id, f"🔊 <b>Readout:</b> {speech_text}")
+        return
+
+    # -------------------------------------------------------------------------
+    # 10. Translation Across All 11 South African Languages
+    # -------------------------------------------------------------------------
+    if text.startswith("/translate") or "translate this to " in lower or "translate to " in lower:
+        send_chat_action(chat_id, "typing")
+        trans_prompt = f"""You are an expert multilingual translator specializing in all 11 official South African languages:
+1. English, 2. isiZulu, 3. isiXhosa, 4. Afrikaans, 5. Sepedi, 6. Setswana, 7. Sesotho, 8. Xitsonga, 9. siSwati, 10. Tshivenda, 11. isiNdebele.
+
+Instruction from user:
+"{text}"
+
+Translate the content accurately, idiomatically, and culturally appropriate into the requested South African language. Output the translation clearly."""
+        res = ask_ai(trans_prompt, chat_id=chat_id)
+        send_telegram(chat_id, f"🌐 <b>South African Translation:</b>\n\n{res}")
+        return
+
+    # -------------------------------------------------------------------------
+    # 11. Standard Operations: Ads, Emails, DirectAdmin
+    # -------------------------------------------------------------------------
     if text.startswith("/post_ad") or text.startswith("/create_ad"):
         raw = text.split(" ", 1)[-1].strip() if " " in text else ""
         parts = [p.strip() for p in raw.split("|")]
@@ -858,124 +1826,87 @@ Live Platform: <code>{base_url}</code>
 🌐 <a href="https://searchbiz.co.za/directory?q={urllib.parse.quote(title)}">View on SearchBiz Directory</a>
 """)
         else:
-            send_telegram(chat_id, f"❌ Failed: {res.get('error')}")
+            send_telegram(chat_id, f"❌ Failed to create advertisement: {res.get('error')}")
         return
 
-    # 4. Delete Ad Command (/delete_ad)
     if text.startswith("/delete_ad") or text.startswith("/remove_ad"):
         target = text.split(" ", 1)[-1].strip() if " " in text else ""
-        if not target and _LAST_CREATED_AD:
-            target = _LAST_CREATED_AD.get("id") or _LAST_CREATED_AD.get("title") or ""
-
         if not target:
-            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/delete_ad [ID or Business Name]</code>\nOr simply say <i>\"Delete the ad you just created\"</i>.")
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/delete_ad [Business Name or ID]</code>")
             return
-
         send_chat_action(chat_id, "typing")
         res = searchbiz_delete_ad(target)
         if res.get("success"):
-            removed = res.get("removedAd", {})
-            title = removed.get('title', target)
-            ad_id = removed.get('id', target)
-            city = removed.get('city', '')
-            loc_str = f" in {city}" if city else ""
-            send_telegram(chat_id, f"""🗑️ <b>Ad Archived to Recycle Bin</b>
-Listing <b>"{title}"</b>{loc_str} (ID: <code>{ad_id}</code>) has been safely taken off the live directory.
-
-♻️ To restore it at any time:
-<code>/restore_ad {ad_id}</code>
-or run <code>/restore_all</code> to recover all listings.""")
+            send_telegram(chat_id, f"🗑️ <b>Advertisement Archived!</b>\nMoved to Recycle Bin. ID: <code>{target}</code>\nTo restore, type <code>/restore_ad {target}</code>")
         else:
-            send_telegram(chat_id, f"❌ Failed: {res.get('error')}")
+            send_telegram(chat_id, f"❌ Failed to delete: {res.get('error')}")
         return
 
-    # 5. List Ads (/list_ads)
-    if text.startswith("/list_ads"):
-        query = text.split(" ", 1)[-1].strip() if " " in text else ""
+    if text.startswith("/restore_ad"):
+        ad_id = text.split(" ", 1)[-1].strip() if " " in text else ""
+        if not ad_id:
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/restore_ad [ID]</code>")
+            return
         send_chat_action(chat_id, "typing")
-        res = searchbiz_list_ads(query, limit=5)
+        res = searchbiz_restore_ad(ad_id)
+        if res.get("success"):
+            send_telegram(chat_id, f"♻️ <b>Advertisement Restored!</b>\nAd <code>{ad_id}</code> is back active on the directory.")
+        else:
+            send_telegram(chat_id, f"❌ Could not restore ad: {res.get('error')}")
+        return
+
+    if text.startswith("/list_ads"):
+        q = text.split(" ", 1)[-1].strip() if " " in text else ""
+        send_chat_action(chat_id, "typing")
+        res = searchbiz_list_ads(q, limit=5)
         ads = res.get("ads", [])
         if not ads:
-            send_telegram(chat_id, f"🔍 No ads found matching '{query}'.")
+            send_telegram(chat_id, "📭 No advertisements found.")
             return
-
-        reply = f"🔍 <b>Directory Listings ({len(ads)}):</b>\n\n"
-        for i, a in enumerate(ads, 1):
-            reply += f"{i}. <b>{a.get('title')}</b> ({a.get('category')})\n   📍 {a.get('city')} | 📞 {a.get('phone')}\n   🆔 <code>{a.get('id')}</code>\n\n"
-        send_telegram(chat_id, reply)
+        msg_lines = [f"📋 <b>SearchBiz Directory Listings ({len(ads)}):</b>\n"]
+        for a in ads:
+            msg_lines.append(f"• <b>{a.get('title')}</b> ({a.get('category')}, {a.get('city')})\n  📞 {a.get('phone')} | 🆔 <code>{a.get('id')}</code>")
+        send_telegram(chat_id, "\n".join(msg_lines))
         return
 
-    # 6. Restore Ad (/restore_ad)
-    if text.startswith("/restore_ad"):
-        target = text.split(" ", 1)[-1].strip() if " " in text else ""
-        send_chat_action(chat_id, "typing")
-        res = searchbiz_restore_ad(target)
-        if res.get("success"):
-            send_telegram(chat_id, f"✅ <b>Restored!</b> Listing <b>\"{res['ad']['title']}\"</b> is live again.")
-        else:
-            send_telegram(chat_id, f"❌ Restore error: {res.get('error')}")
-        return
-
-    # 6b. Restore All Ads (/restore_all or /untrash_all)
-    if text.startswith("/restore_all") or text.startswith("/untrash_all") or text.startswith("/recover_ads"):
-        send_chat_action(chat_id, "typing")
-        res = searchbiz_restore_all_ads()
-        if res.get("success"):
-            count = res.get("restoredCount", res.get("count", 0))
-            total = res.get("activeTotal", "")
-            total_str = f" Total active listings now: <b>{total}</b>." if total else ""
-            send_telegram(chat_id, f"♻️ <b>Recycle Bin Restored!</b>\nSuccessfully restored <b>{count}</b> listing(s) back into the live SearchBiz directory.{total_str}")
-        else:
-            send_telegram(chat_id, f"❌ Restore error: {res.get('error')}")
-        return
-
-    # 7. Send Email (/send_email)
     if text.startswith("/send_email"):
         raw = text.split(" ", 1)[-1].strip() if " " in text else ""
         parts = [p.strip() for p in raw.split("|")]
         if len(parts) < 3:
-            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/send_email recipient@domain.com | Subject | Body text</code>")
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/send_email recipient@domain.com | Subject | Body</code>")
             return
-
         to_email, subject, body = parts[0], parts[1], parts[2]
         send_chat_action(chat_id, "typing")
         res = send_email_smtp(to_email, subject, body)
         if res.get("success"):
-            send_telegram(chat_id, f"📧 <b>Email Sent!</b> To: <code>{to_email}</code>\nSubject: <i>{subject}</i>")
+            send_telegram(chat_id, f"✉️ <b>Email Sent!</b>\nTo: <code>{to_email}</code>\nSubject: <b>{subject}</b>")
         else:
-            send_telegram(chat_id, f"❌ Email send failed: {res.get('error')}")
+            send_telegram(chat_id, f"❌ Email error: {res.get('error')}")
         return
 
-    # 8. Check Inbox (/check_inbox)
     if text == "/check_inbox":
         send_chat_action(chat_id, "typing")
         inbox = fetch_recent_emails(limit=5)
         if "error" in inbox:
             send_telegram(chat_id, f"❌ IMAP Error: {inbox['error']}")
             return
-
         emails = inbox.get("emails", [])
         if not emails:
             send_telegram(chat_id, "📭 Inbox is clean (no unread/recent messages).")
             return
-
         reply = f"📬 <b>Recent Emails ({len(emails)}):</b>\n\n"
         for m in emails:
             reply += f"• <b>From:</b> {m.get('from')}\n  <b>Subject:</b> {m.get('subject')}\n  <b>Date:</b> {m.get('date')}\n\n"
         send_telegram(chat_id, reply)
         return
 
-    # 9. Create DirectAdmin Email Account (/create_email)
     if text.startswith("/create_email"):
         parts = text.split()
         if len(parts) < 3:
-            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/create_email username password [domain]</code>\n<i>Example:</i> <code>/create_email info Pass123! searchbiz.co.za</code>")
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/create_email username password [domain]</code>")
             return
-
-        user = parts[1]
-        pwd = parts[2]
+        user, pwd = parts[1], parts[2]
         domain = parts[3] if len(parts) > 3 else "searchbiz.co.za"
-
         send_chat_action(chat_id, "typing")
         res = directadmin_create_mailbox(user, pwd, domain)
         if res.get("success"):
@@ -984,7 +1915,9 @@ or run <code>/restore_all</code> to recover all listings.""")
             send_telegram(chat_id, f"❌ DirectAdmin error: {res.get('error')}")
         return
 
-    # 9a. Live Weather Command (/weather)
+    # -------------------------------------------------------------------------
+    # 12. Information Tools: Weather, Crypto, Date/Time, Web Search
+    # -------------------------------------------------------------------------
     if text.startswith("/weather"):
         city = text.split(" ", 1)[-1].strip() if " " in text else "Durban"
         send_chat_action(chat_id, "typing")
@@ -992,7 +1925,6 @@ or run <code>/restore_all</code> to recover all listings.""")
         send_telegram(chat_id, report)
         return
 
-    # 9b. Live Crypto Price Command (/crypto or /btc)
     if text.startswith("/crypto") or text.startswith("/btc"):
         symbol = text.split(" ", 1)[-1].strip() if " " in text else "BTC"
         send_chat_action(chat_id, "typing")
@@ -1000,649 +1932,139 @@ or run <code>/restore_all</code> to recover all listings.""")
         send_telegram(chat_id, report)
         return
 
-    # 9c. Live Date & Time Command (/date or /time)
     if text == "/date" or text == "/time":
         send_chat_action(chat_id, "typing")
         report = get_current_datetime_sast()
         send_telegram(chat_id, report)
         return
 
-    # 9d. Live Google / Web Search Command (/search or /google)
     if text.startswith("/search") or text.startswith("/google"):
         q = text.split(" ", 1)[-1].strip() if " " in text else ""
         if not q:
-            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/search [what you want to look up]</code>")
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/search [what you want to find out]</code>")
             return
         send_chat_action(chat_id, "typing")
-        report = search_web(q)
+        report = search_web(q, chat_id=chat_id)
         send_telegram(chat_id, report)
         return
 
     # -------------------------------------------------------------------------
-    # Send typing status for natural conversation
+    # 13. Natural Language Routing
     # -------------------------------------------------------------------------
     send_chat_action(chat_id, "typing")
-    lower = text.lower()
 
-    # 9e. Name & Identity Recognition (e.g., "What's its name", "What is your name", "Who are you")
+    # Name & Identity triggers
     identity_triggers = [
         "what is your name", "whats your name", "what's your name",
-        "whats its name", "what's its name", "what is its name",
-        "who are you", "who are u", "who made you", "who created you",
-        "tell me about yourself", "what are you", "what can you do",
-        "what do you do", "introduce yourself", "whats your purpose"
+        "who are you", "tell me about yourself", "what can you do"
     ]
     if any(t in lower for t in identity_triggers):
         base_url = get_active_api_base()
         reply = f"""🏛️ <b>I am Hermes!</b>
 
-I am your autonomous, dedicated AI Executive Assistant for <b>SearchBiz</b> (<code>{base_url}</code>), running 24/7 directly on your server.
+I am your autonomous AI Executive Assistant for <b>SearchBiz</b> (<code>{base_url}</code>), running 24/7 on your server with permanent memory and multi-skill execution.
 
-✨ <b>My Live Superpowers:</b>
-🌐 <b>Live Internet Web Search:</b> Ask me to search Google or lookup any topic!
-🌦️ <b>Live Weather:</b> Real-time forecasts across South Africa and the globe.
-🪙 <b>Real-Time Crypto Ticker:</b> Spot Bitcoin, Ethereum & Solana prices in USD & ZAR.
-📅 <b>Calendar & Clock:</b> Precise South African Standard Time (SAST) and dates.
-🏢 <b>SearchBiz Directory Engine:</b> Create, delete, restore, search & audit verified ads.
-📧 <b>Executive Mail Service:</b> Send emails and check incoming mail via <code>ai@searchbiz.co.za</code>.
-📖 <b>Stories & Business Brain:</b> Ask me business questions, copywriting advice, or tell a story!
+✨ <b>My Superpowers:</b>
+🧠 <b>Permanent Memory:</b> I remember facts, tasks, and context across reboots.
+📄 <b>Word & PDF Creation:</b> Ask me to generate Word (.docx) or PDF (.pdf) documents.
+⏰ <b>Scheduled Daily Jobs:</b> Automated daily weather or briefings at your exact chosen time.
+🎨 <b>Free Open-Source Image Generator:</b> FLUX.1 high-resolution images on demand.
+📸 <b>Multimodal Vision:</b> Send photos or receipts and I will inspect and read them.
+🎙️ <b>Multimodal Voice Notes:</b> Send voice messages and I will transcribe and solve them.
+🗣️ <b>11 South African Languages:</b> Fluent in isiZulu, Afrikaans, isiXhosa, Sesotho, etc.
+🌐 <b>Live Web Search:</b> Real Google/Web search with factual synthesis and source links.
+🏢 <b>Directory & Email Engine:</b> Manage SearchBiz ads, send emails, and create mailboxes.
 
 How can I assist you right now, <b>{sender}</b>?"""
         send_telegram(chat_id, reply)
         return
 
-    # 9f. Live Date & Time Queries (e.g. "What is the day today", "What's today's date")
-    date_triggers = [
-        "what is the day today", "what day is it", "what day is today",
-        "what is today", "what's the day today", "whats the day today",
-        "what's today's date", "whats today's date", "what is today's date",
-        "what is the date", "what is the current date", "what time is it",
-        "current time", "what month is it", "what year is it", "what is the time",
-        "whats the time", "time in south africa"
-    ]
+    # Live Date & Time Queries
+    date_triggers = ["what is the day today", "what day is it", "what day is today", "what's today's date", "what time is it", "current time", "what is the date"]
     if any(t in lower for t in date_triggers):
         reply = get_current_datetime_sast()
         send_telegram(chat_id, reply)
         return
 
-    # 9g. Real-Time Crypto & Bitcoin Price Queries (e.g. "What's the current price of btc")
-    crypto_triggers = [
-        "current price of btc", "price of btc", "btc price", "bitcoin price",
-        "price of bitcoin", "how much is btc", "how much is bitcoin",
-        "crypto price", "eth price", "price of eth", "ethereum price",
-        "solana price", "sol price", "xrp price", "crypto market",
-        "what is btc price", "what's btc", "current price of bitcoin"
-    ]
+    # Real-Time Crypto Price Queries
+    crypto_triggers = ["price of btc", "btc price", "bitcoin price", "crypto price", "eth price", "current price of btc", "current price of bitcoin"]
     if any(t in lower for t in crypto_triggers):
         sym = "BTC"
-        if "eth" in lower or "ethereum" in lower:
-            sym = "ETH"
-        elif "sol" in lower or "solana" in lower:
-            sym = "SOL"
-        elif "xrp" in lower or "ripple" in lower:
-            sym = "XRP"
-        elif "doge" in lower:
-            sym = "DOGE"
+        if "eth" in lower: sym = "ETH"
+        elif "sol" in lower: sym = "SOL"
+        elif "xrp" in lower: sym = "XRP"
         reply = get_crypto_price(sym)
         send_telegram(chat_id, reply)
         return
 
-    # 9h. Live Weather Queries (e.g. "Weather in Durban", "What's the weather in kzn umkomaas now", "South Africa Durban south coast umkomaas weather today")
-    weather_triggers = [
-        "weather", "temperature", "forecast", "is it raining", "raining in",
-        "how hot is it", "how cold is it", "degrees in", "degrees celsius"
-    ]
-    if any(t in lower for t in weather_triggers) and not any(k in lower for k in ['create an ad', 'place an ad', 'post an ad', 'send email', 'delete ad']):
+    # Live Weather Queries
+    weather_triggers = ["weather", "temperature", "forecast", "is it raining", "how hot is it", "how cold is it"]
+    if any(t in lower for t in weather_triggers) and not any(k in lower for k in ['create an ad', 'place an ad', 'post an ad', 'send email', 'delete ad', 'everyday', 'daily', 'every day']):
         reply = get_weather(text)
         send_telegram(chat_id, reply)
         return
 
-    # 9i. Live Web & Google Search Queries (e.g. "Search this on google...", "Search google for...", "Where can I find...")
+    # Live Web Search Queries (e.g. "go on Google and find out...", "search this on google...")
     web_search_triggers = [
         "search this on google", "search on google", "search google for",
-        "google this", "google for ", "google ", "search the web",
-        "search the internet", "where can i find", "where to find",
-        "where can i buy", "find me information about", "find information about",
-        "search for "
+        "google this", "go on google and", "find out on google",
+        "search the web", "search the internet", "where can i find", "where to find",
+        "find me information about", "find information about"
     ]
     if any(t in lower for t in web_search_triggers):
-        reply = search_web(text)
+        reply = search_web(text, chat_id=chat_id)
         send_telegram(chat_id, reply)
         return
 
-    # 10. Natural Language Email Sending
-    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-    if email_match and any(k in lower for k in ['send an email', 'send email', 'email explaining', 'email about', 'mail explaining', 'mail to', 'shoot an email', 'explain about', 'explaining']):
-        recipient = email_match.group(0)
-        is_free_vs_paid = any(k in lower for k in ['free option', 'free vs paid', 'verify the business', 'paid options', 'verification option', 'pricing options', 'listing and the paid', 'verify'])
-        is_about_searchbiz = is_free_vs_paid or any(k in lower for k in ['searchbiz', 'all about', 'what it is', 'pricing', 'plans', 'platform'])
-
-        if is_free_vs_paid:
-            subject = "SearchBiz Business Verification: Free vs Paid Options Guide"
-            plain_body = """Hi there,
-
-Thank you for your interest in SearchBiz (https://searchbiz.co.za) - South Africa's trusted local business directory.
-
-Here is a clear comparison between our Free Listing Verification and our Paid Premium Options:
-
-=======================================================
-1. FREE BUSINESS LISTING & VERIFICATION OPTION
-=======================================================
-• Cost: 100% Free (No credit card or payment required).
-• Standard Directory Listing: Published in the SearchBiz South African local business index.
-• Verification Process: Business owners can claim and verify their listing using SMS/email confirmation or proof of operation.
-• Visibility: Public telephone number, city, province, and business category are prominently displayed so customers can reach you directly.
-
-=======================================================
-2. PAID PREMIUM SUBSCRIPTION & VERIFIED GROWTH PLAN
-=======================================================
-• Base Premium Plan: R199.00 / month (Billed via South African debit order mandate)
-  - Elite Verified Trust Badge: Distinctive green verification shield providing immediate customer confidence and anti-fraud protection.
-  - Custom Smart Static Website: Fast, modern business landing page hosted directly on SearchBiz with complimentary design assistance.
-  - Unlimited Domain-Branded Email Accounts: e.g., info@yourdomain.co.za or sales@yourdomain.co.za.
-  - Top Directory Placement: Priority positioning above standard free listings in search results.
-  - 1 Custom verified listing in SearchBiz directory included.
-
-• Extras & Add-Ons:
-  - Additional ad listings: +R199.00 / month each
-  - .co.za Domain Registration: R99.00 / year
-
-How to Get Started:
-Visit https://searchbiz.co.za to claim, verify, or register your business profile today.
-
-Best regards,
-SearchBiz Executive AI Team
-https://searchbiz.co.za
-support@searchbiz.co.za
-"""
-            html_body = """
-<div style="font-family: Arial, Helvetica, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
-  <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 24px; color: #ffffff;">
-    <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">SearchBiz.co.za</h1>
-    <p style="margin: 0; font-size: 14px; opacity: 0.9;">Business Verification: Free vs Paid Options Guide</p>
-  </div>
-  <div style="padding: 24px; color: #334155; line-height: 1.6; font-size: 14px;">
-    <p style="font-size: 15px; margin-top: 0;"><strong>Hello,</strong></p>
-    <p>Here is a complete breakdown of the <strong>Free Verification Option</strong> and the <strong>Paid Premium Options</strong> available for South African businesses on SearchBiz:</p>
-    
-    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 18px; margin: 20px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #166534; font-size: 16px;">🆓 1. Free Business Listing & Verification Option</h3>
-      <ul style="margin: 0; padding-left: 18px; color: #15803d;">
-        <li style="margin-bottom: 6px;"><strong>Cost:</strong> 100% Free (No credit card or recurring charge).</li>
-        <li style="margin-bottom: 6px;"><strong>Standard Directory Indexing:</strong> Listed in the South African local business index.</li>
-        <li style="margin-bottom: 6px;"><strong>Claim & Verify:</strong> Verify ownership of your business profile via email/SMS proof.</li>
-        <li style="margin-bottom: 6px;"><strong>Direct Inquiries:</strong> Direct customer telephone, WhatsApp, and location display.</li>
-      </ul>
-    </div>
-
-    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 18px; margin: 20px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #065f46; font-size: 16px;">💎 2. Paid Premium Subscription & Growth Plan</h3>
-      <p style="margin: 0 0 8px 0;"><strong>Base Premium Plan: R199.00 / month</strong> (Billed via South African debit order mandate)</p>
-      <ul style="margin: 0 0 12px 0; padding-left: 18px; font-size: 13.5px; color: #047857;">
-        <li style="margin-bottom: 6px;"><strong>Elite Verified Trust Badge:</strong> Green verification shield for customer trust.</li>
-        <li style="margin-bottom: 6px;"><strong>Custom Smart Static Website:</strong> Fully hosted with design & setup assistance included.</li>
-        <li style="margin-bottom: 6px;"><strong>Unlimited Domain-Branded Emails:</strong> Unlimited accounts (e.g. <code>info@yourdomain.co.za</code>).</li>
-        <li style="margin-bottom: 6px;"><strong>Top Placement:</strong> Ranked above standard free listings in search results.</li>
-      </ul>
-      <p style="margin: 0; font-size: 13px; color: #065f46;">
-        <strong>Extras:</strong> Additional listed ads at <strong>+R199.00/mo</strong> each | <strong>.co.za Domain:</strong> <strong>R99.00/year</strong>
-      </p>
-    </div>
-
-    <p style="margin-top: 24px;">To claim or verify your listing, visit <a href="https://searchbiz.co.za" style="color: #059669; font-weight: bold; text-decoration: none;">searchbiz.co.za</a>.</p>
-    <p style="margin-bottom: 0;">Warm regards,<br><strong>SearchBiz AI Executive Team</strong><br><a href="https://searchbiz.co.za" style="color: #059669; text-decoration: none;">https://searchbiz.co.za</a></p>
-  </div>
-</div>
-"""
-        elif is_about_searchbiz:
-            subject = "Discover SearchBiz.co.za | South Africa's Verified Local Directory"
-            plain_body = """Hi there,
-
-Welcome to SearchBiz (https://searchbiz.co.za) - South Africa's premier verified local business directory and commercial platform.
-
-What is SearchBiz?
-SearchBiz is engineered for South African entrepreneurs, contractors, tradespeople, and local businesses. We connect real customers with vetted local services across Johannesburg, Cape Town, Durban, Pretoria, and all 9 provinces.
-
-Why Businesses Choose SearchBiz:
-1. Verified Trust Badge - Builds immediate consumer confidence and protects against scams.
-2. High Local SEO Visibility - Fast, Google-optimized business profiles that rank high on local search.
-3. Direct Inquiries - Direct telephone, email, and WhatsApp contact straight from your profile.
-
-Verified Pricing & Plans:
-• Base Premium Plan: R199.00 / month (Billed via South African debit card mandate)
-  - Unlimited hosting for static websites
-  - Unlimited domain-branded email accounts (@yourdomain.co.za)
-  - Custom design assistance for your smart static website
-  - Elite verified status and 1 custom directory listing in the SearchBiz index
-• Extras & Add-Ons:
-  - Additional ad listings: +R199.00 / month each
-  - .co.za Domain Registration: R99.00 / year
-
-Get Started Today:
-Visit https://searchbiz.co.za to publish or claim your business profile.
-
-Best regards,
-The SearchBiz Executive Team
-https://searchbiz.co.za
-support@searchbiz.co.za
-"""
-            html_body = f"""
-<div style="font-family: Arial, Helvetica, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
-  <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 24px; color: #ffffff;">
-    <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">SearchBiz.co.za</h1>
-    <p style="margin: 0; font-size: 14px; opacity: 0.9;">South Africa's Verified Local Business Directory</p>
-  </div>
-  <div style="padding: 24px; color: #334155; line-height: 1.6; font-size: 14px;">
-    <p style="font-size: 15px; margin-top: 0;"><strong>Hello,</strong></p>
-    <p>Thank you for inquiring about <strong>SearchBiz</strong>! Here is an overview of what our platform delivers for South African businesses and customers:</p>
-    
-    <div style="background: #f8fafc; border-left: 4px solid #059669; padding: 14px 18px; margin: 20px 0; border-radius: 0 8px 8px 0;">
-      <h3 style="margin: 0 0 6px 0; color: #064e3b; font-size: 15px;">What is SearchBiz?</h3>
-      <p style="margin: 0; font-size: 13.5px; color: #475569;">
-        SearchBiz is a verified commercial directory and high-speed web platform. We bridge the gap between South African service seekers and vetted local businesses across Gauteng, Western Cape, KZN, and all 9 provinces.
-      </p>
-    </div>
-
-    <h3 style="color: #0f172a; margin-top: 24px; margin-bottom: 10px; font-size: 16px;">Core Platform Advantages</h3>
-    <ul style="padding-left: 20px; margin: 0 0 20px 0;">
-      <li style="margin-bottom: 8px;"><strong>Verified Trust Badge:</strong> Builds immediate buyer confidence and eliminates scams.</li>
-      <li style="margin-bottom: 8px;"><strong>Top SEO Discovery:</strong> Clean, crawlable listings optimized for Google and South African search queries.</li>
-      <li style="margin-bottom: 8px;"><strong>Direct Customer Inquiries:</strong> Direct phone call, WhatsApp, and email click-throughs straight to your business.</li>
-    </ul>
-
-    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 18px; margin: 20px 0;">
-      <h3 style="margin: 0 0 10px 0; color: #065f46; font-size: 15px;">💎 Verified Pricing & Subscription Plans</h3>
-      <p style="margin: 0 0 8px 0;"><strong>Base Premium Plan: R199.00 / month</strong></p>
-      <ul style="margin: 0 0 12px 0; padding-left: 18px; font-size: 13px; color: #047857;">
-        <li>Unlimited hosting for static websites</li>
-        <li>Unlimited domain-branded email accounts (e.g. <code>info@yourdomain.co.za</code>)</li>
-        <li>Host and design assistance for custom smart static websites</li>
-        <li>1 custom verified listing in SearchBiz index</li>
-      </ul>
-      <p style="margin: 0; font-size: 13px; color: #065f46;">
-        <strong>Extras:</strong> Additional ad listings at <strong>+R199.00/mo</strong> each | <strong>.co.za Domain:</strong> <strong>R99.00/year</strong>
-      </p>
-    </div>
-
-    <p style="margin-top: 24px;">Ready to list your business or explore our verified directory? Visit <a href="https://searchbiz.co.za" style="color: #059669; font-weight: bold; text-decoration: none;">searchbiz.co.za</a> today.</p>
-    <p style="margin-bottom: 0;">Warm regards,<br><strong>SearchBiz Executive Agent (Hermes)</strong><br><a href="https://searchbiz.co.za" style="color: #059669; text-decoration: none;">https://searchbiz.co.za</a></p>
-  </div>
-</div>
-"""
-        else:
-            subject = "Message from SearchBiz Executive Agent"
-            draft = ask_ai(f"Write a concise, professional, warm email message based on this request: '{text}'. Keep it clean, direct, and well formatted.")
-            plain_body = draft or text
-            html_body = f"<div style='font-family: Arial, sans-serif; padding: 20px;'>{plain_body.replace(chr(10), '<br>')}</div>"
-
-        send_res = send_email_smtp(recipient, subject, plain_body, html_body)
-        if send_res.get("success"):
-            confirm = f"""📧 <b>Email Successfully Dispatched!</b>
-
-📬 <b>To:</b> <code>{recipient}</code>
-📝 <b>Subject:</b> <i>{subject}</i>
-
-✨ The email has been delivered directly. Please check your inbox!"""
-            send_telegram(chat_id, confirm)
-        else:
-            err_msg = send_res.get("details") or send_res.get("error") or "Unknown gateway error"
-            send_telegram(chat_id, f"❌ Failed to dispatch email: {err_msg}")
+    # Conversational Banter
+    if any(p in lower for p in ["i never ask how", "i didn't ask how", "did i ask how", "nobody asked"]):
+        send_telegram(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what task can I tackle for you?")
         return
 
-    # 11. Storytelling & Creative Writing (e.g. "Tell one story")
-    if any(k in lower for k in ['tell a story', 'tell one story', 'tell me a story', 'give me a story', 'tell story', 'write a story', 'story']):
-        story = ask_ai("Tell a captivating, heartwarming, and inspirational short story about a South African entrepreneur building a business against all odds, with wit, warmth, and perseverance. Keep it engaging and under 220 words.")
-        if story:
-            send_telegram(chat_id, f"📖 <b>Here is a story for you:</b>\n\n{story}")
-            return
-        else:
-            fallback_story = """📖 <b>The Baker of Vilakazi Street</b>
-
-Every morning at 04:30, while the streetlights of Vilakazi Street still cast a soft amber glow, Gogo Thandi kneaded dough. Her bakery, <i>Thandi's Golden Loaf</i>, made the crispest koeksisters and fluffiest dombolo in Soweto, but for years she struggled to get orders beyond her neighborhood.
-
-One afternoon, her grandson showed her SearchBiz. For R199 a month, they registered her listing, set up <code>orders@thandibakery.co.za</code>, and put her verified badge online.
-
-Two weeks later, a boutique hotel manager in Sandton searching for authentic local bakeries found her profile, saw the verified badge, and placed a weekly corporate breakfast contract on the spot.
-
-Today, Thandi's bakery employs three young apprentices from her street.
-
-<i>"In South Africa,"</i> Thandi says with a warm laugh, <i>"hard work builds the dough, but being found puts the honey on it."</i>"""
-            send_telegram(chat_id, fallback_story)
-            return
-
-    # 12. Instant Conversational Greetings & Well-being
-    if re.search(r'^(?:hi|hello|hey|howdy|howzit|good\s+morning|good\s+afternoon|good\s+evening|greetings|sup|whats\s*up)\b', lower):
-        base_url = get_active_api_base()
-        has_wellbeing = any(q in lower for q in ["how are you", "how r u", "how you doing", "how are things", "how's it going"])
-        wellbeing_line = "I'm doing great, thank you for asking! 😊 " if has_wellbeing else ""
-        reply = f"""👋 <b>Howzit, {sender}!</b>
-
-{wellbeing_line}I am Hermes, your autonomous SearchBiz Executive Agent running live on your Contabo VPS.
-
-Everything is operational on <b>{base_url}</b>. Here are some things I can execute for you:
-• 🌐 <b>Live Internet Web Search:</b> <i>"Search Google for top safari lodges"</i>
-• 🌦️ <b>Live Weather:</b> <i>"What's the weather in Umkomaas?"</i>
-• 🪙 <b>Live Crypto Ticker:</b> <i>"What is the price of BTC?"</i>
-• 🏢 <b>Publish/Manage Ads:</b> <i>"Make an ad for [Business] in [City]"</i> or <code>/list_ads</code>
-• 📧 <b>Send Emails:</b> <i>"Send email to [recipient] explaining SearchBiz"</i>
-• 🧠 <b>Reasoning & Strategy:</b> Ask me math, business logic, or chat with me!
-
-What's on your agenda today?"""
-        send_telegram(chat_id, reply)
-        return
-
-    # 13. Pricing & Subscription Plans
-    if re.search(r'(?:pricing|plans?|how\s+much|rates?|costs?|fees?|subscription)', lower):
-        pricing = f"""💎 <b>SearchBiz Verified Pricing & Plans</b>
-
-• <b>Base Premium Plan:</b> <b>R199.00 / month</b>
-  - Unlimited hosting for static websites
-  - Unlimited domain-branded email accounts (@yourdomain.co.za)
-  - Custom design assistance for smart static websites
-  - Elite verified status and 1 custom directory listing
-
-• <b>Add-Ons & Extras:</b>
-  - Additional ad listing: <b>+R199.00 / month</b> each
-  - .co.za Domain Registration: <b>R99.00 / year</b>
-
-Would you like me to publish a new ad or send you full plan details via email?"""
-        send_telegram(chat_id, pricing)
-        return
-
-    # 14. Gratitude & Compliments
-    if re.search(r'^(?:thanks|thank\s+you|awesome|great|cool|perfect|well\s+done)', lower):
-        send_telegram(chat_id, f"🙏 <b>You're very welcome, {sender}!</b> Always at your service. Let me know whenever you need more listings, emails, or updates!")
-        return
-
-    # 14b. Restore / Where did ads go / Recycle Bin recovery
-    restore_triggers = [
-        'where did all the ads go', 'where all the ads went', 'where are all the ads',
-        'where are my ads', 'where did the ads go', 'where is all the ads',
-        'restore all ads', 'restore my ads', 'restore ads', 'bring back the ads',
-        'bring back all ads', 'untrash all', 'recover ads', 'restore all',
-        'bring back my ads'
-    ]
-    if any(t in lower for t in restore_triggers) or (('where' in lower or 'restore' in lower or 'missing' in lower) and ('ads' in lower or 'listings' in lower)):
-        send_chat_action(chat_id, "typing")
-        res = searchbiz_restore_all_ads()
-        if res.get("success"):
-            count = res.get("restoredCount", res.get("count", 0))
-            total = res.get("activeTotal", "")
-            if count > 0:
-                send_telegram(chat_id, f"""♻️ <b>Recycle Bin Restored!</b>
-
-I have retrieved and restored <b>{count} listing(s)</b> from the Recycle Bin back to the active directory!
-Total live listings on SearchBiz: <b>{total}</b>.
-
-🌐 You can view all live listings at <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>.""")
-                return
-            else:
-                send_telegram(chat_id, f"""ℹ️ <b>Directory Status</b>
-
-There were no deleted listings sitting in the Recycle Bin to restore.
-Current active listings in the index: <b>{total}</b>.
-
-If you recently reset your database or ran a fresh sync, your listings can also be restored via the Admin Dashboard under <b>Recycle Bin & Trash</b>.""")
-                return
-        else:
-            send_telegram(chat_id, f"⚠️ Unable to query Recycle Bin: {res.get('error')}")
-            return
-
-    # 14c. Natural Language Ad Deletion (MUST run BEFORE search!)
-    delete_keywords = ['delete', 'remove', 'trash', 'take down', 'takedown', 'get rid of', 'purge']
-    has_delete_intent = any(k in lower for k in delete_keywords) and (
-        any(w in lower for w in ['ad', 'advertisement', 'listing', 'business', 'created', 'umkomaas', 'it', 'this', 'that']) or
-        'just created' in lower or 'you created' in lower or 'it created' in lower or 'last ad' in lower
-    )
-
-    if has_delete_intent:
-        send_chat_action(chat_id, "typing")
-        
-        # Check if referring to what was just created or recent
-        is_recent_ref = (
-            'just created' in lower or 'you just created' in lower or 'it just created' in lower or
-            'what it just created' in lower or 'what you just created' in lower or
-            'this ad' in lower or 'that ad' in lower or 'the ad you' in lower or
-            lower.strip() in ['delete it', 'remove it', 'delete this', 'remove this'] or
-            'last ad' in lower
-        )
-
-        target = ""
-        if is_recent_ref and _LAST_CREATED_AD and _LAST_CREATED_AD.get("id"):
-            target = _LAST_CREATED_AD.get("id")
-        elif is_recent_ref:
-            target = "just created"
-        else:
-            # Check for city
-            sa_cities = ['umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate']
-            found_c = None
-            for c in sa_cities:
-                if c in lower:
-                    found_c = c
-                    break
-            
-            # Clean text
-            cleaned = re.sub(r'^(?:ok\s+|please\s+)?(?:delete|remove|trash|take\s+down|purge)\s+', '', text, flags=re.IGNORECASE).strip()
-            cleaned = re.sub(r'(?:the\s+)?ad(?:vertisement)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
-            cleaned = re.sub(r'(?:that\s+)?(?:you\s+|it\s+)?just\s+(?:created|made|posted|published)\s*', '', cleaned, flags=re.IGNORECASE).strip()
-            cleaned = re.sub(r'^(?:in|for|at|from)\s+', '', cleaned, flags=re.IGNORECASE).strip()
-            cleaned = re.sub(r'[?!.,]', '', cleaned).strip()
-
-            if found_c and (not cleaned or len(cleaned) < 3):
-                target = found_c
-            elif cleaned:
-                target = cleaned
-            elif _LAST_CREATED_AD:
-                target = _LAST_CREATED_AD.get("id", "")
-            else:
-                target = "just created"
-
-        res = searchbiz_delete_ad(target)
-        if res.get("success") and res.get("removedAd"):
-            removed = res["removedAd"]
-            title = removed.get('title', 'Listing')
-            ad_id = removed.get('id', target)
-            city = removed.get('city', '')
-            loc_str = f" in {city}" if city else ""
-            reply = f"""🗑️ <b>Ad Archived to Recycle Bin</b>
-
-Listing <b>"{title}"</b>{loc_str} (ID: <code>{ad_id}</code>) has been successfully taken off the live directory!
-
-♻️ To restore it at any time, just reply:
-<code>/restore_ad {ad_id}</code>
-or say <i>"Restore all ads"</i>."""
-            send_telegram(chat_id, reply)
-            return
-        else:
-            err = res.get("error") or f"Could not find an active listing matching '{target}'."
-            send_telegram(chat_id, f"⚠️ <b>Delete request:</b> {err}\n\nYou can run <code>/list_ads</code> to view current live IDs or <code>/delete_ad [ID]</code>.")
-            return
-
-    # 14d. Natural Language Directory Search (e.g. "Ok what ads you have in umkomaas")
-    search_triggers = ['what ads', 'which ads', 'show ads', 'list ads', 'any ads', 'search ads', 'find ads', 'what businesses', 'show businesses', 'any business', 'ads in', 'businesses in', 'listings in', 'who has ads']
-    is_search_intent = (
-        (any(k in lower for k in search_triggers) or (lower.startswith('ok ') and any(k in lower for k in ['ads', 'businesses', 'listings']))) and
-        not any(w in lower for w in ['delete', 'remove', 'trash', 'take down', 'purge', 'cancel'])
-    )
-
-    if is_search_intent:
-        search_target = re.sub(r'^(?:ok\s+)?(?:what|which|show|list|find|any|do\s+you\s+have)\s+(?:ads|advertisements|businesses|listings)?\s*(?:do\s+you\s+have\s+|you\s+have\s+|are\s+there\s+)?(?:in|under|for|around)?\s*', '', lower).strip()
-        search_target = re.sub(r'[?!.,]', '', search_target).strip()
-
-        all_cities = ['umkomaas', 'durban', 'ballito', 'pietermaritzburg', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate']
-        if not search_target:
-            for c in all_cities:
-                if c in lower:
-                    search_target = c
-                    break
-
-        send_chat_action(chat_id, "typing")
-        res = searchbiz_list_ads(search_target or "all", limit=5)
-        ads = res.get("ads", []) if isinstance(res, dict) else []
-
-        if ads:
-            loc_label = search_target.title() if search_target else "Directory"
-            reply = f"🔍 <b>Directory Listings for '{loc_label}' ({len(ads)}):</b>\n\n"
-            for i, a in enumerate(ads, 1):
-                reply += f"{i}. 🏢 <b>{a.get('title')}</b> ({a.get('category')})\n"
-                reply += f"   📍 {a.get('city', 'N/A')}, {str(a.get('province', '')).upper()}\n"
-                if a.get('address'):
-                    reply += f"   🏠 {a.get('address')}\n"
-                reply += f"   📞 {a.get('phone')}\n"
-                reply += f"   🆔 <code>{a.get('id')}</code>\n\n"
-            reply += f"🌐 <a href=\"https://searchbiz.co.za/directory?q={urllib.parse.quote(search_target)}\">View on SearchBiz Directory</a>"
-            send_telegram(chat_id, reply)
-            return
-        elif search_target and len(search_target) >= 3:
-            loc_name = search_target.title()
-            reply = f"""🔍 <b>No listings found in {loc_name} yet.</b>
-
-Currently, there are no live advertisements listed under <b>{loc_name}</b>.
-
-Would you like to place the first ad in <b>{loc_name}</b>?
-Simply send me:
-<i>"Place an ad for [Business Name] in {loc_name}, phone [082...], [address and details]"</i>"""
-            send_telegram(chat_id, reply)
-            return
-
-    # 15. Natural Language Ad Creation
-    ad_creation_triggers = [
-        'post ad', 'post an ad', 'post a ad',
-        'create ad', 'create an ad', 'create a ad',
-        'make an ad', 'make a ad', 'make ad',
-        'add ad', 'add an ad', 'add a ad',
-        'new ad', 'publish ad', 'publish an ad',
-        'place a ad', 'place an ad', 'place ad', 'list ad'
-    ]
-    has_biz_info = ('business name' in lower or 'company name' in lower) and ('phone' in lower or 'address' in lower or 'tel' in lower or 'cell' in lower)
-
-    if any(k in lower for k in ad_creation_triggers) or has_biz_info:
-        phone_match = re.search(r'(?:\+27|0)\s*\d{2}\s*\d{3}\s*\d{4}|\b0\d{9}\b', text)
-        phone = re.sub(r'\s+', '', phone_match.group(0)) if phone_match else '0821234567'
-
-        # Province detection
-        province = 'gauteng'
-        if any(w in lower for w in ['kzn', 'kwazulu', 'natal']): province = 'kwazulu-natal'
-        elif 'western cape' in lower or ' wc ' in lower: province = 'western-cape'
-        elif 'eastern cape' in lower: province = 'eastern-cape'
-        elif 'free state' in lower: province = 'free-state'
-        elif 'limpopo' in lower: province = 'limpopo'
-        elif 'mpumalanga' in lower: province = 'mpumalanga'
-        elif 'north west' in lower: province = 'north-west'
-        elif 'northern cape' in lower: province = 'northern-cape'
-        elif 'gauteng' in lower: province = 'gauteng'
-
-        # City detection
-        cities = ['umkomaas', 'durban', 'johannesburg', 'pretoria', 'cape town', 'sandton', 'bloemfontein', 'port elizabeth', 'gqeberha', 'polokwane', 'nelspruit', 'mbombela', 'rustenburg', 'kimberley', 'ballito', 'randburg', 'centurion', 'soweto', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg']
-        found_city = 'Johannesburg'
-        for c in cities:
-            if c in lower:
-                found_city = ' '.join([w.capitalize() for w in c.split()])
-                if c in ['umkomaas', 'durban', 'ballito', 'amanzimtoti', 'scottburgh', 'margate', 'pietermaritzburg']:
-                    province = 'kwazulu-natal'
+    # Natural Language Ad Creation
+    ad_triggers = ["create an ad", "place an ad", "post an ad", "make an ad", "add a business", "list a business", "register a business"]
+    if any(k in lower for k in ad_triggers) and any(c in lower for c in ["for ", "named ", "called "]):
+        parsed_title = re.search(r'(?:for|named|called)\s+([^,]+)', text, re.IGNORECASE)
+        title = parsed_title.group(1).strip() if parsed_title else "Verified Business"
+        phone_match = re.search(r'(?:0\d{9}|\+27\d{9})', text)
+        phone = phone_match.group(0) if phone_match else "0821234567"
+        city = extract_weather_location(text)
+        category = "Services"
+        for cat in ["Plumber", "Electrician", "Towing", "Cleaning", "Bakery", "Lawyer", "Auto"]:
+            if cat.lower() in lower:
+                category = cat
                 break
-
-        # Address detection
-        addr_match = re.search(r'address[:\s]+([^\n\r]+)', text, re.IGNORECASE)
-        address = addr_match.group(1).strip() if addr_match else f"{found_city} 4170"
-
-        # Explicit Title / Business Name detection
-        explicit_title = None
-        name_match = re.search(r'(?:business\s+name|company\s+name|name)[:\s]+([^\n\r,]+)', text, re.IGNORECASE)
-        if name_match and len(name_match.group(1).strip()) > 1:
-            explicit_title = name_match.group(1).strip()
-        else:
-            for line in text.split('\n'):
-                if 'business name' in line.lower() or 'company name' in line.lower():
-                    cand = re.sub(r'.*(?:business\s+name|company\s+name)[:\s]*', '', line, flags=re.IGNORECASE).strip()
-                    if len(cand) > 1:
-                        explicit_title = cand
-                        break
-
-        if explicit_title:
-            title = explicit_title.title()
-        else:
-            cleaned = re.sub(r'^(?:please\s+)?(?:make|post|create|add|publish|place)\s+(?:an?\s+)?ad(?:vertisement)?\s+(?:for\s+)?', '', text, flags=re.IGNORECASE).strip()
-            title_candidate = cleaned.split(' in ')[0].split(' under ')[0].split(' phone ')[0].split(',')[0].strip()
-            title = title_candidate.title() if len(title_candidate) > 2 else "New Business Listing"
-
-        cat = "General Services & Trades"
-        if any(w in lower for w in ['plumber', 'plumbing', 'pipes']): cat = "Plumbing Services"
-        elif any(w in lower for w in ['electric', 'electrical', 'wire', 'wiring']): cat = "Electrical Services"
-        elif any(w in lower for w in ['towing', 'tow', 'breakdown', 'recovery']): cat = "Towing & Breakdown"
-        elif any(w in lower for w in ['mechanic', 'auto', 'car repair']): cat = "Auto Repair"
-        elif any(w in lower for w in ['clean', 'cleaning']): cat = "Cleaning Services"
-        elif any(w in lower for w in ['builder', 'building', 'construction', 'roof']): cat = "Construction"
-        elif any(w in lower for w in ['restaurant', 'food', 'catering', 'cafe']): cat = "Restaurants & Food"
-
-        send_chat_action(chat_id, "typing")
-        res = searchbiz_create_ad(title, cat, found_city, phone, text, province=province, address=address)
-        if res.get("success") and res.get("ad"):
+        res = searchbiz_create_ad(title, category, city, phone, f"Verified {category} in {city}.")
+        if res.get("success"):
             ad = res["ad"]
-            reply = f"""✨ <b>Advertisement Published!</b>
-
-🏢 <b>{ad['title']}</b>
-🏷️ Category: {ad['category']}
-📍 Location: {ad.get('city', found_city)}, {province.upper()}
-🏠 Address: {address}
-📞 Phone: {ad.get('phone', phone)}
-🆔 ID: <code>{ad['id']}</code>
-⭐ Status: Verified & Premium
-
-🌐 <a href="https://searchbiz.co.za/directory?q={urllib.parse.quote(ad['title'])}">View Live Listing on SearchBiz</a>"""
-            send_telegram(chat_id, reply)
-            return
+            send_telegram(chat_id, f"✅ <b>Advertisement Live!</b>\n🏢 <b>{ad.get('title')}</b>\n🏷️ {ad.get('category')} | 📍 {ad.get('city')}\n📞 {ad.get('phone')}\n🆔 <code>{ad.get('id')}</code>")
         else:
-            err = res.get("error") or "Unknown error"
-            send_telegram(chat_id, f"❌ Failed to publish ad: {err}")
-            return
-
-    # 17. Conversational Banter & Wit Handlers (Self-awareness)
-    if any(p in lower for p in ["i never ask how", "i didn't ask how", "did i ask how", "who asked how you", "nobody asked"]):
-        send_telegram(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what can I tackle for you?")
+            send_telegram(chat_id, f"❌ Failed to create ad: {res.get('error')}")
         return
 
-    # 18. Conversational AI Assistant with Executive Reasoning & Multi-turn Memory
+    # 14. Conversational AI Assistant with Deep Reasoning & Long-Term Memory
     ai_reply = ask_ai(
         text,
-        system_prompt=(
-            f"You are Hermes, the autonomous AI Executive Assistant and Chief of Staff for SearchBiz (https://searchbiz.co.za) in South Africa. "
-            f"The founder speaking with you is {sender}. "
-            "You possess sharp analytical intelligence, conversational agility, wit, and deep South African context (ZAR, SAST time, cities). "
-            "If asked logical, business, or everyday questions, think and reason step-by-step. "
-            "Be charismatic, self-aware, and concise for Telegram."
-        ),
         chat_id=chat_id
     )
     if ai_reply:
         send_telegram(chat_id, ai_reply)
         return
 
-    # 19. Smart Web & Knowledge Fallback for "What is / Who is / Where is"
-    if any(lower.startswith(prefix) for prefix in ["what is ", "whats ", "what's ", "who is ", "who was ", "where is ", "where are ", "how does ", "how to ", "tell me about "]):
-        send_chat_action(chat_id, "typing")
-        search_result = search_web(text)
-        if search_result:
-            send_telegram(chat_id, search_result)
-            return
-
-    # 20. Conversational Fallback with Personality (Never a cold robot)
-    if any(w in lower for w in ["how are you", "how r u", "how do you feel", "are you real", "are you there", "you there", "hello?", "help me"]):
-        send_telegram(chat_id, f"😊 <b>I'm feeling sharp and right here with you, {sender}!</b>\n\nAll systems on your server are green and running. Ask me anything — like <i>'What is the weather in Umkomaas?'</i>, <i>'Current price of BTC'</i>, <i>'Search Google for...'</i>, or tell me to publish/manage your business listings!")
-        return
-
-    # 21. Executive Guidance
+    # 15. General Guidance
     send_telegram(chat_id, f"""🏛️ <b>SearchBiz Hermes Executive Assistant</b>
-I'm here and listening, <b>{sender}</b>! 
+I'm here with you, <b>{sender}</b>!
 
-Try asking me any of these:
+Try any of these:
+📄 <i>"Create a word document about South African solar energy"</i>
+📑 <i>"Make a pdf report on Durban tourism"</i>
+⏰ <i>"Check the weather everyday at 07:00 for Umkomaas"</i>
+🧠 <i>"Remember that my business is SearchBiz"</i>
+🎨 <i>"Create an image of a sunrise over Table Mountain"</i>
 🌐 <i>"Search Google for top safari lodges in Kruger"</i>
 🌦️ <i>"What's the weather in Umkomaas?"</i>
 🪙 <i>"What's the current price of BTC?"</i>
-📅 <i>"What is the day today?"</i>
-🏢 <i>"Make an ad for Elite Plumbers in Durban, 0821234567, emergency repairs"</i>
-📧 <i>"Send an email explaining What searchbiz.co.za is all about to user@domain.com"</i>
-💬 <i>"What is your name?"</i> or chat with me about anything!""")
+🗣️ Talk to me in isiZulu, Afrikaans, or send me a voice note!""")
 
 
 def main():
@@ -1652,9 +2074,17 @@ def main():
     logger.info(f"Ollama Brain: {OLLAMA_API_URL} ({OLLAMA_MODEL})")
     api_base = get_active_api_base()
     logger.info(f"SearchBiz Live API: {api_base}")
+    logger.info(f"Persistent Memory Database: {DB_PATH}")
     logger.info("=====================================================")
 
-    # Verify Telegram Bot connection
+    # 1. Initialize SQLite Database
+    init_memory_db()
+
+    # 2. Start Scheduled Tasks Background Daemon
+    scheduler_thread = threading.Thread(target=scheduler_worker, daemon=True)
+    scheduler_thread.start()
+
+    # 3. Verify Telegram Bot connection
     me = telegram_call("getMe")
     if not me or not me.get("ok"):
         logger.error("Failed to authenticate with Telegram. Check TELEGRAM_BOT_TOKEN.")
