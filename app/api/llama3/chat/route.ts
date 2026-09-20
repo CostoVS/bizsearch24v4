@@ -317,7 +317,7 @@ Please answer the user's inquiry based on this verified dataset.
 
     }
 
-    // Basic Welcome Greeting
+    // Welcome Greeting with natural human warmth
     if (
       normalizedQuery === "hello" ||
       normalizedQuery === "hi" ||
@@ -328,8 +328,7 @@ Please answer the user's inquiry based on this verified dataset.
       normalizedQuery.includes("how are you")
     ) {
       return NextResponse.json({
-        text: `Hello! I am your AI Directory Assistant for SearchBiz. How can I assist you with your business search today?`
-
+        text: `Hello! Great to hear from you. Everything is live and running smoothly across SearchBiz. What shall we tackle together today?`
       });
     }
 

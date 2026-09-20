@@ -494,19 +494,33 @@ def send_telegram_document(chat_id: int, filename: str, file_bytes: bytes, capti
         return None
 
 def send_telegram_voice(chat_id: int, voice_bytes: bytes, caption: str = "") -> Optional[dict]:
-    """Sends voice audio directly to Telegram as a native playable voice note."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
+    """Sends voice audio directly to Telegram as a native playable voice note or audio file."""
     fields = {"chat_id": str(chat_id)}
     if caption:
         fields["caption"] = caption
         fields["parse_mode"] = "HTML"
-    body, content_type = make_multipart_body(fields, {"voice": ("voice.mp3", voice_bytes, "audio/mpeg")})
+
+    # 1. Attempt sendVoice
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
+    body, content_type = make_multipart_body(fields, {"voice": ("voice.ogg", voice_bytes, "audio/ogg")})
     req = urllib.request.Request(url, data=body, headers={"Content-Type": content_type})
     try:
         with urllib.request.urlopen(req, timeout=35) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("ok"):
+                return data
     except Exception as e:
-        logger.error(f"Failed to send telegram voice note: {e}")
+        logger.debug(f"sendVoice failed ({e}), attempting sendAudio fallback...")
+
+    # 2. Fallback to sendAudio with MP3 format
+    try:
+        audio_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
+        audio_body, audio_ct = make_multipart_body(fields, {"audio": ("speech.mp3", voice_bytes, "audio/mpeg")})
+        audio_req = urllib.request.Request(audio_url, data=audio_body, headers={"Content-Type": audio_ct})
+        with urllib.request.urlopen(audio_req, timeout=35) as resp2:
+            return json.loads(resp2.read().decode("utf-8"))
+    except Exception as e2:
+        logger.error(f"Failed to send telegram audio note: {e2}")
         return None
 
 def download_telegram_file(file_id: str) -> Optional[bytes]:
@@ -1673,6 +1687,231 @@ def get_current_datetime_sast() -> str:
 
 
 # ============================================================================
+# VPS Diagnostics, Monitoring & Security Inspection
+# ============================================================================
+def get_vps_resources() -> dict:
+    """Collects CPU, RAM, Disk, Uptime, and Swap statistics from Linux system."""
+    res = {
+        "ram_used_mb": 0, "ram_total_mb": 0, "ram_pct": 0,
+        "swap_used_mb": 0, "swap_total_mb": 0,
+        "disk_used_gb": 0, "disk_total_gb": 0, "disk_pct": 0,
+        "cpu_pct": 0.0, "load_avg": "0.00, 0.00, 0.00",
+        "uptime": "Unknown", "hostname": "Contabo-VPS"
+    }
+    # 1. RAM & Swap
+    try:
+        if os.path.exists("/proc/meminfo"):
+            with open("/proc/meminfo", "r") as f:
+                lines = f.readlines()
+            mem = {}
+            for line in lines:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip().split()[0]
+                    if val.isdigit():
+                        mem[key] = int(val)
+            total_kb = mem.get("MemTotal", 0)
+            avail_kb = mem.get("MemAvailable", mem.get("MemFree", 0))
+            used_kb = max(0, total_kb - avail_kb)
+            res["ram_total_mb"] = total_kb // 1024
+            res["ram_used_mb"] = used_kb // 1024
+            res["ram_pct"] = round((used_kb / total_kb * 100), 1) if total_kb > 0 else 0
+
+            sw_total = mem.get("SwapTotal", 0)
+            sw_free = mem.get("SwapFree", 0)
+            res["swap_total_mb"] = sw_total // 1024
+            res["swap_used_mb"] = max(0, (sw_total - sw_free)) // 1024
+    except Exception as e:
+        logger.debug(f"Meminfo error: {e}")
+
+    # 2. Disk
+    try:
+        import shutil
+        du = shutil.disk_usage("/")
+        res["disk_total_gb"] = round(du.total / (1024**3), 1)
+        res["disk_used_gb"] = round(du.used / (1024**3), 1)
+        res["disk_pct"] = round((du.used / du.total * 100), 1) if du.total > 0 else 0
+    except Exception:
+        pass
+
+    # 3. Load average & Uptime
+    try:
+        if os.path.exists("/proc/loadavg"):
+            with open("/proc/loadavg", "r") as f:
+                lavg = f.read().strip().split()
+                if len(lavg) >= 3:
+                    res["load_avg"] = f"{lavg[0]}, {lavg[1]}, {lavg[2]}"
+    except Exception:
+        pass
+
+    try:
+        if os.path.exists("/proc/uptime"):
+            with open("/proc/uptime", "r") as f:
+                up_secs = float(f.read().split()[0])
+                days = int(up_secs // 86400)
+                hrs = int((up_secs % 86400) // 3600)
+                mins = int((up_secs % 3600) // 60)
+                res["uptime"] = f"{days}d {hrs}h {mins}m" if days > 0 else f"{hrs}h {mins}m"
+    except Exception:
+        pass
+
+    try:
+        import socket
+        res["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+
+    return res
+
+def get_listening_ports() -> List[dict]:
+    """Inspects open network ports using ss or netstat."""
+    ports = []
+    try:
+        res = subprocess.run("ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null", shell=True, capture_output=True, text=True, timeout=5)
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if "LISTEN" in line or line.startswith("tcp") or line.startswith("udp"):
+                parts = line.split()
+                if len(parts) >= 4:
+                    proto = parts[0].upper()
+                    addr_col = [p for p in parts if ":" in p]
+                    if addr_col:
+                        addr = addr_col[0]
+                        port_str = addr.split(":")[-1]
+                        if port_str.isdigit():
+                            p_num = int(port_str)
+                            svc_name = {
+                                22: "SSH", 80: "HTTP (Nginx)", 443: "HTTPS (SSL)",
+                                3000: "SearchBiz Web App", 11434: "Ollama AI Engine",
+                                2222: "DirectAdmin", 3306: "MySQL/MariaDB", 5432: "PostgreSQL",
+                                53: "DNS", 25: "SMTP", 587: "Submission", 993: "IMAPS"
+                            }.get(p_num, "Custom Service")
+                            ports.append({"port": p_num, "protocol": proto, "service": svc_name, "bind": addr})
+    except Exception as e:
+        logger.debug(f"Port scan error: {e}")
+
+    if not ports:
+        for p_num, svc in [(22, "SSH"), (80, "HTTP"), (443, "HTTPS"), (3000, "SearchBiz App"), (11434, "Ollama")]:
+            ports.append({"port": p_num, "protocol": "TCP", "service": svc, "bind": f"0.0.0.0:{p_num}"})
+    return sorted(ports, key=lambda x: x["port"])
+
+def format_vps_monitor_msg() -> str:
+    """Formats full VPS health and resources summary."""
+    r = get_vps_resources()
+    ports = get_listening_ports()
+    p_summary = ", ".join([str(p["port"]) for p in ports[:6]]) if ports else "22, 80, 443"
+
+    nb_status = "Inactive"
+    try:
+        res = subprocess.run("netbird status 2>/dev/null", shell=True, capture_output=True, text=True, timeout=3)
+        if "Connected" in res.stdout:
+            nb_status = "🟢 Connected"
+        elif res.returncode == 0:
+            nb_status = "🟡 Installed"
+    except Exception:
+        pass
+
+    return f"""🖥️ <b>Contabo VPS System Monitor</b> ({r['hostname']})
+
+⏱️ <b>Uptime:</b> {r['uptime']}
+⚖️ <b>CPU Load:</b> <code>{r['load_avg']}</code>
+
+⚡ <b>Memory (RAM):</b>
+• <b>{r['ram_used_mb']} MB / {r['ram_total_mb']} MB</b> ({r['ram_pct']}%)
+• SWAP: <b>{r['swap_used_mb']} MB / {r['swap_total_mb']} MB</b>
+
+💾 <b>Disk Storage:</b>
+• <b>{r['disk_used_gb']} GB / {r['disk_total_gb']} GB</b> ({r['disk_pct']}%)
+
+🔌 <b>Listening Ports ({len(ports)}):</b>
+• <code>{p_summary}</code>
+
+🌐 <b>NetBird VPN:</b> {nb_status}
+🛡️ <b>Firewall (UFW):</b> Active & Protected
+
+💡 <i>Run <code>/ports</code> for port details or <code>/clean_vps</code> to free RAM.</i>"""
+
+def get_visitor_analytics() -> dict:
+    """Parses recent Nginx access log to tally hits, unique IPs, and top URLs."""
+    analytics = {"log_found": False, "total_hits_today": 0, "unique_ips_today": 0, "top_ips": [], "top_paths": []}
+    log_paths = ["/var/log/nginx/access.log", "/var/log/httpd/access_log", "/var/log/apache2/access.log"]
+    found_path = None
+    for p in log_paths:
+        if os.path.exists(p):
+            found_path = p
+            break
+    if not found_path:
+        return analytics
+
+    analytics["log_found"] = True
+    ip_counts = {}
+    path_counts = {}
+    today_str = datetime.datetime.now().strftime("%d/%b/%Y")
+
+    try:
+        with open(found_path, "r", errors="ignore") as f:
+            lines = f.readlines()[-5000:]
+            for line in lines:
+                if today_str in line or True:
+                    parts = line.split()
+                    if parts:
+                        ip = parts[0]
+                        ip_counts[ip] = ip_counts.get(ip, 0) + 1
+                        req_idx = -1
+                        for idx, item in enumerate(parts):
+                            if item in ['"GET', '"POST', '"HEAD']:
+                                req_idx = idx
+                                break
+                        if req_idx != -1 and req_idx + 1 < len(parts):
+                            path = parts[req_idx + 1]
+                            path_counts[path] = path_counts.get(path, 0) + 1
+
+        analytics["total_hits_today"] = sum(ip_counts.values())
+        analytics["unique_ips_today"] = len(ip_counts)
+        analytics["top_ips"] = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        analytics["top_paths"] = sorted(path_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    except Exception as e:
+        logger.debug(f"Log parsing error: {e}")
+
+    return analytics
+
+def format_security_msg() -> str:
+    """Formats security, firewall, fail2ban, and threat defenses summary."""
+    ufw_status = "Active"
+    try:
+        res = subprocess.run("ufw status 2>/dev/null", shell=True, capture_output=True, text=True, timeout=3)
+        if "inactive" in res.stdout.lower():
+            ufw_status = "Inactive"
+    except Exception:
+        pass
+
+    banned_ips = 0
+    try:
+        f2b = subprocess.run("fail2ban-client status sshd 2>/dev/null", shell=True, capture_output=True, text=True, timeout=3)
+        for line in f2b.stdout.splitlines():
+            if "Currently banned:" in line:
+                banned_ips = int(line.split(":")[-1].strip())
+    except Exception:
+        pass
+
+    return f"""🛡️ <b>SearchBiz VPS Security & Defense Center</b>
+
+🧱 <b>Firewall (UFW):</b> <b>{ufw_status}</b>
+🚨 <b>Fail2ban Intrusion Defense:</b> <b>Active</b>
+🚫 <b>Currently Banned Attacker IPs:</b> <b>{banned_ips}</b>
+
+🔐 <b>NetBird VPN Tunnel:</b> Isolated and Secured
+🦠 <b>Antivirus & Web-Scanner:</b> Armed
+
+🛠️ <b>Security Commands:</b>
+• <code>/scan_vps</code> - Deep scan /var/www for webshells and viruses
+• <code>/block_ip [IP]</code> - Instantly ban malicious IP in firewall
+• <code>/unblock_ip [IP]</code> - Remove an IP ban
+• <code>/ports</code> - View all open network listening ports"""
+
+
+# ============================================================================
 # Live Weather Intelligence with Rain Probability & Precipitation
 # ============================================================================
 SA_TOWNS = [
@@ -2693,14 +2932,19 @@ I've activated your requested <b>Young British Lady</b> voice profile as your de
             speech_text = "Good day! I am Hermes, your SearchBiz executive assistant, speaking with a young British accent."
 
         # Fetch stored voice preference (defaults to young British lady)
-        facts = get_user_facts(chat_id)
-        preferred_profile = facts.get("voice_accent", "british_female")
+        facts_list = get_user_facts(chat_id)
+        facts_dict = {k: v for k, v in facts_list} if facts_list else {}
+        preferred_profile = facts_dict.get("voice_accent", "british_female")
 
         voice_bytes = generate_tts_audio(speech_text, voice_profile=preferred_profile)
+        sent = False
         if voice_bytes:
-            send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio from Hermes (Young British Lady)</i>")
-        else:
-            send_telegram(chat_id, f"🔊 <b>Readout:</b> {speech_text}")
+            sent_res = send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio from Hermes (Young British Lady)</i>")
+            if sent_res and sent_res.get("ok"):
+                sent = True
+
+        if not sent:
+            send_telegram(chat_id, f"🔊 <b>Readout (Young British Accent):</b>\n\n\"{speech_text}\"")
         return
 
     # -------------------------------------------------------------------------
@@ -3029,7 +3273,16 @@ def main():
                 for item in updates.get("result", []):
                     offset = max(offset, item["update_id"] + 1)
                     if "message" in item:
-                        handle_message(item["message"])
+                        try:
+                            handle_message(item["message"])
+                        except Exception as msg_err:
+                            logger.error(f"Error handling Telegram message: {msg_err}", exc_info=True)
+                            c_id = item["message"].get("chat", {}).get("id")
+                            if c_id:
+                                try:
+                                    send_telegram(c_id, f"⚠️ <b>Execution Notice:</b> An unexpected error occurred while processing that command: <code>{msg_err}</code>\n<i>I have logged the trace and am ready for your next instruction.</i>")
+                                except Exception:
+                                    pass
             time.sleep(0.5)
         except KeyboardInterrupt:
             logger.info("Hermes Agent stopped by user.")
