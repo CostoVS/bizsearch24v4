@@ -1,28 +1,76 @@
-# SearchBiz Hermes Autonomous Agent & VPS Email Setup Guide
+# SearchBiz Hermes Autonomous Agent, VPS Monitoring & Security Suite
 
-This package connects **Hermes Agent**, **Ollama (`qwen2.5:3b`)**, and **Telegram (`@Searchbiz_bot`)** directly to **searchbiz.co.za** to autonomously create ads, delete ads, and manage emails.
+This package connects **Hermes Executive Agent**, **Ollama (`qwen2.5:3b`)**, and **Telegram (`@Searchbiz_bot`)** directly to **searchbiz.co.za** to autonomously manage directory listings, scrape & enrich CSV business leads, generate watermark-free FLUX images, generate Word/PDF documents, and monitor/protect your VPS with open-source tools.
 
 ---
 
 ## 1. Quick VPS Installation & Update
 
-### To Update an Existing VPS Agent (1 Command):
+### To Update an Existing VPS Agent (Run from terminal):
 ```bash
-cd /opt/hermes-searchbiz || cd ~/vps-agent
+cd /opt/hermes-searchbiz || cd ~/bizsearch24v4/vps-agent
 git pull || true
 sudo ./update_agent.sh
 ```
-Or simply copy the updated `hermes_searchbiz_agent.py` to `/opt/hermes-searchbiz/` and run:
+
+### To Enable Open-Source Security & Firewall Protection (UFW, Fail2ban, ClamAV):
 ```bash
-sudo systemctl restart hermes-agent
+sudo ./setup_security.sh
 ```
 
-### Fresh Installation:
+### To Monitor VPS & Open Ports from Terminal:
 ```bash
-cd vps-agent
-chmod +x install_vps.sh
-sudo ./install_vps.sh
+./monitor_vps.sh            # Full live dashboard (CPU, RAM, Disk, Ports, Visitors)
+./monitor_vps.sh --ports    # Active listening ports and sockets
+./monitor_vps.sh --visitors # Today's website visitor traffic & top paths
+./monitor_vps.sh --security # Firewall status, fail2ban jails, and blocked probes
 ```
+
+---
+
+## 2. Complete Telegram Commands Reference (`@Searchbiz_bot`)
+
+### 🎨 Image Generation (Open-Source FLUX.1 Engine):
+* `/image [description]` — Generates a watermark-free FLUX image.
+* Natural queries: *"Generate a land image"*, *"Draw a picture of Durban beach at sunrise"*, *"Create a photo of modern office"*.
+* Refinements: *"Remove the watermark and girl"*, *"Make the ocean calmer"*.
+
+### 🖥️ Open-Source VPS & Port Monitoring:
+* `/monitor` or `/vps` — Real-time CPU, RAM, Disk, Uptime, Open Ports, and Visitors.
+* `/ports` — Audit all listening TCP/UDP ports and bound services.
+* `/visitors` — Analyzes Nginx logs for today's visits, unique visitor IPs, and visited pages.
+
+### 🛡️ Security, Antivirus & Attack Prevention:
+* `/security` — Comprehensive security overview (UFW firewall, Fail2ban active jails, ClamAV, blocked attackers).
+* `/scan_vps [path]` — Deep virus, webshell, and malware scan (e.g. `/scan_vps /var/www`).
+* `/block_ip [IP]` — Instantly bans a malicious IP address across UFW and iptables.
+* `/unblock_ip [IP]` — Removes an IP firewall ban.
+
+### 📊 Google Maps CSV Leads & Enrichment:
+* Send any `.CSV` file to Telegram — Hermes parses and stores businesses in SQLite.
+* `/enrich [ID]` — Scrapes each business's website to discover email addresses and WhatsApp numbers.
+* `/export_leads [ID]` — Exports clean/enriched CSV for download.
+* `/import_searchbiz [ID]` — Bulk imports all businesses into SearchBiz directory.
+* `/leads` — Shows recent stored lead datasets.
+
+### 💬 Direct Outreach (WhatsApp, Email, Telegram):
+* `/whatsapp [ID or Name]` — Generates click-to-chat WhatsApp sales link with personalized pitch.
+* `/email_lead [ID or Name]` — Sends automated listing invitation via Mailcow SMTP.
+* `/telegram_lead [ID or Name]` — Creates direct Telegram contact link.
+
+### 📄 Document Creation:
+* `/docx [Title] [Topic]` — Generates a Microsoft Word document (.docx).
+* `/pdf [Title] [Topic]` — Generates an executive PDF report (.pdf).
+
+### ⏰ Schedules & Daily Automation:
+* `/schedule_weather 07:00 Durban` — Automated daily morning forecast.
+* `/schedules` — Shows all active daily jobs.
+* `/cancel_weather` — Stops daily briefings.
+
+### 🧠 Permanent Memory:
+* `/remember [fact]` — Stores permanent facts across all server restarts.
+* `/memory` — Displays everything Hermes remembers about you.
+* `/clear_memory` — Clears stored facts.
 
 ---
 

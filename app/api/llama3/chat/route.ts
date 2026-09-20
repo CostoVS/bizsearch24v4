@@ -428,10 +428,27 @@ Please answer the user's inquiry based on this verified dataset.
       });
     }
 
+    // Image Generation Request in chat
+    if (
+      normalizedQuery.includes("image") ||
+      normalizedQuery.includes("picture") ||
+      normalizedQuery.includes("photo") ||
+      normalizedQuery.includes("draw") ||
+      normalizedQuery.includes("flux") ||
+      normalizedQuery.includes("painting")
+    ) {
+      return NextResponse.json({
+        text: `🎨 **Image Generator Request:**\nI can generate high-resolution, watermark-free images for you using our open-source FLUX.1 engine!\n\nJust type:\n• \`/image [description]\` (e.g. \`/image vast scenic landscape with mountains\`)\n• Or tell me: *"Generate an image of [description]"* or *"Create a landscape picture"*!`
+      });
+    }
+
     // Only trigger directory missing message if user had clear directory/ad search intent
     const hasSearchIntent = 
-      /^(?:what|which|show|list|find|any|do you have|search for|who has)\s+(?:ads|businesses|listings|services|plumbers|mechanics|electricians|shops)/i.test(normalizedQuery) ||
-      /\b(?:ads in|listings in|businesses in|services in)\b/i.test(normalizedQuery);
+      !normalizedQuery.includes("image") &&
+      !normalizedQuery.includes("picture") &&
+      !normalizedQuery.includes("flux") &&
+      (/^(?:what|which|show|list|find|any|do you have|search for|who has)\s+(?:ads|businesses|listings|services|plumbers|mechanics|electricians|shops)/i.test(normalizedQuery) ||
+      /\b(?:ads in|listings in|businesses in|services in)\b/i.test(normalizedQuery));
 
     if (hasSearchIntent && searchTarget && searchTarget.length >= 3 && !searchTarget.includes("direct match")) {
       const formattedLocation = searchTarget.charAt(0).toUpperCase() + searchTarget.slice(1);

@@ -2155,6 +2155,133 @@ Live Platform: <code>{base_url}</code>
         send_telegram(chat_id, status_msg)
         return
 
+    
+    # --- VPS Monitoring, Ports & Visitor Analytics ---
+    if text in ["/monitor", "/vps", "/vps_status"] or "monitor vps" in lower or "vps status" in lower:
+        send_chat_action(chat_id, "typing")
+        report = format_vps_monitor_msg()
+        send_telegram(chat_id, report)
+        return
+
+    if text in ["/ports", "/open_ports"] or "check ports" in lower or "show ports" in lower:
+        send_chat_action(chat_id, "typing")
+        ports = get_listening_ports()
+        lines = [f"🔌 <b>Active Listening Ports ({len(ports)}):</b>\n"]
+        for p in ports:
+            lines.append(f"• <b>Port {p['port']}</b> ({p['protocol']}): {p['service']}\n  Bind: <code>{p['bind']}</code>")
+        lines.append("\n<i>Protected by UFW firewall rules.</i>")
+        send_telegram(chat_id, "\n".join(lines))
+        return
+
+    if text in ["/visitors", "/traffic"] or "who visits" in lower or "site visitors" in lower:
+        send_chat_action(chat_id, "typing")
+        v = get_visitor_analytics()
+        if not v.get("log_found"):
+            send_telegram(chat_id, "⚠️ Web server access log not found yet on standard paths. Make sure Nginx is logging to <code>/var/log/nginx/access.log</code>.")
+            return
+
+        lines = [
+            f"🌐 <b>Website Visitor Analytics (Today):</b>",
+            f"• Total Hits / Pageviews: <b>{v['total_hits_today']}</b>",
+            f"• Unique Visitor IPs: <b>{v['unique_ips_today']}</b>\n",
+            "<b>Top 5 Visitor IPs:</b>"
+        ]
+        for ip, count in v.get("top_ips", []):
+            lines.append(f"  • <code>{ip}</code>: {count} requests")
+        lines.append("\n<b>Top Visited Pages:</b>")
+        for path, count in v.get("top_paths", []):
+            lines.append(f"  • <code>{path}</code>: {count} views")
+        send_telegram(chat_id, "\n".join(lines))
+        return
+
+    # --- VPS Security, Antivirus & Attack Prevention ---
+    if text in ["/security", "/firewall"] or "vps security" in lower or "check security" in lower:
+        send_chat_action(chat_id, "typing")
+        sec_msg = format_security_msg()
+        send_telegram(chat_id, sec_msg)
+        return
+
+    if text.startswith("/scan_vps") or "scan vps" in lower or "scan for viruses" in lower:
+        send_chat_action(chat_id, "typing")
+        target = text.split(" ", 1)[-1].strip() if " " in text and not text.startswith("/scan_vps") == False else "/var/www"
+        if not target or target == "/scan_vps":
+            target = "/var/www"
+        send_telegram(chat_id, f"🔍 <b>Initiating Antivirus & Malware Scan on:</b> <code>{target}</code>\n<i>Checking for webshells, eval backdoors, and virus signatures...</i>")
+        scan_res = scan_vps_for_malware(target)
+        if scan_res.get("clean"):
+            send_telegram(chat_id, f"✅ <b>Security Scan Complete!</b>\nTarget: <code>{target}</code>\nFiles Scanned: <b>{scan_res.get('scanned_count', 'All')}</b>\nEngine: <b>{scan_res.get('engine')}</b>\n\n🟢 <b>Zero threats found. System is clean!</b>")
+        else:
+            inf = "\n".join([f"• 🚨 <code>{f}</code>" for f in scan_res.get("infected_files", [])])
+            send_telegram(chat_id, f"⚠️ <b>Threats Detected in Scan!</b>\n\n{inf}\n\nReview and remove these files immediately.")
+        return
+
+    if text.startswith("/block_ip "):
+        ip_to_block = text.split(" ", 1)[-1].strip()
+        import subprocess
+        subprocess.run(["ufw", "insert", "1", "deny", "from", ip_to_block], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["iptables", "-I", "INPUT", "-s", ip_to_block, "-j", "DROP"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        send_telegram(chat_id, f"🚫 <b>IP Address Blocked:</b> <code>{ip_to_block}</code> has been banned on the firewall.")
+        return
+
+    if text.startswith("/unblock_ip "):
+        ip_to_unblock = text.split(" ", 1)[-1].strip()
+        import subprocess
+        subprocess.run(["ufw", "delete", "deny", "from", ip_to_unblock], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["iptables", "-D", "INPUT", "-s", ip_to_unblock, "-j", "DROP"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        send_telegram(chat_id, f"✅ <b>IP Address Unblocked:</b> <code>{ip_to_unblock}</code> can now connect.")
+        return
+
+    # --- Master Commands Cheat Sheet Menu ---
+    if text in ["/commands", "/help", "commands", "show commands", "help"]:
+        cmds_menu = """📋 <b>SearchBiz Hermes Executive Command Master Guide</b>
+
+🎨 <b>Image Generation (FLUX.1 Open-Source):</b>
+• <code>/image [prompt]</code> - Generate high-res image without watermark
+• <i>"Generate a land image"</i>
+• <i>"Draw a picture of Durban beach at sunrise"</i>
+• <i>"Remove the watermark and girl"</i> - Refines the previous image
+
+📊 <b>Google Maps Leads & CSV Ingestion:</b>
+• <i>Attach any .CSV file in Telegram</i> - Hermes parses all businesses
+• <code>/enrich [ID]</code> - Crawl websites to find emails & WhatsApp numbers
+• <code>/export_leads [ID]</code> - Download updated/enriched CSV
+• <code>/import_searchbiz [ID]</code> - Publish all leads to SearchBiz directory
+• <code>/leads</code> - View your latest saved business leads
+
+💬 <b>Direct Outreach (WhatsApp, Email, Telegram):</b>
+• <code>/whatsapp [Lead ID or Name]</code> - 1-tap WhatsApp link with sales pitch
+• <code>/email_lead [Lead ID or Name]</code> - Send verified listing pitch email
+• <code>/telegram_lead [Lead ID or Name]</code> - Open direct Telegram chat link
+
+🖥️ <b>VPS Monitoring & Ports:</b>
+• <code>/monitor</code> - CPU, RAM, Disk, Uptime, Open Ports & Visitors
+• <code>/ports</code> - Audit all active listening ports and services
+• <code>/visitors</code> - Analyze today's website visitors and top pages
+
+🛡️ <b>Security & Antivirus:</b>
+• <code>/security</code> - Firewall, Fail2ban jails, and blocked attack threats
+• <code>/scan_vps</code> - Deep antivirus & webshell scan on web directories
+• <code>/block_ip [IP]</code> - Instantly ban an attacker IP address
+• <code>/unblock_ip [IP]</code> - Remove an IP firewall ban
+
+📄 <b>Document Creation:</b>
+• <code>/docx [Title] [Topic]</code> - Generate Microsoft Word (.docx)
+• <code>/pdf [Title] [Topic]</code> - Generate executive PDF (.pdf)
+
+⏰ <b>Daily Weather & Schedules:</b>
+• <code>/schedule_weather 07:00 Durban</code> - Automatic daily forecast
+• <code>/schedules</code> - View active schedules | <code>/cancel_weather</code>
+
+🧠 <b>Memory & Recall:</b>
+• <code>/remember [fact]</code> - Store a permanent fact
+• <code>/memory</code> - View all stored memories | <code>/clear_memory</code>
+
+🗣️ <b>Voice & 11 SA Languages:</b>
+• <code>/speak [text]</code> or <code>/read_to_me</code> - Send as audio voice note
+• Send any Voice Note - Hermes transcribes and responds!"""
+        send_telegram(chat_id, cmds_menu)
+        return
+
     # -------------------------------------------------------------------------
     # 5. Scheduled Daily Weather & Tasks
     # -------------------------------------------------------------------------
@@ -2317,25 +2444,40 @@ Format requirements:
     # -------------------------------------------------------------------------
     # 8. Free Open-Source Image Generator (Flux.1 / Stable Diffusion)
     # -------------------------------------------------------------------------
-    is_img_req = text.startswith("/image") or text.startswith("/draw") or any(k in lower for k in [
-        "create an image of", "generate an image of", "draw a picture of",
-        "draw an image of", "generate a photo of", "create a photo of",
-        "make an image of", "paint a picture of"
-    ])
+    # Broad, forgiving trigger: handles any command or natural phrasing requesting an image
+    is_img_req = (
+        text.startswith(("/image", "/draw", "/photo", "/flux", "/paint", "/pic")) or
+        any(k in lower for k in ["image", "picture", "photo", "drawing", "paint", "flux", "artwork"]) and
+        any(v in lower for v in ["generate", "create", "make", "draw", "paint", "show me", "give me", "produce", "render", "use your flux", "use flux"])
+    )
     if is_img_req:
         send_chat_action(chat_id, "upload_photo")
-        prompt = text
-        for pfx in ["/image", "/draw", "create an image of", "generate an image of", "draw a picture of", "draw an image of", "generate a photo of", "create a photo of", "make an image of", "paint a picture of"]:
-            if lower.startswith(pfx):
-                prompt = text[len(pfx):].strip()
-                break
-        prompt = prompt.strip() or "A beautiful scenic view of South Africa"
+        clean_p = text
+        # Clean conversational lead-ins
+        clean_p = re.sub(
+            r'^(?:please\s+)?(?:use\s+your\s+flux\s+image\s+generator\s+and\s+|use\s+flux\s+to\s+|can\s+you\s+)?(?:generate|create|make|draw|paint|show\s+me|give\s+me|produce|render)\s+(?:an?\s+)?(?:flux\s+)?(?:image|picture|photo|painting|artwork)\s+(?:of\s+)?',
+            '',
+            clean_p,
+            flags=re.IGNORECASE
+        ).strip()
+        for pfx in ["/image", "/draw", "/photo", "/flux", "/paint", "/pic"]:
+            if clean_p.lower().startswith(pfx):
+                clean_p = clean_p[len(pfx):].strip()
 
-        send_telegram(chat_id, f"🎨 <b>Generating image using open-source FLUX.1 engine...</b>\nPrompt: <i>'{prompt}'</i>")
-        img_bytes = generate_image_flux(prompt)
+        clean_p = re.sub(r'^(?:a|an)\s+', '', clean_p, flags=re.IGNORECASE).strip()
+        clean_p = re.sub(r'\s+(?:image|picture|photo)$', '', clean_p, flags=re.IGNORECASE).strip()
+
+        # Handle requests like "land image" or "land"
+        if not clean_p or clean_p.lower() in ["image", "picture", "photo"]:
+            clean_p = "vast scenic landscape with lush green terrain, rolling hills, mountains, dramatic horizon"
+        elif clean_p.lower() in ["land", "a land"]:
+            clean_p = "vast scenic landscape with lush green terrain, rolling hills, mountains, open dramatic sky"
+
+        send_telegram(chat_id, f"🎨 <b>Generating image with open-source FLUX.1 engine...</b>\nPrompt: <i>'{clean_p}'</i>")
+        img_bytes = generate_image_flux(clean_p)
         if img_bytes:
-            _LAST_IMAGE_PROMPTS[chat_id] = prompt
-            send_telegram_photo(chat_id, img_bytes, caption=f"🎨 <b>Generated Image:</b> <i>'{prompt}'</i>\n⚡ <i>Open-source FLUX.1 Engine</i>")
+            _LAST_IMAGE_PROMPTS[chat_id] = clean_p
+            send_telegram_photo(chat_id, img_bytes, caption=f"🎨 <b>Generated Image:</b> <i>'{clean_p}'</i>\n⚡ <i>Open-source FLUX.1 Engine (Watermark-Free)</i>")
         else:
             send_telegram(chat_id, "⚠️ The free open-source image generation service is temporarily busy. Please try another prompt in a moment!")
         return

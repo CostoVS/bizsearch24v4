@@ -23,9 +23,22 @@ if command -v ollama &> /dev/null; then
     fi
 fi
 
-echo "Updating /opt/hermes-searchbiz/hermes_searchbiz_agent.py..."
+echo "Updating /opt/hermes-searchbiz scripts and tools..."
 cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
 chmod +x "${APP_DIR}/hermes_searchbiz_agent.py"
+
+# Deploy Open-Source Monitor & Security CLI tools
+if [ -f "monitor_vps.sh" ]; then
+    cp monitor_vps.sh "${APP_DIR}/monitor_vps.sh"
+    chmod +x "${APP_DIR}/monitor_vps.sh"
+    cp monitor_vps.sh /usr/local/bin/monitor_vps 2>/dev/null || true
+    chmod +x /usr/local/bin/monitor_vps 2>/dev/null || true
+fi
+
+if [ -f "setup_security.sh" ]; then
+    cp setup_security.sh "${APP_DIR}/setup_security.sh"
+    chmod +x "${APP_DIR}/setup_security.sh"
+fi
 
 # Ensure .env has active ai@searchbiz.co.za credentials
 if [ -f "${APP_DIR}/.env" ]; then
