@@ -10,7 +10,7 @@ mkdir -p "${APP_DIR}/leads_storage"
 
 echo "Ensuring Python dependencies and local Ollama are ready..."
 if command -v pip3 &> /dev/null; then
-    pip3 install --break-system-packages edge-tts requests python-docx reportlab pillow 2>/dev/null || true
+    pip3 install --break-system-packages edge-tts requests python-docx reportlab pillow 2>/dev/null || pip3 install edge-tts requests python-docx reportlab pillow 2>/dev/null || true
 fi
 
 # Ensure Ollama service is running if installed

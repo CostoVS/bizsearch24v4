@@ -276,6 +276,28 @@ def get_user_facts_prompt(chat_id: int) -> str:
     lines = [f"- {k.replace('_', ' ').title()}: {v}" for k, v in facts]
     return "\nPERMANENT KNOWLEDGE & FACTS YOU REMEMBER ABOUT THIS FOUNDER/USER:\n" + "\n".join(lines) + "\n"
 
+def is_always_voice_enabled(chat_id: int) -> bool:
+    """Checks if Dual Voice + Text mode is active (default is True)."""
+    facts = get_user_facts(chat_id)
+    f_dict = {k: v for k, v in facts} if facts else {}
+    val = f_dict.get("always_voice", "true").lower()
+    return val not in ["false", "0", "no", "off"]
+
+def set_always_voice(chat_id: int, enabled: bool) -> bool:
+    """Saves user's Dual Voice + Text preference."""
+    return save_user_fact(chat_id, "always_voice", "true" if enabled else "false")
+
+def get_user_voice_profile(chat_id: int) -> str:
+    """Retrieves preferred voice profile (default: crisp, alluring British lady - sonia)."""
+    facts = get_user_facts(chat_id)
+    f_dict = {k: v for k, v in facts} if facts else {}
+    return f_dict.get("voice_profile", "sonia_british")
+
+def set_user_voice_profile(chat_id: int, profile: str) -> bool:
+    """Stores chosen voice profile."""
+    return save_user_fact(chat_id, "voice_profile", profile)
+
+
 
 # ============================================================================
 # Scheduled Tasks & Daily Weather Daemon (SAST UTC+2)
@@ -1310,18 +1332,24 @@ def analyze_image_with_vision(image_bytes: bytes, user_prompt: str = "") -> str:
 # ============================================================================
 # Multimodal Voice (Understand Voice Notes sent in Telegram)
 # ============================================================================
-def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-    """Understands voice notes across all languages using multimodal audio processing."""
+def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg", chat_id: Optional[int] = None) -> dict:
+    """Understands voice notes across all languages using multimodal audio processing.
+    Returns a dict with 'transcription' and 'response'."""
+    prompt = (
+        "You are Hermes, the autonomous AI Chief of Staff and Executive Partner for SearchBiz South Africa. "
+        "Listen to this user voice note very carefully. "
+        "The speaker may be talking in English, South African English, isiZulu, Afrikaans, isiXhosa, Sesotho, Setswana, or any other South African language. "
+        "1. Transcribe exactly what they said. "
+        "2. If they asked a question, gave an instruction, or commented, provide both the transcription and a direct, warm, witty, human executive answer.\n"
+        "Output format strictly:\n"
+        "TRANSCRIPTION: <exact transcription>\n"
+        "RESPONSE: <your direct, human-like executive response>"
+    )
+
+    # 1. Direct Gemini Multimodal API (if GEMINI_API_KEY is in VPS env)
     if GEMINI_API_KEY:
         b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        prompt = (
-            "You are Hermes, the autonomous South African executive assistant for SearchBiz. "
-            "Listen to this voice note from the user very carefully. "
-            "The speaker may be talking in English, isiZulu, Afrikaans, isiXhosa, Sesotho, Sepedi, Setswana, or any other South African language. "
-            "1. Transcribe exactly what they said. "
-            "2. If they asked a question or gave an instruction, provide both the transcription and the direct answer/solution."
-        )
-        for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+        for model in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
                 payload = {
@@ -1332,42 +1360,91 @@ def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg
                             {"text": prompt}
                         ]
                     }],
-                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800}
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 800}
                 }
                 req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=30) as res:
                     g_data = json.loads(res.read().decode("utf-8"))
                     cands = g_data.get("candidates", [])
                     if cands:
-                        text_val = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        if text_val:
-                            return text_val.strip()
+                        raw = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        if raw:
+                            trans = ""
+                            ans = raw
+                            if "TRANSCRIPTION:" in raw and "RESPONSE:" in raw:
+                                p = raw.split("RESPONSE:")
+                                trans = p[0].replace("TRANSCRIPTION:", "").strip()
+                                ans = p[1].strip()
+                            return {"transcription": trans or "Audio voice note", "response": ans}
             except Exception as e:
                 logger.error(f"Audio transcription error on {model}: {e}")
 
-    return "🎤 <b>Voice Note Received!</b>\n\nTo transcribe voice notes instantly across all 11 South African languages, ensure your <code>GEMINI_API_KEY</code> is configured in <code>/opt/hermes-searchbiz/.env</code>!"
+    # 2. SearchBiz Cloud API Transcription Endpoint (/api/gemini/transcribe)
+    try:
+        api_base = get_active_api_base()
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        req_url = f"{api_base}/api/gemini/transcribe"
+        payload = json.dumps({"audio": b64, "mimeType": mime_type, "prompt": prompt}).encode("utf-8")
+        req = urllib.request.Request(req_url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=35) as res:
+            data = json.loads(res.read().decode("utf-8"))
+            if data.get("success") or data.get("response"):
+                return {
+                    "transcription": data.get("transcription", "Voice note received"),
+                    "response": data.get("response", data.get("text", ""))
+                }
+    except Exception as e:
+        logger.debug(f"Cloud transcription endpoint error: {e}")
+
+    # 3. Fallback prompt
+    return {
+        "transcription": "Voice message",
+        "response": "I received your voice note! To enable instant transcription across all South African languages, make sure your GEMINI_API_KEY is active in your VPS .env file or SearchBiz cloud settings."
+    }
 
 
 # ============================================================================
-# Free Text-To-Speech (TTS) Voice Synthesis (Young British Lady & Multilingual)
+# Free Text-To-Speech (TTS) Voice Synthesis (Crisp, Alluring British Lady)
 # ============================================================================
-def generate_tts_audio(text: str, voice_profile: str = "british_female", lang: str = "en-GB") -> Optional[bytes]:
-    """Generates spoken voice audio in a charming Young British Lady accent with multi-tier fallback."""
+def generate_tts_audio(text: str, voice_profile: str = "sonia_british", lang: str = "en-GB") -> Optional[bytes]:
+    """Generates spoken voice audio in a sharp, captivating, and articulate British Lady accent."""
     clean_t = re.sub(r'<[^>]+>', '', text).strip()
     clean_t = re.sub(r'[*_#`~]', '', clean_t).strip()
     if not clean_t:
         return None
     clean_t = clean_t[:800]
 
-    # 1. Edge-TTS Neural Voice (High-Fidelity Young British Lady: en-GB-MaisieNeural)
+    # 1. Edge-TTS Neural Voice (High-Fidelity British RP: en-GB-SoniaNeural / Libby / Maisie)
     try:
         import edge_tts
         import asyncio
 
         async def _stream_edge():
-            # en-GB-MaisieNeural is a warm, youthful, conversational British female voice
-            v_name = "en-GB-MaisieNeural" if "british" in voice_profile.lower() or lang in ["en-GB", "en-uk"] else "en-ZA-LeahNeural"
-            comm = edge_tts.Communicate(clean_t, voice=v_name)
+            vp = voice_profile.lower().strip()
+            # Choice of fine British voices:
+            # - Sonia: Crisp, aristocratic, articulate, sharp, and captivating RP British lady (Default)
+            # - Libby: Warm, melodious, modern British lady
+            # - Maisie: Youthful, casual British
+            # - Leah: South African English
+            if "libby" in vp:
+                v_name = "en-GB-LibbyNeural"
+                rate = "+2%"
+                pitch = "+1Hz"
+            elif "maisie" in vp:
+                v_name = "en-GB-MaisieNeural"
+                rate = "+1%"
+                pitch = "+0Hz"
+            elif "south_african" in vp or "za" in vp or "leah" in vp:
+                v_name = "en-ZA-LeahNeural"
+                rate = "+0%"
+                pitch = "+0Hz"
+            else:
+                # Default: Sharp, captivating British lady (en-GB-SoniaNeural)
+                v_name = "en-GB-SoniaNeural"
+                rate = "+2%"
+                pitch = "+1Hz"
+
+            comm = edge_tts.Communicate(clean_t, voice=v_name, rate=rate, pitch=pitch)
             out = bytearray()
             async for chunk in comm.stream():
                 if chunk.get("type") == "audio":
@@ -1397,7 +1474,6 @@ def generate_tts_audio(text: str, voice_profile: str = "british_female", lang: s
     }
     t_code = lang_map.get(voice_profile.lower().strip(), lang if len(lang) <= 5 else "en-GB")
 
-    # Split text into sentences/clauses to avoid single-query truncation
     raw_sentences = re.split(r'([.!?\n]+)', clean_t)
     chunks = []
     curr = ""
@@ -1417,7 +1493,7 @@ def generate_tts_audio(text: str, voice_profile: str = "british_female", lang: s
     for chunk in chunks[:6]:
         if not chunk.strip():
             continue
-        for try_code in [t_code, "en-GB", "en-uk", "en"]:
+        for try_code in ["en-GB", t_code, "en-uk", "en"]:
             try:
                 url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={try_code}&client=tw-ob&q={urllib.parse.quote(chunk.strip())}"
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -1432,6 +1508,41 @@ def generate_tts_audio(text: str, voice_profile: str = "british_female", lang: s
     if combined_audio and len(combined_audio) > 500:
         return combined_audio
     return None
+
+
+def send_telegram_dual(chat_id: int, text: str, voice_override: Optional[str] = None):
+    """Sends rich formatted HTML text message AND generates a matching spoken voice note
+    in Hermes' sharp, captivating British accent whenever Dual Voice Mode is active."""
+    # 1. Send text message
+    send_telegram(chat_id, text)
+
+    # 2. If dual voice mode is active (default is True), generate and send matching voice note
+    if is_always_voice_enabled(chat_id):
+        try:
+            spoken_source = voice_override or text
+            clean_speech = re.sub(r'<[^>]+>', ' ', spoken_source)
+            clean_speech = re.sub(r'[*_#`~]', '', clean_speech)
+            clean_speech = re.sub(r'https?://\S+', '', clean_speech)
+            clean_speech = re.sub(r'[\r\n]+', ' ', clean_speech)
+            clean_speech = re.sub(r'\s+', ' ', clean_speech).strip()
+
+            # Keep spoken voice note crisp and engaging (up to 450 characters)
+            if len(clean_speech) > 450:
+                end_match = re.search(r'[.!?](?=[^.!?]*$)', clean_speech[:450])
+                if end_match:
+                    clean_speech = clean_speech[:end_match.end()]
+                else:
+                    clean_speech = clean_speech[:450]
+
+            if clean_speech and len(clean_speech) > 5:
+                send_chat_action(chat_id, "record_voice")
+                profile = get_user_voice_profile(chat_id)
+                v_bytes = generate_tts_audio(clean_speech, voice_profile=profile)
+                if v_bytes:
+                    send_telegram_voice(chat_id, v_bytes)
+        except Exception as e:
+            logger.error(f"Failed to generate dual voice note: {e}")
+
 
 
 # ============================================================================
@@ -2364,8 +2475,30 @@ def handle_message(message: dict):
 
         audio_bytes = download_telegram_file(file_id)
         if audio_bytes:
-            audio_reply = transcribe_and_execute_audio(audio_bytes, mime_type=mime)
-            send_telegram(chat_id, audio_reply)
+            res = transcribe_and_execute_audio(audio_bytes, mime_type=mime, chat_id=chat_id)
+            transcription = res.get("transcription", "").strip()
+            response_text = res.get("response", "").strip()
+
+            # If the user spoke a recognizable actionable command, execute it directly
+            lower_trans = transcription.lower()
+            actionable_triggers = [
+                "weather", "rain", "monitor", "vps", "clean vps", "free ram",
+                "docx", "word document", "pdf", "search google", "price", "plan"
+            ]
+            if any(k in lower_trans for k in actionable_triggers) and len(lower_trans.split()) <= 15:
+                synthetic = dict(message)
+                synthetic["text"] = transcription
+                if "voice" in synthetic:
+                    del synthetic["voice"]
+                if "audio" in synthetic:
+                    del synthetic["audio"]
+                send_telegram(chat_id, f"🎙️ <b>Heard:</b> <i>\"{transcription}\"</i>\n⚙️ <i>Executing your request now...</i>")
+                handle_message(synthetic)
+                return
+
+            # Otherwise reply with both formatted text and voice note
+            formatted_text = f"🎙️ <b>Heard:</b> <i>\"{transcription}\"</i>\n\n🏛️ <b>Hermes:</b>\n{response_text}"
+            send_telegram_dual(chat_id, formatted_text, voice_override=response_text)
         else:
             send_telegram(chat_id, "⚠️ Could not download the voice note from Telegram. Please try speaking again.")
         return
@@ -2867,23 +3000,50 @@ Format requirements:
         return
 
     # -------------------------------------------------------------------------
-    # 9. Voice Reading & Text-To-Speech (Young British Lady Voice Option)
+    # 9. Voice Reading & Text-To-Speech (Sharp, Alluring British Lady & Dual Mode)
     # -------------------------------------------------------------------------
-    if text.startswith("/voice_accent") or text.startswith("/voice_profile"):
+    if text.startswith("/always_voice") or text.startswith("/voice_mode"):
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            val = parts[1].strip().lower()
+            if val in ["off", "disable", "no", "false", "0"]:
+                set_always_voice(chat_id, False)
+                send_telegram(chat_id, "🔇 <b>Dual Voice Mode: OFF</b>\n\nI will now respond with text only. (Send <code>/voice_mode on</code> anytime to re-enable voice responses!)")
+                return
+            else:
+                set_always_voice(chat_id, True)
+                send_telegram_dual(chat_id, "🎙️ <b>Dual Voice Mode: ON</b>\n\nEvery response will now be accompanied by both text and my sharp British voice note, darling!")
+                return
+        else:
+            cur_state = "ON" if is_always_voice_enabled(chat_id) else "OFF"
+            send_telegram(chat_id, f"🎙️ <b>Dual Voice Mode Status:</b> <b>{cur_state}</b>\n\n• <code>/voice_mode on</code> — Always reply with text AND spoken voice note\n• <code>/voice_mode off</code> — Reply with text only")
+            return
+
+    if text.startswith("/voice_accent") or text.startswith("/voice_profile") or text.startswith("/voice_style"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             chosen = parts[1].strip().lower()
-            if "british" in chosen or "uk" in chosen or "lady" in chosen:
-                save_user_fact(chat_id, "voice_accent", "british_female")
-                send_telegram(chat_id, "🎙️ <b>Voice Preference Saved:</b> <b>Young British Lady</b> accent is now your default!")
-            elif "south" in chosen or "za" in chosen or "african" in chosen:
-                save_user_fact(chat_id, "voice_accent", "south_african")
-                send_telegram(chat_id, "🎙️ <b>Voice Preference Saved:</b> <b>South African English</b> accent is now your default!")
+            if "libby" in chosen:
+                set_user_voice_profile(chat_id, "libby_british")
+                send_telegram_dual(chat_id, "🎙️ <b>Voice Style Set:</b> <b>Libby (Warm & Melodious British Lady)</b>!")
+            elif "maisie" in chosen:
+                set_user_voice_profile(chat_id, "maisie_british")
+                send_telegram_dual(chat_id, "🎙️ <b>Voice Style Set:</b> <b>Maisie (Youthful British Lady)</b>!")
+            elif "south" in chosen or "za" in chosen or "african" in chosen or "leah" in chosen:
+                set_user_voice_profile(chat_id, "south_african")
+                send_telegram_dual(chat_id, "🎙️ <b>Voice Style Set:</b> <b>South African English</b> accent!")
             else:
-                save_user_fact(chat_id, "voice_accent", chosen)
-                send_telegram(chat_id, f"🎙️ <b>Voice Preference Saved:</b> <code>{chosen}</code>")
+                # Default: Sharp, captivating British lady
+                set_user_voice_profile(chat_id, "sonia_british")
+                send_telegram_dual(chat_id, "🎙️ <b>Voice Style Set:</b> <b>Sonia (Sharp, Articulate & Alluring British Lady)</b>!")
         else:
-            send_telegram(chat_id, "🎙️ <b>Voice Options:</b>\n• <code>/voice_accent british</code> — Charming Young British Lady (Default)\n• <code>/voice_accent south_african</code> — South African English")
+            send_telegram(chat_id, """🎙️ <b>Voice Profiles Available:</b>
+• <code>/voice_style sonia</code> — <b>Sonia</b>: Sharp, articulate & captivating British Lady (Default)
+• <code>/voice_style libby</code> — <b>Libby</b>: Warm, melodious British Lady
+• <code>/voice_style maisie</code> — <b>Maisie</b>: Youthful British Lady
+• <code>/voice_style za</code> — <b>Leah</b>: South African English
+
+<i>Dual Voice Mode is currently active so I will reply to every question with voice and text!</i>""")
         return
 
     is_speech_req = text.startswith("/speak") or text.startswith("/read_to_me") or text.startswith("/voice") or any(k in lower for k in [
@@ -2895,23 +3055,25 @@ Format requirements:
         # Check if user just wants a voice introduction / sample
         if lower.strip() in ["/voice", "/voice sample", "/voice_sample", "voice sample", "test voice", "sample voice"]:
             sample_text = (
-                "Hello darling! I am Hermes, your executive assistant for SearchBiz. "
-                "I am now speaking with a charming young British accent, just as you requested! "
-                "Whatever you need—checking the weather with rain probabilities, managing your directory listings, "
-                "creating Word and PDF documents, or reviewing your leads—I am right here at your service."
+                "Hello darling. I am Hermes, your executive partner for SearchBiz. "
+                "I have tuned my British accent to be crisp, sharp, and rather captivating, just as you fancied. "
+                "From now on, whenever you send me a voice note or ask me any question, I will listen closely and reply with both my voice and full text. "
+                "What shall we conquer together today?"
             )
-            v_bytes = generate_tts_audio(sample_text, voice_profile="british_female")
+            profile = get_user_voice_profile(chat_id)
+            v_bytes = generate_tts_audio(sample_text, voice_profile=profile)
             if v_bytes:
-                send_telegram_voice(chat_id, v_bytes, caption="🎙️ <i>Young British Lady voice introduction from Hermes</i>")
-            send_telegram(chat_id, """🎙️ <b>Young British Lady Voice Active!</b>
+                send_telegram_voice(chat_id, v_bytes, caption="🎙️ <i>Sharp & Alluring British Lady voice introduction from Hermes</i>")
+            send_telegram(chat_id, """🎙️ <b>Sharp British Lady Voice Active & Ready!</b>
 
-I've activated your requested <b>Young British Lady</b> voice profile as your default.
+I've tuned my British accent to be sharper, crisp, and captivating. <b>Dual Voice Mode is ON by default:</b>
 
-✨ <b>How to use:</b>
-• <code>/voice [text]</code> — I will speak your text with a young British accent.
-• <code>/speak [text]</code> — Instant spoken audio response.
-• <code>/read_to_me</code> — Reads out my latest message to you.
-• Or tell me in chat: <i>"Send me a voice note about [topic]"</i>!""")
+✨ <b>Voice Controls:</b>
+• <b>Send me a voice note:</b> I will listen, transcribe, reason, and reply with both text and voice!
+• <b>Ask me any question:</b> I will answer in full text and speak it to you!
+• <code>/voice_mode on|off</code> — Toggle automatic voice notes for every reply
+• <code>/voice_style sonia|libby|maisie</code> — Choose your preferred British voice tone
+• <code>/voice [text]</code> — Speak any custom text out loud""")
             return
 
         speech_text = text
@@ -2929,22 +3091,18 @@ I've activated your requested <b>Young British Lady</b> voice profile as your de
                     break
 
         if not speech_text:
-            speech_text = "Good day! I am Hermes, your SearchBiz executive assistant, speaking with a young British accent."
+            speech_text = "Good day, darling. I am Hermes, your SearchBiz executive partner, speaking with a crisp British accent."
 
-        # Fetch stored voice preference (defaults to young British lady)
-        facts_list = get_user_facts(chat_id)
-        facts_dict = {k: v for k, v in facts_list} if facts_list else {}
-        preferred_profile = facts_dict.get("voice_accent", "british_female")
-
-        voice_bytes = generate_tts_audio(speech_text, voice_profile=preferred_profile)
+        profile = get_user_voice_profile(chat_id)
+        voice_bytes = generate_tts_audio(speech_text, voice_profile=profile)
         sent = False
         if voice_bytes:
-            sent_res = send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio from Hermes (Young British Lady)</i>")
+            sent_res = send_telegram_voice(chat_id, voice_bytes, caption="🎙️ <i>Spoken audio from Hermes (Sharp British Lady)</i>")
             if sent_res and sent_res.get("ok"):
                 sent = True
 
         if not sent:
-            send_telegram(chat_id, f"🔊 <b>Readout (Young British Accent):</b>\n\n\"{speech_text}\"")
+            send_telegram(chat_id, f"🔊 <b>Readout (Sharp British Accent):</b>\n\n\"{speech_text}\"")
         return
 
     # -------------------------------------------------------------------------
@@ -3085,20 +3243,20 @@ Translate the content accurately, idiomatically, and culturally appropriate into
         city = text.split(" ", 1)[-1].strip() if " " in text else "Durban"
         send_chat_action(chat_id, "typing")
         report = get_weather(city)
-        send_telegram(chat_id, report)
+        send_telegram_dual(chat_id, report)
         return
 
     if text.startswith("/crypto") or text.startswith("/btc"):
         symbol = text.split(" ", 1)[-1].strip() if " " in text else "BTC"
         send_chat_action(chat_id, "typing")
         report = get_crypto_price(symbol)
-        send_telegram(chat_id, report)
+        send_telegram_dual(chat_id, report)
         return
 
     if text == "/date" or text == "/time":
         send_chat_action(chat_id, "typing")
         report = get_current_datetime_sast()
-        send_telegram(chat_id, report)
+        send_telegram_dual(chat_id, report)
         return
 
     if text.startswith("/search") or text.startswith("/google"):
@@ -3108,7 +3266,7 @@ Translate the content accurately, idiomatically, and culturally appropriate into
             return
         send_chat_action(chat_id, "typing")
         report = search_web(q, chat_id=chat_id)
-        send_telegram(chat_id, report)
+        send_telegram_dual(chat_id, report)
         return
 
     # -------------------------------------------------------------------------
@@ -3129,24 +3287,24 @@ I am your autonomous AI Executive Assistant for <b>SearchBiz</b> (<code>{base_ur
 
 ✨ <b>My Superpowers:</b>
 🧠 <b>Permanent Memory:</b> I remember facts, tasks, and context across reboots.
+🎙️ <b>Dual Voice & Text:</b> I speak in a sharp, captivating British accent and understand voice notes!
 📄 <b>Word & PDF Creation:</b> Ask me to generate Word (.docx) or PDF (.pdf) documents.
 ⏰ <b>Scheduled Daily Jobs:</b> Automated daily weather or briefings at your exact chosen time.
 🎨 <b>Free Open-Source Image Generator:</b> FLUX.1 high-resolution images on demand.
 📸 <b>Multimodal Vision:</b> Send photos or receipts and I will inspect and read them.
-🎙️ <b>Multimodal Voice Notes:</b> Send voice messages and I will transcribe and solve them.
 🗣️ <b>11 South African Languages:</b> Fluent in isiZulu, Afrikaans, isiXhosa, Sesotho, etc.
 🌐 <b>Live Web Search:</b> Real Google/Web search with factual synthesis and source links.
 🏢 <b>Directory & Email Engine:</b> Manage SearchBiz ads, send emails, and create mailboxes.
 
 How can I assist you right now, <b>{sender}</b>?"""
-        send_telegram(chat_id, reply)
+        send_telegram_dual(chat_id, reply)
         return
 
     # Live Date & Time Queries
     date_triggers = ["what is the day today", "what day is it", "what day is today", "what's today's date", "what time is it", "current time", "what is the date"]
     if any(t in lower for t in date_triggers):
         reply = get_current_datetime_sast()
-        send_telegram(chat_id, reply)
+        send_telegram_dual(chat_id, reply)
         return
 
     # Real-Time Crypto Price Queries
@@ -3157,7 +3315,7 @@ How can I assist you right now, <b>{sender}</b>?"""
         elif "sol" in lower: sym = "SOL"
         elif "xrp" in lower: sym = "XRP"
         reply = get_crypto_price(sym)
-        send_telegram(chat_id, reply)
+        send_telegram_dual(chat_id, reply)
         return
 
     # Live Weather Queries with Rain Probability Handling
@@ -3167,10 +3325,10 @@ How can I assist you right now, <b>{sender}</b>?"""
             # Answer the reasoning question conversationally, then provide the updated weather card with rain %
             ai_explanation = ask_ai(text, chat_id=chat_id)
             w_box = get_weather(text)
-            send_telegram(chat_id, f"{ai_explanation}\n\n{w_box}")
+            send_telegram_dual(chat_id, f"{ai_explanation}\n\n{w_box}")
             return
         reply = get_weather(text)
-        send_telegram(chat_id, reply)
+        send_telegram_dual(chat_id, reply)
         return
 
     # Live Web Search Queries (e.g. "go on Google and find out...", "search this on google...")
@@ -3182,12 +3340,12 @@ How can I assist you right now, <b>{sender}</b>?"""
     ]
     if any(t in lower for t in web_search_triggers):
         reply = search_web(text, chat_id=chat_id)
-        send_telegram(chat_id, reply)
+        send_telegram_dual(chat_id, reply)
         return
 
     # Conversational Banter
     if any(p in lower for p in ["i never ask how", "i didn't ask how", "did i ask how", "nobody asked"]):
-        send_telegram(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what task can I tackle for you?")
+        send_telegram_dual(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what task can I tackle for you?")
         return
 
     # Natural Language Ad Creation
@@ -3206,9 +3364,9 @@ How can I assist you right now, <b>{sender}</b>?"""
         res = searchbiz_create_ad(title, category, city, phone, f"Verified {category} in {city}.")
         if res.get("success"):
             ad = res["ad"]
-            send_telegram(chat_id, f"✅ <b>Advertisement Live!</b>\n🏢 <b>{ad.get('title')}</b>\n🏷️ {ad.get('category')} | 📍 {ad.get('city')}\n📞 {ad.get('phone')}\n🆔 <code>{ad.get('id')}</code>")
+            send_telegram_dual(chat_id, f"✅ <b>Advertisement Live!</b>\n🏢 <b>{ad.get('title')}</b>\n🏷️ {ad.get('category')} | 📍 {ad.get('city')}\n📞 {ad.get('phone')}\n🆔 <code>{ad.get('id')}</code>")
         else:
-            send_telegram(chat_id, f"❌ Failed to create ad: {res.get('error')}")
+            send_telegram_dual(chat_id, f"❌ Failed to create ad: {res.get('error')}")
         return
 
     # 14. Conversational AI Assistant with Deep Reasoning & Long-Term Memory
@@ -3217,11 +3375,11 @@ How can I assist you right now, <b>{sender}</b>?"""
         chat_id=chat_id
     )
     if ai_reply:
-        send_telegram(chat_id, ai_reply)
+        send_telegram_dual(chat_id, ai_reply)
         return
 
     # 15. General Guidance
-    send_telegram(chat_id, f"""🏛️ <b>SearchBiz Hermes Executive Assistant</b>
+    send_telegram_dual(chat_id, f"""🏛️ <b>SearchBiz Hermes Executive Assistant</b>
 I'm here with you, <b>{sender}</b>!
 
 Try any of these:
