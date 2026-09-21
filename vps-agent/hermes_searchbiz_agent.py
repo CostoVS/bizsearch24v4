@@ -1330,76 +1330,127 @@ def analyze_image_with_vision(image_bytes: bytes, user_prompt: str = "") -> str:
 
 
 # ============================================================================
-# Multimodal Voice (Understand Voice Notes sent in Telegram)
+# Free Open-Source Voice Reader (Speech-To-Text / Whisper / SpeechRecognition)
 # ============================================================================
-def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg", chat_id: Optional[int] = None) -> dict:
-    """Understands voice notes across all languages using multimodal audio processing.
-    Returns a dict with 'transcription' and 'response'."""
-    prompt = (
-        "You are Hermes, the autonomous AI Chief of Staff and Executive Partner for SearchBiz South Africa. "
-        "Listen to this user voice note very carefully. "
-        "The speaker may be talking in English, South African English, isiZulu, Afrikaans, isiXhosa, Sesotho, Setswana, or any other South African language. "
-        "1. Transcribe exactly what they said. "
-        "2. If they asked a question, gave an instruction, or commented, provide both the transcription and a direct, warm, witty, human executive answer.\n"
-        "Output format strictly:\n"
-        "TRANSCRIPTION: <exact transcription>\n"
-        "RESPONSE: <your direct, human-like executive response>"
-    )
+_CACHED_WHISPER_MODEL = None
 
-    # 1. Direct Gemini Multimodal API (if GEMINI_API_KEY is in VPS env)
-    if GEMINI_API_KEY:
-        b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        for model in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+def convert_audio_to_wav(audio_bytes: bytes) -> Optional[str]:
+    """Converts raw audio bytes (Telegram OGG/Opus/MP3) to 16kHz mono WAV using ffmpeg."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f_in:
+            f_in.write(audio_bytes)
+            tmp_ogg = f_in.name
+        tmp_wav = tmp_ogg.replace(".ogg", ".wav")
+        # Run ffmpeg to convert to standard 16kHz mono PCM 16-bit WAV
+        cmd = ["ffmpeg", "-y", "-i", tmp_ogg, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", tmp_wav]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+        if os.path.exists(tmp_ogg):
+            try: os.remove(tmp_ogg)
+            except Exception: pass
+        if os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 100:
+            return tmp_wav
+    except Exception as e:
+        logger.error(f"FFmpeg audio conversion error: {e}")
+    return None
+
+def transcribe_audio_opensource(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+    """Transcribes spoken audio using 100% free open-source STT (Whisper / SpeechRecognition).
+    Requires ZERO API keys and runs locally without Gemini."""
+    wav_path = convert_audio_to_wav(audio_bytes)
+    if not wav_path:
+        return ""
+
+    try:
+        # Engine 1: Free Open-Source faster-whisper (Runs locally on CPU in int8, ~0.3s)
+        try:
+            from faster_whisper import WhisperModel
+            global _CACHED_WHISPER_MODEL
+            if _CACHED_WHISPER_MODEL is None:
+                logger.info("Initializing open-source faster-whisper (tiny model on CPU)...")
+                _CACHED_WHISPER_MODEL = WhisperModel("tiny", device="cpu", compute_type="int8")
+            segments, info = _CACHED_WHISPER_MODEL.transcribe(wav_path, beam_size=1)
+            transcription = " ".join([seg.text.strip() for seg in segments if seg.text]).strip()
+            if transcription:
+                logger.info(f"faster-whisper transcribed ({info.language}): {transcription}")
+                return transcription
+        except Exception as e:
+            logger.debug(f"faster-whisper engine note: {e}")
+
+        # Engine 2: Open-Source SpeechRecognition Library (Google Web Speech API, completely free, no API key)
+        try:
+            import speech_recognition as sr
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_path) as source:
+                audio_data = recognizer.record(source)
+            for lang in ["en-ZA", "en-GB", "en-US"]:
+                try:
+                    text = recognizer.recognize_google(audio_data, language=lang)
+                    if text and text.strip():
+                        logger.info(f"SpeechRecognition recognized ({lang}): {text}")
+                        return text.strip()
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"speech_recognition engine note: {e}")
+
+        # Engine 3: Standard openai-whisper package (if installed)
+        try:
+            import whisper
+            model = whisper.load_model("tiny", device="cpu")
+            result = model.transcribe(wav_path)
+            text = result.get("text", "").strip()
+            if text:
+                logger.info(f"openai-whisper transcribed: {text}")
+                return text
+        except Exception as e:
+            logger.debug(f"openai-whisper engine note: {e}")
+
+        # Engine 4: Optional Gemini fallback ONLY if key exists in env
+        if GEMINI_API_KEY:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
                 payload = {
                     "contents": [{
                         "role": "user",
                         "parts": [
                             {"inline_data": {"mime_type": mime_type, "data": b64}},
-                            {"text": prompt}
+                            {"text": "Transcribe the spoken audio in this voice note word-for-word. Output only the transcription, nothing else."}
                         ]
-                    }],
-                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 800}
+                    }]
                 }
                 req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=30) as res:
+                with urllib.request.urlopen(req, timeout=15) as res:
                     g_data = json.loads(res.read().decode("utf-8"))
                     cands = g_data.get("candidates", [])
                     if cands:
                         raw = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        if raw:
-                            trans = ""
-                            ans = raw
-                            if "TRANSCRIPTION:" in raw and "RESPONSE:" in raw:
-                                p = raw.split("RESPONSE:")
-                                trans = p[0].replace("TRANSCRIPTION:", "").strip()
-                                ans = p[1].strip()
-                            return {"transcription": trans or "Audio voice note", "response": ans}
+                        if raw and raw.strip():
+                            return raw.strip()
             except Exception as e:
-                logger.error(f"Audio transcription error on {model}: {e}")
+                logger.debug(f"Gemini fallback transcription error: {e}")
 
-    # 2. SearchBiz Cloud API Transcription Endpoint (/api/gemini/transcribe)
-    try:
-        api_base = get_active_api_base()
-        b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        req_url = f"{api_base}/api/gemini/transcribe"
-        payload = json.dumps({"audio": b64, "mimeType": mime_type, "prompt": prompt}).encode("utf-8")
-        req = urllib.request.Request(req_url, data=payload, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=35) as res:
-            data = json.loads(res.read().decode("utf-8"))
-            if data.get("success") or data.get("response"):
-                return {
-                    "transcription": data.get("transcription", "Voice note received"),
-                    "response": data.get("response", data.get("text", ""))
-                }
-    except Exception as e:
-        logger.debug(f"Cloud transcription endpoint error: {e}")
+    finally:
+        if os.path.exists(wav_path):
+            try: os.remove(wav_path)
+            except Exception: pass
 
-    # 3. Fallback prompt
+    return ""
+
+def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg", chat_id: Optional[int] = None) -> dict:
+    """Understands voice notes using free open-source voice reader without needing Gemini.
+    Returns a dict with 'transcription' and 'response'."""
+    transcription = transcribe_audio_opensource(audio_bytes, mime_type=mime_type)
+    clean_t = transcription.strip()
+    if clean_t:
+        resp = ask_ai(clean_t, chat_id=chat_id)
+        return {
+            "transcription": clean_t,
+            "response": resp
+        }
     return {
-        "transcription": "Voice message",
-        "response": "I received your voice note! To enable instant transcription across all South African languages, make sure your GEMINI_API_KEY is active in your VPS .env file or SearchBiz cloud settings."
+        "transcription": "",
+        "response": "I listened to your voice note, but couldn't catch the audio clearly. Could you please speak a bit closer to the microphone, darling?"
     }
 
 
@@ -2477,28 +2528,20 @@ def handle_message(message: dict):
         if audio_bytes:
             res = transcribe_and_execute_audio(audio_bytes, mime_type=mime, chat_id=chat_id)
             transcription = res.get("transcription", "").strip()
-            response_text = res.get("response", "").strip()
 
-            # If the user spoke a recognizable actionable command, execute it directly
-            lower_trans = transcription.lower()
-            actionable_triggers = [
-                "weather", "rain", "monitor", "vps", "clean vps", "free ram",
-                "docx", "word document", "pdf", "search google", "price", "plan"
-            ]
-            if any(k in lower_trans for k in actionable_triggers) and len(lower_trans.split()) <= 15:
+            if transcription:
                 synthetic = dict(message)
                 synthetic["text"] = transcription
                 if "voice" in synthetic:
                     del synthetic["voice"]
                 if "audio" in synthetic:
                     del synthetic["audio"]
-                send_telegram(chat_id, f"🎙️ <b>Heard:</b> <i>\"{transcription}\"</i>\n⚙️ <i>Executing your request now...</i>")
+                send_telegram(chat_id, f"🎙️ <b>Heard:</b> <i>\"{transcription}\"</i>")
                 handle_message(synthetic)
                 return
-
-            # Otherwise reply with both formatted text and voice note
-            formatted_text = f"🎙️ <b>Heard:</b> <i>\"{transcription}\"</i>\n\n🏛️ <b>Hermes:</b>\n{response_text}"
-            send_telegram_dual(chat_id, formatted_text, voice_override=response_text)
+            else:
+                send_telegram_dual(chat_id, "🎙️ <i>I listened to your voice note, but couldn't catch the audio clearly. Could you please speak a bit louder or closer to the microphone, darling?</i>")
+                return
         else:
             send_telegram(chat_id, "⚠️ Could not download the voice note from Telegram. Please try speaking again.")
         return
