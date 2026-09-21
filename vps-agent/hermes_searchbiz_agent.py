@@ -399,7 +399,7 @@ def scheduler_worker():
 # ============================================================================
 def get_active_api_base() -> str:
     """Finds the reachable SearchBiz endpoint dynamically.
-    Tests host-mapped port 3005 (docker), port 3000, and public domain.
+    Tests public domain (https://searchbiz.co.za), host-mapped port 3000, 3005, etc.
     """
     global _CACHED_API_URL
     if _CACHED_API_URL:
@@ -408,12 +408,14 @@ def get_active_api_base() -> str:
     env_url = os.getenv("SEARCHBIZ_API_URL", "").rstrip("/")
     candidates = [
         env_url,
-        "http://127.0.0.1:3005",
-        "http://localhost:3005",
+        "https://searchbiz.co.za",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3005",
         "http://localhost:3000",
-        "https://searchbiz.co.za"
+        "http://localhost:3005"
     ]
+
+    browser_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
     for base in candidates:
         if not base:
@@ -422,19 +424,22 @@ def get_active_api_base() -> str:
             req = urllib.request.Request(
                 f"{base}/api/bot/ad?limit=1",
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SearchBizAgent/2.0",
-                    "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"
+                    "User-Agent": browser_ua,
+                    "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}",
+                    "x-api-key": SEARCHBIZ_BOT_SECRET,
+                    "Accept": "application/json"
                 }
             )
-            with urllib.request.urlopen(req, timeout=3) as res:
+            with urllib.request.urlopen(req, timeout=8) as res:
                 if res.status == 200:
                     logger.info(f"Connected to live SearchBiz API at {base}")
                     _CACHED_API_URL = base
                     return base
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Candidate {base} check note: {e}")
             continue
 
-    _CACHED_API_URL = env_url or "http://127.0.0.1:3005"
+    _CACHED_API_URL = env_url or "https://searchbiz.co.za"
     return _CACHED_API_URL
 
 
@@ -1644,9 +1649,11 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
     base_url = get_active_api_base()
     url = f"{base_url}{endpoint}"
     headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}",
         "x-api-key": SEARCHBIZ_BOT_SECRET,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
     try:
         data_bytes = json.dumps(payload).encode("utf-8") if payload else None
@@ -1686,6 +1693,137 @@ def searchbiz_create_ad(title: str, category: str, city: str, phone: str, descri
     if res.get("success") and res.get("ad"):
         _LAST_CREATED_AD = res.get("ad")
     return res
+
+def parse_and_create_ad_from_text(text: str) -> Optional[Dict[str, Any]]:
+    """Intelligently extracts advertisement fields from natural language or structured multiline text.
+    Handles multiline specs like:
+      Create an ad in searchbiz.co.za
+      Business name test01
+      Address Durban
+      Province kzn
+      Phone number 0821231234
+    as well as conversational sentences like 'Post an ad for ABC Plumbing in Durban phone 0821234567'.
+    """
+    lower = text.lower()
+    ad_triggers = ["create an ad", "place an ad", "post an ad", "make an ad", "add a business", "list a business", "register a business", "create ad", "post ad", "new ad", "add business"]
+    has_ad_trigger = any(k in lower for k in ad_triggers)
+    has_business_spec = any(w in lower for w in ["business name", "company name", "business:", "company:"])
+
+    if not (has_ad_trigger or has_business_spec):
+        return None
+
+    # 1. Parse line by line
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    fields: Dict[str, str] = {}
+    for line in lines:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            fields[k.strip().lower()] = v.strip()
+        else:
+            m = re.match(r"^(business\s+name|company\s+name|business|company|name|address|location|city|suburb|province|phone\s+number|phone|cell|mobile|whatsapp|category|description)\s+(.*)$", line, re.IGNORECASE)
+            if m:
+                fields[m.group(1).strip().lower()] = m.group(2).strip()
+
+    title = fields.get("business name") or fields.get("company name") or fields.get("business") or fields.get("company") or fields.get("name") or fields.get("title")
+    if not title:
+        m_title = re.search(r'(?:for|named|called)\s+([^,\n\.]+)', text, re.IGNORECASE)
+        if m_title:
+            title = m_title.group(1).strip()
+
+    if not title and has_ad_trigger:
+        for k in ad_triggers:
+            if k in lower:
+                rem = re.sub(r'in\s+searchbiz(?:\.co\.za)?', '', text[lower.find(k) + len(k):], flags=re.IGNORECASE).strip()
+                if rem:
+                    first_line = rem.splitlines()[0].strip()
+                    if first_line and not any(first_line.lower().startswith(p) for p in ["business", "address", "phone", "province"]):
+                        title = first_line
+                break
+
+    if not title:
+        title = "Verified South African Business"
+
+    city = fields.get("address") or fields.get("city") or fields.get("location")
+    if not city:
+        city = extract_weather_location(text)
+    if not city or city.lower() in ["south africa", "searchbiz", "searchbiz.co.za"]:
+        city = "Durban"
+
+    address = fields.get("address") or city
+
+    # Province normalization
+    province_raw = fields.get("province") or ""
+    if not province_raw:
+        c_lower = city.lower()
+        if any(w in c_lower for w in ["durban", "umkomaas", "ballito", "amanzimtoti", "pietermaritzburg", "kzn", "kwazulu"]):
+            province = "kwazulu-natal"
+        elif any(w in c_lower for w in ["cape town", "stellenbosch", "george", "paarl"]):
+            province = "western-cape"
+        elif any(w in c_lower for w in ["johannesburg", "pretoria", "sandton", "centurion", "soweto", "midrand"]):
+            province = "gauteng"
+        else:
+            province = "kwazulu-natal"
+    else:
+        p_clean = province_raw.lower().strip()
+        if "kzn" in p_clean or "kwazulu" in p_clean or "natal" in p_clean:
+            province = "kwazulu-natal"
+        elif "gauteng" in p_clean or "jhb" in p_clean:
+            province = "gauteng"
+        elif "western" in p_clean or "wc" in p_clean:
+            province = "western-cape"
+        elif "eastern" in p_clean or "ec" in p_clean:
+            province = "eastern-cape"
+        elif "free state" in p_clean or "fs" in p_clean:
+            province = "free-state"
+        elif "limpopo" in p_clean:
+            province = "limpopo"
+        elif "mpumalanga" in p_clean:
+            province = "mpumalanga"
+        elif "north west" in p_clean or "nw" in p_clean:
+            province = "north-west"
+        elif "northern cape" in p_clean or "nc" in p_clean:
+            province = "northern-cape"
+        else:
+            province = province_raw
+
+    # Phone extraction
+    phone = fields.get("phone number") or fields.get("phone") or fields.get("cell") or fields.get("mobile") or fields.get("whatsapp")
+    if not phone:
+        phone_match = re.search(r'(?:0\d{9}|\+27\d{9}|\b0[1-9]\d{8}\b)', text)
+        phone = phone_match.group(0) if phone_match else "0821231234"
+
+    # Category extraction
+    category = fields.get("category")
+    if not category:
+        category = "Services"
+        for cat in ["Plumber", "Electrician", "Towing", "Cleaning", "Bakery", "Lawyer", "Auto", "Doctor", "Dentist", "Restaurant", "Construction", "Security", "Solar"]:
+            if cat.lower() in lower:
+                category = cat
+                break
+
+    # Description
+    description = fields.get("description")
+    if not description:
+        description = f"Looking for reliable, professional service right in the heart of {city}? {title} has you covered! From everyday solutions to specialized projects, our experienced team delivers quality and convenience with a smile. Call {phone} today and experience the difference."
+
+    res = searchbiz_create_ad(
+        title=title,
+        category=category,
+        city=city,
+        phone=phone,
+        description=description,
+        province=province,
+        address=address
+    )
+    return {
+        "res": res,
+        "title": title,
+        "category": category,
+        "city": city,
+        "province": province,
+        "phone": phone,
+        "description": description
+    }
 
 def searchbiz_delete_ad(id_or_title: str, permanent: bool = False):
     payload = {
@@ -3600,25 +3738,38 @@ How can I assist you right now, <b>{sender}</b>?"""
         send_telegram_dual(chat_id, f"Haha fair point, <b>{sender}</b>! Caught me red-handed being overly polite. 😄 What's on your mind or what task can I tackle for you?")
         return
 
-    # Natural Language Ad Creation
-    ad_triggers = ["create an ad", "place an ad", "post an ad", "make an ad", "add a business", "list a business", "register a business"]
-    if any(k in lower for k in ad_triggers) and any(c in lower for c in ["for ", "named ", "called "]):
-        parsed_title = re.search(r'(?:for|named|called)\s+([^,]+)', text, re.IGNORECASE)
-        title = parsed_title.group(1).strip() if parsed_title else "Verified Business"
-        phone_match = re.search(r'(?:0\d{9}|\+27\d{9})', text)
-        phone = phone_match.group(0) if phone_match else "0821234567"
-        city = extract_weather_location(text)
-        category = "Services"
-        for cat in ["Plumber", "Electrician", "Towing", "Cleaning", "Bakery", "Lawyer", "Auto"]:
-            if cat.lower() in lower:
-                category = cat
-                break
-        res = searchbiz_create_ad(title, category, city, phone, f"Verified {category} in {city}.")
+    # Natural Language & Structured Ad Creation
+    ad_outcome = parse_and_create_ad_from_text(text)
+    if ad_outcome:
+        res = ad_outcome["res"]
+        title = ad_outcome["title"]
+        city = ad_outcome["city"]
+        province = ad_outcome["province"]
+        phone = ad_outcome["phone"]
+        category = ad_outcome["category"]
+
         if res.get("success"):
-            ad = res["ad"]
-            send_telegram_dual(chat_id, f"✅ <b>Advertisement Live!</b>\n🏢 <b>{ad.get('title')}</b>\n🏷️ {ad.get('category')} | 📍 {ad.get('city')}\n📞 {ad.get('phone')}\n🆔 <code>{ad.get('id')}</code>")
+            ad = res.get("ad", {})
+            ad_id = ad.get("id", "ad-live")
+            safe_title = urllib.parse.quote(title)
+            ad_url = f"https://searchbiz.co.za/directory?q={safe_title}"
+            
+            msg = f"""✅ <b>Advertisement Published to SearchBiz.co.za!</b>
+
+🏢 <b>{title}</b>
+🏷️ <b>Category:</b> {category}
+📍 <b>Location:</b> {city.title()}, {province.replace('-', ' ').title()}
+📞 <b>Phone:</b> {phone}
+🆔 <b>Listing ID:</b> <code>{ad_id}</code>
+
+🌐 <a href="{ad_url}">View Live on SearchBiz.co.za Directory</a>"""
+            
+            send_telegram_dual(chat_id, msg)
+            speak_text = f"Advertisement published successfully to SearchBiz for {title} in {city}."
+            speak_tts(chat_id, speak_text)
         else:
-            send_telegram_dual(chat_id, f"❌ Failed to create ad: {res.get('error')}")
+            err = res.get("error", "Unknown error")
+            send_telegram_dual(chat_id, f"❌ <b>Could not publish ad to SearchBiz:</b>\n{err}\n\nPlease verify that the SearchBiz website API is accessible.")
         return
 
     # 14. Conversational AI Assistant with Deep Reasoning & Long-Term Memory

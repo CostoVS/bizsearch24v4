@@ -72,11 +72,15 @@ if [ -f "clean_vps.sh" ]; then
     chmod +x /usr/local/bin/clean_vps 2>/dev/null || true
 fi
 
-# Ensure .env has active ai@searchbiz.co.za credentials
+# Ensure .env has active SearchBiz API and ai@searchbiz.co.za credentials
 if [ -f "${APP_DIR}/.env" ]; then
+    sed -i '/SEARCHBIZ_API_URL/d' "${APP_DIR}/.env"
+    sed -i '/SEARCHBIZ_BOT_SECRET/d' "${APP_DIR}/.env"
     sed -i '/SMTP_/d' "${APP_DIR}/.env"
     sed -i '/IMAP_/d' "${APP_DIR}/.env"
     cat << 'EOF' >> "${APP_DIR}/.env"
+SEARCHBIZ_API_URL="https://searchbiz.co.za"
+SEARCHBIZ_BOT_SECRET="searchbiz_agent_key_2026"
 SMTP_HOST="127.0.0.1"
 SMTP_PORT="587"
 SMTP_USER="ai@searchbiz.co.za"
