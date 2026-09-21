@@ -17,8 +17,8 @@ elif command -v yum &> /dev/null; then
 fi
 
 # Python speech, voice synthesis, and executive tools
-pip3 install --break-system-packages faster-whisper vosk edge-tts reportlab python-docx requests pillow || \
-pip3 install faster-whisper vosk edge-tts reportlab python-docx requests pillow || true
+pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts reportlab python-docx requests pillow || \
+pip3 install --break-system-packages faster-whisper vosk edge-tts reportlab python-docx requests pillow || true
 
 # Pre-cache open source Whisper tiny model for instant zero-lag voice note transcription
 python3 -c "

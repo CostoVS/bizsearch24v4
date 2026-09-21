@@ -2811,7 +2811,7 @@ Live Platform: <code>{base_url}</code>
                     subprocess.run(["yum", "install", "-y", "ffmpeg", "flac", "python3-pip"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
 
                 # 2. Python packages
-                cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", "faster-whisper", "vosk", "edge-tts"]
+                cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", "--ignore-installed", "faster-whisper", "vosk", "edge-tts"]
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
 
                 # 3. Pre-load model
