@@ -23,8 +23,7 @@ export default function ToolsDashboard() {
   const [toolsBanners, setToolsBanners] = useState<any[]>([]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsClient(true);
+        setIsClient(true);
     
     const loadAds = () => {
       const allAds = getStoredAds().filter((a: any) => a.isActive !== false);
@@ -1357,8 +1356,7 @@ function InvoiceTool({ userId }: { userId: string }) {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setSavedInvoices(parsed);
+                        setSavedInvoices(parsed);
           }
         } catch (e) {}
       }

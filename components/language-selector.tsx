@@ -34,8 +34,7 @@ export function LanguageSelector() {
     if (googtrans) {
       const match = googtrans.match(/\/en\/([a-z]+)/);
       if (match && match[1]) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentLang(match[1]);
+                setCurrentLang(match[1]);
       }
     } else {
       // Auto-detect from device settings

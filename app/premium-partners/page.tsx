@@ -134,8 +134,7 @@ export default function PremiumPartnersPage() {
           finalPartners = [...finalPartners, ...customAdded];
           finalPartners = finalPartners.filter(p => !deletedIds.includes(p.id));
 
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setPartners(finalPartners);
+                    setPartners(finalPartners);
         }
       })
       .catch(err => {
@@ -145,16 +144,14 @@ export default function PremiumPartnersPage() {
         fallback = [...fallback, ...customAdded];
         fallback = fallback.filter(p => !deletedIds.includes(p.id));
         
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setPartners(fallback);
+                setPartners(fallback);
       });
 
     // 2. Load follow state list
     const storedFollows = localStorage.getItem("searchbiz_followed_partners");
     if (storedFollows) {
       try {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setFollowedEmails(JSON.parse(storedFollows));
+                setFollowedEmails(JSON.parse(storedFollows));
       } catch (e) {}
     }
 
@@ -163,8 +160,7 @@ export default function PremiumPartnersPage() {
     if (storedPosts) {
       try {
         const allPosts: Post[] = JSON.parse(storedPosts);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setFollowedPosts(allPosts);
+                setFollowedPosts(allPosts);
       } catch (e) {}
     }
   }, [user]);

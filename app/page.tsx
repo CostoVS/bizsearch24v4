@@ -32,8 +32,7 @@ export default function HomePage() {
     // Load initial cached local storage ads immediately on mount to keep UI super fast
     const cached = getStoredAds().filter((a: any) => a.isActive !== false);
     if (cached.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAds(cached);
+            setAds(cached);
       setLoading(false);
     }
 

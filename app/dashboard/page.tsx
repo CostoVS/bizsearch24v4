@@ -123,8 +123,7 @@ export default function UserDashboard() {
   }, [user]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAds(getStoredAds());
+        setAds(getStoredAds());
 
     const handleUpdate = () => {
       setAds(getStoredAds());

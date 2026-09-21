@@ -21,8 +21,7 @@ function ResetPasswordForm() {
 
   useEffect(() => {
     if (queryEmail) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setEmail(queryEmail);
+            setEmail(queryEmail);
     }
   }, [queryEmail]);
 

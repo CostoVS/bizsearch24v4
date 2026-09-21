@@ -11,14 +11,23 @@ echo "=========================================================="
 # 1. Update packages and install python3 & dependencies
 if command -v apt-get &> /dev/null; then
     apt-get update -y
-    apt-get install -y python3 python3-pip sqlite3 curl git ffmpeg || true
+    apt-get install -y python3 python3-pip sqlite3 curl git ffmpeg flac build-essential python3-dev || true
 elif command -v yum &> /dev/null; then
-    yum install -y python3 python3-pip sqlite curl git ffmpeg || true
+    yum install -y python3 python3-pip sqlite curl git ffmpeg flac || true
 fi
 
 # Python speech, voice synthesis, and executive tools
-pip3 install --break-system-packages faster-whisper SpeechRecognition edge-tts reportlab python-docx requests pillow 2>/dev/null || \
-pip3 install faster-whisper SpeechRecognition edge-tts reportlab python-docx requests pillow 2>/dev/null || true
+pip3 install --break-system-packages faster-whisper vosk edge-tts reportlab python-docx requests pillow || \
+pip3 install faster-whisper vosk edge-tts reportlab python-docx requests pillow || true
+
+# Pre-cache open source Whisper tiny model for instant zero-lag voice note transcription
+python3 -c "
+try:
+    from faster_whisper import WhisperModel
+    WhisperModel('tiny', device='cpu', compute_type='int8')
+except Exception:
+    pass
+" || true
 
 # 2. Install Ollama if not present
 if ! command -v ollama &> /dev/null; then

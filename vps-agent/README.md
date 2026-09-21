@@ -59,9 +59,11 @@ sudo ./setup_security.sh
 * `/telegram_lead [ID or Name]` — Creates direct Telegram contact link.
 
 ### 🎙️ Free Open-Source Voice Reader (Voice Notes & Speech Understanding):
-* **No Gemini Needed**: Understands Telegram voice notes natively using open-source **Whisper** and **SpeechRecognition** directly on your VPS CPU!
-* **Send Voice Notes**: Hold the mic in Telegram and speak in English, South African English, Afrikaans, or isiZulu. Hermes will transcribe what you said and immediately solve or execute your request.
-* `/voice_mode on|off` — Toggle automatic voice note audio replies for every message (Dual Voice Mode).
+* **No Gemini Needed**: Understands Telegram voice notes natively using open-source **faster-whisper** and **Vosk** directly on your VPS CPU!
+* **Send Voice Notes**: Hold the mic in Telegram and speak naturally. Hermes will transcribe what you said and immediately reply with both text and voice.
+* `/test_voice` — Diagnoses your VPS speech recognition setup (FFmpeg, Whisper, Vosk, TTS).
+* `/fix_voice` — 1-click automatic installation of FFmpeg, Whisper, and speech models directly from Telegram.
+* `/voice_mode on|off` — Toggle automatic voice note audio replies for every message (Dual Voice Mode - ON by default).
 * `/voice_style sonia|libby|maisie|za` — Choose your preferred British voice tone.
 * `/voice [text]` or `/speak [text]` — Make Hermes speak any custom text out loud.
 

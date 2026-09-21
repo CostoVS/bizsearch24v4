@@ -418,7 +418,10 @@ def get_active_api_base() -> str:
         try:
             req = urllib.request.Request(
                 f"{base}/api/bot/ad?limit=1",
-                headers={"Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"}
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SearchBizAgent/2.0",
+                    "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"
+                }
             )
             with urllib.request.urlopen(req, timeout=3) as res:
                 if res.status == 200:
@@ -1330,12 +1333,31 @@ def analyze_image_with_vision(image_bytes: bytes, user_prompt: str = "") -> str:
 
 
 # ============================================================================
-# Free Open-Source Voice Reader (Speech-To-Text / Whisper / SpeechRecognition)
+# Free Open-Source Voice Reader (Speech-To-Text / Whisper / Vosk / Offline STT)
 # ============================================================================
 _CACHED_WHISPER_MODEL = None
+_CACHED_VOSK_MODEL = None
+
+def ensure_ffmpeg() -> bool:
+    """Verifies ffmpeg is installed; if not, attempts automatic installation."""
+    if shutil.which("ffmpeg"):
+        return True
+    logger.warning("ffmpeg binary missing! Attempting automated installation via package manager...")
+    try:
+        if shutil.which("apt-get"):
+            subprocess.run(["apt-get", "update", "-y"], timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["apt-get", "install", "-y", "ffmpeg", "flac"], timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("yum"):
+            subprocess.run(["yum", "install", "-y", "ffmpeg", "flac"], timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        logger.error(f"Failed to auto-install ffmpeg: {e}")
+    return shutil.which("ffmpeg") is not None
 
 def convert_audio_to_wav(audio_bytes: bytes) -> Optional[str]:
     """Converts raw audio bytes (Telegram OGG/Opus/MP3) to 16kHz mono WAV using ffmpeg."""
+    if not ensure_ffmpeg():
+        logger.error("Cannot convert audio: ffmpeg is not available on host system.")
+        return None
     try:
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f_in:
             f_in.write(audio_bytes)
@@ -1347,15 +1369,18 @@ def convert_audio_to_wav(audio_bytes: bytes) -> Optional[str]:
         if os.path.exists(tmp_ogg):
             try: os.remove(tmp_ogg)
             except Exception: pass
-        if os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 100:
+        if res.returncode == 0 and os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 100:
             return tmp_wav
+        else:
+            err_msg = res.stderr.decode("utf-8", errors="ignore")[-250:]
+            logger.error(f"FFmpeg audio conversion failed (code {res.returncode}): {err_msg}")
     except Exception as e:
         logger.error(f"FFmpeg audio conversion error: {e}")
     return None
 
 def transcribe_audio_opensource(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-    """Transcribes spoken audio using 100% free open-source STT (Whisper / SpeechRecognition).
-    Requires ZERO API keys and runs locally without Gemini."""
+    """Transcribes spoken audio using 100% free open-source STT (Whisper / Vosk).
+    Requires ZERO API keys and runs locally on VPS CPU without Gemini."""
     wav_path = convert_audio_to_wav(audio_bytes)
     if not wav_path:
         return ""
@@ -1368,30 +1393,43 @@ def transcribe_audio_opensource(audio_bytes: bytes, mime_type: str = "audio/ogg"
             if _CACHED_WHISPER_MODEL is None:
                 logger.info("Initializing open-source faster-whisper (tiny model on CPU)...")
                 _CACHED_WHISPER_MODEL = WhisperModel("tiny", device="cpu", compute_type="int8")
-            segments, info = _CACHED_WHISPER_MODEL.transcribe(wav_path, beam_size=1)
+            segments, info = _CACHED_WHISPER_MODEL.transcribe(wav_path, beam_size=1, temperature=0.0)
             transcription = " ".join([seg.text.strip() for seg in segments if seg.text]).strip()
             if transcription:
-                logger.info(f"faster-whisper transcribed ({info.language}): {transcription}")
+                lang = getattr(info, "language", "en")
+                logger.info(f"faster-whisper transcribed ({lang}): {transcription}")
                 return transcription
         except Exception as e:
-            logger.debug(f"faster-whisper engine note: {e}")
+            logger.warning(f"faster-whisper engine note: {e}")
 
-        # Engine 2: Open-Source SpeechRecognition Library (Google Web Speech API, completely free, no API key)
+        # Engine 2: Open-Source Vosk (Ultra-light offline Kaldi STT)
         try:
-            import speech_recognition as sr
-            recognizer = sr.Recognizer()
-            with sr.AudioFile(wav_path) as source:
-                audio_data = recognizer.record(source)
-            for lang in ["en-ZA", "en-GB", "en-US"]:
-                try:
-                    text = recognizer.recognize_google(audio_data, language=lang)
-                    if text and text.strip():
-                        logger.info(f"SpeechRecognition recognized ({lang}): {text}")
-                        return text.strip()
-                except Exception:
-                    continue
+            import vosk, wave, json
+            global _CACHED_VOSK_MODEL
+            if _CACHED_VOSK_MODEL is None:
+                logger.info("Loading lightweight Vosk model...")
+                _CACHED_VOSK_MODEL = vosk.Model(lang="en-us")
+            wf = wave.open(wav_path, "rb")
+            rec = vosk.KaldiRecognizer(_CACHED_VOSK_MODEL, wf.getframerate())
+            results = []
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                if rec.AcceptWaveform(data):
+                    part = json.loads(rec.Result())
+                    if part.get("text"):
+                        results.append(part["text"])
+            final_part = json.loads(rec.FinalResult())
+            if final_part.get("text"):
+                results.append(final_part["text"])
+            wf.close()
+            v_text = " ".join(results).strip()
+            if v_text:
+                logger.info(f"Vosk transcribed: {v_text}")
+                return v_text
         except Exception as e:
-            logger.debug(f"speech_recognition engine note: {e}")
+            logger.debug(f"Vosk engine note: {e}")
 
         # Engine 3: Standard openai-whisper package (if installed)
         try:
@@ -1450,7 +1488,7 @@ def transcribe_and_execute_audio(audio_bytes: bytes, mime_type: str = "audio/ogg
         }
     return {
         "transcription": "",
-        "response": "I listened to your voice note, but couldn't catch the audio clearly. Could you please speak a bit closer to the microphone, darling?"
+        "response": ""
     }
 
 
@@ -2540,7 +2578,34 @@ def handle_message(message: dict):
                 handle_message(synthetic)
                 return
             else:
-                send_telegram_dual(chat_id, "🎙️ <i>I listened to your voice note, but couldn't catch the audio clearly. Could you please speak a bit louder or closer to the microphone, darling?</i>")
+                has_ffmpeg = shutil.which("ffmpeg") is not None
+                has_whisper = False
+                try:
+                    import faster_whisper
+                    has_whisper = True
+                except ImportError:
+                    pass
+                try:
+                    import vosk
+                    has_whisper = True
+                except ImportError:
+                    pass
+
+                if not has_ffmpeg or not has_whisper:
+                    missing_items = []
+                    if not has_ffmpeg: missing_items.append("FFmpeg Audio Decoder")
+                    if not has_whisper: missing_items.append("Whisper/Vosk Speech Engine")
+                    msg = (
+                        "🎙️ <b>Open-Source Voice Reader Needs Quick Setup:</b>\n"
+                        f"Missing host tools: <b>{', '.join(missing_items)}</b>.\n\n"
+                        "✨ <b>Tap below to auto-install on your VPS without Gemini:</b>\n"
+                        "👉 <code>/fix_voice</code>\n\n"
+                        "<i>Or run in your VPS SSH terminal:</i>\n"
+                        "<code>cd /opt/hermes-searchbiz && sudo ./update_agent.sh</code>"
+                    )
+                    send_telegram(chat_id, msg)
+                else:
+                    send_telegram_dual(chat_id, "🎙️ <i>I listened to your voice note, but couldn't catch distinct speech. Could you please speak a bit closer to the microphone, darling?</i>")
                 return
         else:
             send_telegram(chat_id, "⚠️ Could not download the voice note from Telegram. Please try speaking again.")
@@ -2669,16 +2734,96 @@ Live Platform: <code>{base_url}</code>
         ollama_test = ask_ollama("Say 'OK'")
         ollama_online = bool(ollama_test)
 
+        has_ffmpeg = shutil.which("ffmpeg") is not None
+        has_whisper = False
+        try:
+            import faster_whisper
+            has_whisper = True
+        except ImportError:
+            pass
+
         status_msg = f"""
 ⚡ <b>System Diagnostic:</b>
 • <b>SearchBiz Website API:</b> {'🟢 ONLINE (' + base_url + ')' if ads_online else '🔴 OFFLINE'}
 • <b>AI Brain ({OLLAMA_MODEL}):</b> {'🟢 ACTIVE' if ollama_online else '🟢 CLOUD HYBRID'}
+• <b>Voice Reader (Whisper STT):</b> {'🟢 READY (Local CPU)' if (has_ffmpeg and has_whisper) else '⚪ NEEDS SETUP (/fix_voice)'}
+• <b>British Lady Voice:</b> 🟢 ACTIVE (en-GB-SoniaNeural)
 • <b>Persistent Memory DB:</b> <code>{DB_PATH}</code>
 • <b>SMTP Outbound:</b> <code>{SMTP_HOST}:{SMTP_PORT}</code>
 • <b>IMAP Inbound:</b> <code>{IMAP_HOST}:{IMAP_PORT}</code>
 • <b>DirectAdmin API:</b> <code>{DIRECTADMIN_URL}</code>
 """
         send_telegram(chat_id, status_msg)
+        return
+
+    # --- Voice Diagnostics & Auto-Repair Commands ---
+    if text in ["/test_voice", "/check_voice", "/voice_status"]:
+        send_chat_action(chat_id, "typing")
+        has_ffmpeg = shutil.which("ffmpeg") is not None
+        ffmpeg_path = shutil.which("ffmpeg") or "None"
+
+        has_fw = False
+        fw_err = ""
+        try:
+            from faster_whisper import WhisperModel
+            has_fw = True
+        except Exception as e:
+            fw_err = str(e)
+
+        has_vosk = False
+        try:
+            import vosk
+            has_vosk = True
+        except Exception:
+            pass
+
+        has_edge_tts = False
+        try:
+            import edge_tts
+            has_edge_tts = True
+        except Exception:
+            pass
+
+        rep = (
+            "🎙️ <b>Open-Source Voice Reader Diagnostic:</b>\n\n"
+            f"• <b>FFmpeg Audio Decoder:</b> {'✅ Ready (' + ffmpeg_path + ')' if has_ffmpeg else '❌ Missing'}\n"
+            f"• <b>faster-whisper Engine:</b> {'✅ Installed' if has_fw else '❌ Missing (' + fw_err[:60] + ')'}\n"
+            f"• <b>Vosk Offline Engine:</b> {'✅ Installed' if has_vosk else '⚪ Not installed (Optional fallback)'}\n"
+            f"• <b>British Voice Replies (Edge-TTS):</b> {'✅ Active (en-GB-SoniaNeural)' if has_edge_tts else '⚪ Direct HTTP active'}\n"
+            f"• <b>Dual Voice+Text Mode:</b> {'🔊 ALWAYS ON' if is_always_voice_enabled(chat_id) else '🔇 TEXT ONLY'}\n\n"
+        )
+        if not has_ffmpeg or not has_fw:
+            rep += "👉 <b>To install missing audio components in 1 click, type:</b> <code>/fix_voice</code>"
+        else:
+            rep += "✨ <i>Everything is primed and ready! Hold the microphone icon in Telegram and send a voice note now, darling.</i>"
+        send_telegram(chat_id, rep)
+        return
+
+    if text in ["/fix_voice", "/install_voice", "/setup_voice"]:
+        send_telegram(chat_id, "⚙️ <b>Installing Open-Source Voice Reader on your VPS...</b>\n<i>Installing ffmpeg audio tools and faster-whisper CPU model. Please wait ~30-60 seconds...</i>")
+        def _bg_fix_voice():
+            try:
+                # 1. System packages
+                if shutil.which("apt-get"):
+                    subprocess.run(["apt-get", "update", "-y"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                    subprocess.run(["apt-get", "install", "-y", "ffmpeg", "flac", "python3-pip", "python3-dev"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+                elif shutil.which("yum"):
+                    subprocess.run(["yum", "install", "-y", "ffmpeg", "flac", "python3-pip"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+
+                # 2. Python packages
+                cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", "faster-whisper", "vosk", "edge-tts"]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+
+                # 3. Pre-load model
+                try:
+                    from faster_whisper import WhisperModel
+                    WhisperModel("tiny", device="cpu", compute_type="int8")
+                    send_telegram_dual(chat_id, "🎙️ <b>Voice Reader is Ready!</b>\nOpen-source Whisper is now running on your VPS CPU. Send me a voice note now to test!")
+                except Exception as me:
+                    send_telegram(chat_id, f"⚠️ Installed libraries, but model preloading returned: <code>{me}</code>.\nPlease run <code>cd /opt/hermes-searchbiz && sudo ./update_agent.sh</code> in terminal.")
+            except Exception as e:
+                send_telegram(chat_id, f"❌ Voice installation encountered an error: <code>{e}</code>\nPlease run in VPS terminal: <code>cd /opt/hermes-searchbiz && sudo ./update_agent.sh</code>")
+        threading.Thread(target=_bg_fix_voice, daemon=True).start()
         return
 
     

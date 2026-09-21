@@ -76,11 +76,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // eslint-disable-next-line react-hooks/exhaustive-deps
     if (initialUser && JSON.stringify(initialUser) !== JSON.stringify(user)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUser(initialUser);
+            setUser(initialUser);
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoading(false);
+        setIsLoading(false);
   }, [user]);
 
   const login = (

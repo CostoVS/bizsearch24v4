@@ -87,8 +87,7 @@ function DirectoryContent() {
   useEffect(() => {
     setCurrentPage(1);
     if (q || category || town || province || suburb) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsLocalLoading(true);
+            setIsLocalLoading(true);
       const timer = setTimeout(() => {
         setIsLocalLoading(false);
       }, 30);
@@ -105,8 +104,7 @@ function DirectoryContent() {
   }, [q, category, town, province, suburb]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
 
     // Force a fresh fetch from server immediately on mount to solve sync lag
     fetchAndStoreAds().then(freshAds => {

@@ -8,29 +8,32 @@ APP_DIR="/opt/hermes-searchbiz"
 mkdir -p "${APP_DIR}"
 mkdir -p "${APP_DIR}/leads_storage"
 
-echo "Ensuring ffmpeg and audio tools are installed..."
-if ! command -v ffmpeg &> /dev/null; then
+echo "📦 Ensuring ffmpeg and audio decoder tools are installed on VPS..."
+if ! command -v ffmpeg &> /dev/null || ! command -v flac &> /dev/null; then
     if command -v apt-get &> /dev/null; then
-        apt-get update -y && apt-get install -y ffmpeg || true
+        apt-get update -y && apt-get install -y ffmpeg flac python3-pip python3-dev build-essential || true
     elif command -v yum &> /dev/null; then
-        yum install -y ffmpeg || true
+        yum install -y ffmpeg flac python3-pip || true
     fi
 fi
 
-echo "Ensuring Python dependencies (faster-whisper, SpeechRecognition, edge-tts) and local Ollama are ready..."
+echo "📦 Installing Open-Source Voice Reader (faster-whisper, vosk, edge-tts)..."
 if command -v pip3 &> /dev/null; then
-    pip3 install --break-system-packages faster-whisper SpeechRecognition edge-tts requests python-docx reportlab pillow 2>/dev/null || \
-    pip3 install faster-whisper SpeechRecognition edge-tts requests python-docx reportlab pillow 2>/dev/null || true
+    pip3 install --break-system-packages faster-whisper vosk edge-tts requests python-docx reportlab pillow || \
+    pip3 install faster-whisper vosk edge-tts requests python-docx reportlab pillow || true
 fi
 
-# Pre-cache open source Whisper tiny model for instant zero-lag voice note transcription
+echo "🧠 Pre-caching Open-Source Whisper tiny model on VPS CPU..."
 python3 -c "
+import sys
 try:
     from faster_whisper import WhisperModel
-    WhisperModel('tiny', device='cpu', compute_type='int8')
-except Exception:
-    pass
-" 2>/dev/null || true
+    print('Testing WhisperModel initialization...')
+    m = WhisperModel('tiny', device='cpu', compute_type='int8')
+    print('✅ Open-Source Whisper Model ready on CPU for instant voice note understanding!')
+except Exception as e:
+    print('⚠️ Whisper model note:', e)
+" || true
 
 # Ensure Ollama service is running if installed
 if command -v ollama &> /dev/null; then
