@@ -44,6 +44,9 @@ import zipfile
 import io
 import uuid
 import base64
+import shutil
+import subprocess
+import tempfile
 from typing import Dict, List, Optional, Any, Tuple
 
 # Setup Logging
@@ -2109,6 +2112,67 @@ def format_security_msg() -> str:
 • <code>/block_ip [IP]</code> - Instantly ban malicious IP in firewall
 • <code>/unblock_ip [IP]</code> - Remove an IP ban
 • <code>/ports</code> - View all open network listening ports"""
+
+def scan_vps_for_malware(target_path: str = "/var/www") -> Dict[str, Any]:
+    """Scans the target directory for common PHP/Perl webshells and malware signatures."""
+    if not os.path.exists(target_path):
+        return {"clean": True, "scanned_count": 0, "engine": "Heuristic Webshell Scanner", "infected_files": []}
+
+    # If clamscan exists, run it
+    if shutil.which("clamscan"):
+        try:
+            res = subprocess.run(["clamscan", "-r", "--infected", "--no-summary", target_path], capture_output=True, text=True, timeout=180)
+            infected = [line.split(":")[0].strip() for line in res.stdout.splitlines() if "FOUND" in line]
+            return {
+                "clean": len(infected) == 0,
+                "scanned_count": "All",
+                "engine": "ClamAV Enterprise Engine",
+                "infected_files": infected
+            }
+        except Exception as e:
+            logger.warning(f"Clamscan run note: {e}")
+
+    # Built-in fast heuristic scanner
+    patterns = [
+        re.compile(rb"eval\s*\(\s*base64_decode", re.IGNORECASE),
+        re.compile(rb"eval\s*\(\s*gzinflate", re.IGNORECASE),
+        re.compile(rb"system\s*\(\s*\$_(GET|POST|REQUEST)", re.IGNORECASE),
+        re.compile(rb"passthru\s*\(\s*\$_(GET|POST|REQUEST)", re.IGNORECASE),
+        re.compile(rb"shell_exec\s*\(\s*\$_(GET|POST|REQUEST)", re.IGNORECASE),
+        re.compile(rb"assert\s*\(\s*\$_(GET|POST|REQUEST)", re.IGNORECASE),
+        re.compile(rb"c99shell", re.IGNORECASE),
+        re.compile(rb"r57shell", re.IGNORECASE),
+        re.compile(rb"wso_version", re.IGNORECASE),
+    ]
+
+    scanned = 0
+    infected_files = []
+    try:
+        for root, _, files in os.walk(target_path):
+            for file in files:
+                if file.endswith((".php", ".phtml", ".php5", ".sh", ".pl", ".cgi")):
+                    scanned += 1
+                    full_path = os.path.join(root, file)
+                    try:
+                        if os.path.getsize(full_path) < 5 * 1024 * 1024:
+                            with open(full_path, "rb") as f:
+                                data = f.read()
+                                for pat in patterns:
+                                    if pat.search(data):
+                                        infected_files.append(full_path)
+                                        break
+                    except Exception:
+                        continue
+    except Exception as e:
+        logger.error(f"Malware scan error: {e}")
+
+    return {
+        "clean": len(infected_files) == 0,
+        "scanned_count": scanned,
+        "engine": "SearchBiz Heuristic Webshell Scanner",
+        "infected_files": infected_files
+    }
+
 
 
 # ============================================================================
