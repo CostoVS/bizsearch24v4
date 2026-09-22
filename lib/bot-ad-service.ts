@@ -504,3 +504,48 @@ export async function getBotStats(): Promise<{
     lastCreatedAd: dbData.lastCreatedAd || null
   };
 }
+
+/**
+ * Update an existing ad in the directory
+ */
+export async function updateBotAd(
+  idOrTitle: string, 
+  updates: Partial<BotAdPayload>
+): Promise<{ success: boolean; updatedAd?: any; error?: string }> {
+  if (!idOrTitle || !idOrTitle.trim()) {
+    return { success: false, error: 'Target ad ID or title is required.' };
+  }
+
+  const dbData = readServerDb();
+  const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
+  const q = idOrTitle.trim().toLowerCase();
+
+  const idx = ads.findIndex((a: any) => 
+    a && (
+      (a.id && a.id.toLowerCase() === q) ||
+      (a.title && a.title.toLowerCase() === q) ||
+      (a.title && a.title.toLowerCase().includes(q))
+    )
+  );
+
+  if (idx === -1) {
+    return { success: false, error: `No advertisement found matching "${idOrTitle}".` };
+  }
+
+  const existing = ads[idx];
+  const updatedAd = {
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString()
+  };
+
+  ads[idx] = updatedAd;
+  dbData.ads = cleanAdsArray(ads);
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    updatedAd
+  };
+}
+

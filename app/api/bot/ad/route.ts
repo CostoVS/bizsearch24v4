@@ -6,7 +6,8 @@ import {
   restoreBotAd, 
   restoreAllBotAds, 
   getBotTrashAds, 
-  getBotStats 
+  getBotStats,
+  updateBotAd
 } from '@/lib/bot-ad-service';
 
 export const dynamic = 'force-dynamic';
@@ -207,3 +208,36 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to restore ad', details: error.message }, { status: 500 });
   }
 }
+
+/**
+ * PUT /api/bot/ad
+ * Update an existing ad on searchbiz.co.za
+ */
+export async function PUT(req: NextRequest) {
+  try {
+    if (!checkAuth(req)) {
+      return NextResponse.json({ error: 'Unauthorized. Invalid API key.' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const idOrTitle = body.id || body.title || '';
+
+    if (!idOrTitle) {
+      return NextResponse.json({ error: 'Please provide "id" or "title" of the ad to update.' }, { status: 400 });
+    }
+
+    const result = await updateBotAd(idOrTitle, body);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Listing "${result.updatedAd.title}" was successfully updated on searchbiz.co.za!`,
+      ad: result.updatedAd
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Failed to update ad', details: error.message }, { status: 500 });
+  }
+}
+
