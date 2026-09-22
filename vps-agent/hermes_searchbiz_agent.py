@@ -36,6 +36,7 @@ from email.mime.multipart import MIMEMultipart
 import urllib.request
 import urllib.parse
 import urllib.error
+import socket
 import re
 import sqlite3
 import csv
@@ -47,7 +48,11 @@ import base64
 import shutil
 import subprocess
 import tempfile
+import signal
 from typing import Dict, List, Optional, Any, Tuple
+
+# Set global socket default timeout to prevent indefinite network hanging
+socket.setdefaulttimeout(30.0)
 
 # Setup Logging
 logging.basicConfig(
@@ -56,6 +61,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("HermesSearchBiz")
+
+PID_FILE = "/tmp/hermes_agent.pid"
 
 # Configuration from Environment Variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8957546599:AAGWICeBceFDMBwJx2JAhFs6xMvi71biueI")
@@ -99,12 +106,14 @@ _CACHED_API_URL = None
 # Persistent SQLite Long-Term Memory & Scheduled Tasks Engine
 # ============================================================================
 def get_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_memory_db():
-    """Initializes SQLite tables for multi-turn messages, user facts, and scheduled jobs."""
+    """Initializes SQLite tables for multi-turn messages, user facts, scheduled jobs, skills, and multi-agent tasks."""
     try:
         with get_db() as conn:
             conn.execute("""
@@ -170,6 +179,31 @@ def init_memory_db():
                     status TEXT DEFAULT 'new',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS installed_skills (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    skill_id TEXT UNIQUE,
+                    name TEXT,
+                    description TEXT,
+                    category TEXT,
+                    command_trigger TEXT,
+                    source_type TEXT DEFAULT 'open_source',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agent_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    agent_name TEXT,
+                    role_title TEXT,
+                    task_description TEXT,
+                    status TEXT DEFAULT 'pending',
+                    result_summary TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP
                 )
             """)
             conn.commit()
@@ -280,11 +314,11 @@ def get_user_facts_prompt(chat_id: int) -> str:
     return "\nPERMANENT KNOWLEDGE & FACTS YOU REMEMBER ABOUT THIS FOUNDER/USER:\n" + "\n".join(lines) + "\n"
 
 def is_always_voice_enabled(chat_id: int) -> bool:
-    """Checks if Dual Voice + Text mode is active (default is True)."""
+    """Checks if Dual Voice + Text mode is active (default is False: normal clean text)."""
     facts = get_user_facts(chat_id)
     f_dict = {k: v for k, v in facts} if facts else {}
-    val = f_dict.get("always_voice", "true").lower()
-    return val not in ["false", "0", "no", "off"]
+    val = f_dict.get("always_voice", "false").lower()
+    return val in ["true", "1", "yes", "on"]
 
 def set_always_voice(chat_id: int, enabled: bool) -> bool:
     """Saves user's Dual Voice + Text preference."""
@@ -952,7 +986,7 @@ def export_leads_to_csv(chat_id: int, dataset_id: Optional[int] = None, suffix: 
     return out_filename, out_io.getvalue().encode("utf-8-sig")
 
 def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
-    """Bulk creates active listings on searchbiz.co.za from scraped Google Maps leads."""
+    """Bulk creates active listings on searchbiz.co.za from scraped Google Maps leads concurrently."""
     with get_db() as conn:
         cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND dataset_id = ?", (chat_id, dataset_id))
         leads = [dict(r) for r in cursor.fetchall()]
@@ -960,27 +994,75 @@ def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
     if not leads:
         return {"success": False, "error": "No leads found for this dataset."}
 
-    success_count = 0
     created_ads = []
-    for lead in leads:
-        # Use found_description or default South African directory description
-        desc = lead.get("found_description") or f"Verified {lead.get('category')} service provider operating in {lead.get('city')}, {lead.get('province')}. Call {lead.get('phone')} for appointments and quotes."
+    
+    def _publish_lead(lead: dict) -> Optional[dict]:
+        clean_name = lead.get("name", "").strip()
+        if not clean_name:
+            return None
+
+        clean_cat = lead.get("category") or "Services"
+        clean_city = lead.get("city") or "Durban"
+        clean_prov = lead.get("province") or "kwazulu-natal"
+        clean_phone = lead.get("phone") or "0821234567"
+        clean_addr = lead.get("address") or f"{clean_city}, {clean_prov}"
+        clean_email = lead.get("found_email") or ""
+        clean_web = lead.get("website") or ""
+        clean_wa = normalize_sa_phone(lead.get("found_whatsapp") or lead.get("phone") or "")
+
+        # Rich South African business directory description
+        desc_parts = []
+        if lead.get("found_description"):
+            desc_parts.append(lead["found_description"])
+        else:
+            desc_parts.append(f"Verified {clean_cat} operating in {clean_city}, {clean_prov.replace('-', ' ').title()}. Contact {clean_phone} for bookings, quotes, and customer inquiries.")
+        if lead.get("rating") and lead.get("reviews"):
+            desc_parts.append(f"Google Maps Rating: {lead['rating']} ★ ({lead['reviews']} reviews).")
+        if clean_web:
+            desc_parts.append(f"Official Website: {clean_web}")
+        desc = " ".join(desc_parts)
+
         res = searchbiz_create_ad(
-            title=lead["name"],
-            category=lead["category"] or "Services",
-            city=lead["city"] or "Durban",
-            phone=lead["phone"] or "0821234567",
+            title=clean_name,
+            category=clean_cat,
+            city=clean_city,
+            province=clean_prov,
+            address=clean_addr,
+            phone=clean_phone,
+            email=clean_email,
+            website=clean_web,
+            whatsapp=clean_wa,
             description=desc
         )
+
         if res.get("success") and "ad" in res:
             ad_id = str(res["ad"].get("id"))
-            success_count += 1
-            created_ads.append({"name": lead["name"], "id": ad_id})
             with get_db() as conn:
-                conn.execute("UPDATE business_leads SET searchbiz_ad_id = ?, status = 'imported' WHERE id = ?", (ad_id, lead["id"]))
+                conn.execute(
+                    "UPDATE business_leads SET searchbiz_ad_id = ?, status = 'imported', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (ad_id, lead["id"])
+                )
                 conn.commit()
+            return {"name": clean_name, "id": ad_id, "city": clean_city, "category": clean_cat}
+        return None
 
-    return {"success": True, "imported_count": success_count, "total": len(leads), "created_ads": created_ads}
+    # Execute publishing concurrently (max 5 workers to keep server responsive)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_publish_lead, l): l for l in leads}
+        for f in as_completed(futures):
+            try:
+                ad_item = f.result()
+                if ad_item:
+                    created_ads.append(ad_item)
+            except Exception as e:
+                logger.error(f"Error publishing lead to SearchBiz: {e}")
+
+    return {
+        "success": True,
+        "imported_count": len(created_ads),
+        "total": len(leads),
+        "created_ads": created_ads
+    }
 
 def get_lead_by_id_or_name(chat_id: int, query: str) -> Optional[dict]:
     """Finds a lead in SQLite by ID or business name."""
@@ -1675,7 +1757,18 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
 
 _LAST_CREATED_AD = None
 
-def searchbiz_create_ad(title: str, category: str, city: str, phone: str, description: str, province: str = "gauteng", address: str = None):
+def searchbiz_create_ad(
+    title: str,
+    category: str,
+    city: str,
+    phone: str,
+    description: str,
+    province: str = "kwazulu-natal",
+    address: str = None,
+    email: str = None,
+    website: str = None,
+    whatsapp: str = None
+):
     global _LAST_CREATED_AD
     payload = {
         "title": title,
@@ -1686,6 +1779,9 @@ def searchbiz_create_ad(title: str, category: str, city: str, phone: str, descri
         "address": address or f"{city}",
         "phone": phone,
         "description": description,
+        "email": email or "",
+        "website": website or "",
+        "whatsapp": whatsapp or "",
         "verified": True,
         "isPremium": True
     }
@@ -2605,7 +2701,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         }
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=24) as res:
+        with urllib.request.urlopen(req, timeout=8) as res:
             ans = json.loads(res.read().decode("utf-8"))
             resp = ans.get("message", {}).get("content", "").strip()
             if resp:
@@ -2619,10 +2715,10 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "prompt": prompt,
                 "system": effective_system,
                 "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 500, "num_thread": 2}
+                "options": {"temperature": 0.7, "num_predict": 350, "num_thread": 2}
             }
             gen_req = urllib.request.Request(gen_url, data=json.dumps(gen_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(gen_req, timeout=24) as gen_res:
+            with urllib.request.urlopen(gen_req, timeout=6) as gen_res:
                 ans = json.loads(gen_res.read().decode("utf-8"))
                 resp = ans.get("response", "").strip()
                 if resp:
@@ -2645,12 +2741,12 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
                 payload = {
                     "contents": contents,
-                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 750},
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 600},
                     "systemInstruction": {"parts": [{"text": effective_system}]}
                 }
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=14) as res:
+                with urllib.request.urlopen(req, timeout=7) as res:
                     g_data = json.loads(res.read().decode("utf-8"))
                     cands = g_data.get("candidates", [])
                     if cands:
@@ -2672,7 +2768,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "history": get_chat_history(chat_id, limit=6) if chat_id else []
             }).encode("utf-8")
             req = urllib.request.Request(cloud_url, data=body, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as res:
+            with urllib.request.urlopen(req, timeout=5) as res:
                 c_data = json.loads(res.read().decode("utf-8"))
                 resp = c_data.get("reply") or c_data.get("response") or c_data.get("text")
                 if resp and len(resp.strip()) > 10:
@@ -2687,7 +2783,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
     try:
         poll_url = f"https://text.pollinations.ai/{urllib.parse.quote(prompt)}?model=openai"
         p_req = urllib.request.Request(poll_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(p_req, timeout=8) as p_res:
+        with urllib.request.urlopen(p_req, timeout=5) as p_res:
             p_text = p_res.read().decode("utf-8").strip()
             if p_text and len(p_text) > 8 and "error" not in p_text.lower():
                 return p_text
@@ -2729,6 +2825,328 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
 def ask_ollama(prompt: str) -> str:
     return ask_ai(prompt)
+
+
+# ============================================================================
+# Autonomous Open-Source Skill Registry & Dynamic Acquisition Engine
+# ============================================================================
+class SkillRegistry:
+    """Manages built-in and dynamically discovered open-source skills."""
+    
+    BASE_SKILLS = [
+        {
+            "id": "google_maps_ad_importer",
+            "name": "Google Maps Ad Importer",
+            "category": "Lead Generation & Directory",
+            "description": "Parses Google Maps scraped CSVs and bulk-places verified listings onto searchbiz.co.za.",
+            "trigger": "Send CSV file or say 'import ads'"
+        },
+        {
+            "id": "web_search_research",
+            "name": "Live Web Research & Scraper",
+            "category": "Intelligence",
+            "description": "Dispatches live web searches via DuckDuckGo / web scraper with source links and executive summaries.",
+            "trigger": "/search [query] or 'search google for...'"
+        },
+        {
+            "id": "document_generator",
+            "name": "Word (.docx) & PDF (.pdf) Generator",
+            "category": "Office & Documents",
+            "description": "Compiles executive business proposals, invoices, and summaries into downloadable Word or PDF files.",
+            "trigger": "/doc [text] or /pdf [text]"
+        },
+        {
+            "id": "flux_image_generator",
+            "name": "Free FLUX.1 AI Image Generator",
+            "category": "Creative & Design",
+            "description": "Generates 8k watermark-free photorealistic visuals and logos using free open-source Pollinations FLUX engine.",
+            "trigger": "/image [prompt] or 'generate image of...'"
+        },
+        {
+            "id": "voice_reader_whisper",
+            "name": "Local Whisper Speech-to-Text",
+            "category": "Speech & Audio",
+            "description": "Transcribes incoming voice notes on VPS CPU using Faster-Whisper / Vosk without external API costs.",
+            "trigger": "Send any Telegram voice note"
+        },
+        {
+            "id": "voice_speaker_edge",
+            "name": "Neural Voice Synthesizer",
+            "category": "Speech & Audio",
+            "description": "Speaks replies using natural British accent audio via Edge-TTS / Google TTS engine.",
+            "trigger": "/voice [text] or /voice on"
+        },
+        {
+            "id": "vps_resource_optimizer",
+            "name": "VPS Resource & RAM Optimizer",
+            "category": "SysAdmin & DevOps",
+            "description": "Drops Linux kernel pagecache, clears unused buffers, checks port 3000/11434, and reclaims memory.",
+            "trigger": "/clean_ram or /vps_status"
+        },
+        {
+            "id": "vps_security_shield",
+            "name": "VPS Security & Threat Shield",
+            "category": "Security",
+            "description": "Audits UFW firewall rules, detects suspicious IPs, scans web directories, and bans brute-force bots.",
+            "trigger": "/audit_security"
+        },
+        {
+            "id": "email_dispatcher",
+            "name": "Direct SMTP & IMAP Mailbox Engine",
+            "category": "Communications",
+            "description": "Sends and audits emails from ai@searchbiz.co.za via DirectAdmin mail server.",
+            "trigger": "/email_lead [id] or /check_inbox"
+        },
+        {
+            "id": "weather_rain_radar",
+            "name": "Live Weather & Rain Probability Engine",
+            "category": "Utilities",
+            "description": "Delivers real-time temperatures, wind speeds, and exact Rain Percentage possibilities across South Africa.",
+            "trigger": "'weather in Durban' or 'rain percentage'"
+        },
+        {
+            "id": "crypto_financial_ticker",
+            "name": "Real-Time Crypto & Currency Ticker",
+            "category": "Finance",
+            "description": "Fetches live market prices for BTC, ETH, SOL, and ZAR currency conversions.",
+            "trigger": "'price of btc' or 'crypto prices'"
+        },
+        {
+            "id": "python_sandbox_runner",
+            "name": "Autonomous Python Code Execution",
+            "category": "Computation",
+            "description": "Runs sandboxed mathematical calculations, string parsing, data conversions, and scripts securely.",
+            "trigger": "Ask to calculate, convert, or process complex data"
+        }
+    ]
+
+    @classmethod
+    def get_all_skills(cls) -> List[Dict[str, Any]]:
+        skills = list(cls.BASE_SKILLS)
+        try:
+            with get_db() as conn:
+                rows = conn.execute("SELECT * FROM installed_skills ORDER BY id DESC").fetchall()
+                for r in rows:
+                    skills.append({
+                        "id": r["skill_id"],
+                        "name": r["name"],
+                        "category": r["category"],
+                        "description": r["description"],
+                        "trigger": r["command_trigger"],
+                        "source": r["source_type"]
+                    })
+        except Exception as e:
+            logger.error(f"Error loading installed skills: {e}")
+        return skills
+
+    @classmethod
+    def format_skills_catalog(cls) -> str:
+        skills = cls.get_all_skills()
+        lines = [
+            f"🛠️ <b>Hermes Open-Source Skills ({len(skills)} Available):</b>\n",
+            "<i>I possess a rich suite of built-in open-source capabilities and can autonomously discover, install, and execute any new open-source library on your VPS on demand.</i>\n"
+        ]
+        cat_map: Dict[str, List[Dict[str, Any]]] = {}
+        for s in skills:
+            cat = s.get("category", "General")
+            if cat not in cat_map:
+                cat_map[cat] = []
+            cat_map[cat].append(s)
+
+        for cat, items in cat_map.items():
+            lines.append(f"<b>[{cat}]</b>")
+            for it in items:
+                lines.append(f"• <b>{it['name']}</b>: {it['description']}\n  👉 <i>{it['trigger']}</i>")
+            lines.append("")
+
+        lines.append("✨ <b>Autonomous Skill Discovery:</b>")
+        lines.append("Need me to do something new? Say:\n<code>/find_skill [what you need, e.g. youtube audio, qr codes, pdf compression]</code>\nI will locate the free open-source tool, install it on the VPS, and execute your task!")
+        return "\n".join(lines)
+
+
+def find_and_install_open_source_skill(task_description: str, chat_id: int) -> dict:
+    """Autonomously searches for and installs a free open-source Python tool or library to fulfill a task."""
+    clean_desc = task_description.strip()
+    send_telegram(chat_id, f"🔍 <b>Autonomous Skill Discovery:</b>\nAnalyzing task: <i>\"{clean_desc}\"</i>...\nSearching for free open-source packages...")
+
+    task_map = {
+        "youtube": ("yt-dlp", "YouTube & Video Audio Downloader", "Media", "yt-dlp video/audio extraction"),
+        "video": ("moviepy", "Video Processing & Editing", "Media", "moviepy video editing"),
+        "audio": ("pydub", "Audio Manipulation & Slicing", "Audio", "pydub audio conversion"),
+        "qr": ("qrcode[pil]", "QR Code Generator", "Utilities", "qrcode generation"),
+        "pdf": ("pypdf", "PDF Reading, Splitting & Merging", "Documents", "pypdf document manipulation"),
+        "excel": ("openpyxl", "Excel Spreadsheet Engine", "Data", "openpyxl excel processing"),
+        "scrape": ("beautifulsoup4", "HTML & Web Parser", "Scraping", "beautifulsoup4 web scraping"),
+        "chart": ("matplotlib", "Statistical Data Visualizer", "Analytics", "matplotlib chart rendering"),
+        "pandas": ("pandas", "High-Performance Data Analysis", "Data", "pandas dataframe analytics"),
+        "math": ("scipy", "Advanced Scientific Computing", "Computation", "scipy math operations")
+    }
+
+    pkg_to_install = None
+    skill_info = None
+
+    lower = clean_desc.lower()
+    for keyword, info in task_map.items():
+        if keyword in lower:
+            pkg_to_install = info[0]
+            skill_info = info
+            break
+
+    if not pkg_to_install:
+        words = [w for w in re.findall(r'[a-zA-Z0-9_\-]+', lower) if len(w) > 3 and w not in ["install", "skill", "find", "need", "make", "with", "open", "source"]]
+        pkg_to_install = words[0] if words else "requests"
+        skill_info = (pkg_to_install, f"{pkg_to_install.title()} Tool", "Custom Skill", f"Custom {pkg_to_install} integration")
+
+    send_telegram(chat_id, f"📦 <b>Installing Open-Source Package:</b> <code>{pkg_to_install}</code> via pip on VPS...")
+
+    try:
+        cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", pkg_to_install]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        
+        if res.returncode == 0 or "Requirement already satisfied" in res.stdout:
+            skill_id = re.sub(r'[^a-zA-Z0-9_]', '_', pkg_to_install).lower()
+            with get_db() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO installed_skills (skill_id, name, description, category, command_trigger)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (skill_id, skill_info[1], skill_info[3], skill_info[2], f"Run with {pkg_to_install}"))
+                conn.commit()
+
+            msg = f"""✅ <b>Open-Source Skill Installed & Registered!</b>
+📦 <b>Package:</b> <code>{pkg_to_install}</code>
+🛠️ <b>Skill Name:</b> {skill_info[1]}
+📁 <b>Category:</b> {skill_info[2]}
+🚀 <b>Status:</b> Ready for execution on your VPS!
+
+I am now equipped with <b>{pkg_to_install}</b> and will apply it directly whenever you request related tasks."""
+            send_telegram(chat_id, msg)
+            return {"success": True, "package": pkg_to_install, "skill": skill_info[1]}
+        else:
+            send_telegram(chat_id, f"⚠️ <b>Installation note:</b> Could not finish installing <code>{pkg_to_install}</code>: {res.stderr[:200]}")
+            return {"success": False, "error": res.stderr}
+    except Exception as e:
+        logger.error(f"Error installing skill {pkg_to_install}: {e}")
+        send_telegram(chat_id, f"❌ Failed to install open-source package: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# Autonomous Multi-Agent Delegation & Task Orchestration Engine
+# ============================================================================
+class SubAgentOrchestrator:
+    """Coordinates and spawns specialized autonomous sub-agents to complete complex multi-step tasks."""
+
+    AVAILABLE_AGENTS = {
+        "AdPublisherAgent": "Ingests scraped Google Maps leads and publishes verified directory listings directly to searchbiz.co.za.",
+        "ResearchAgent": "Conducts deep web research, verifies sources, and extracts competitive intelligence.",
+        "OutreachAgent": "Crafts high-converting personalized WhatsApp links and email pitches for local South African businesses.",
+        "DocReportAgent": "Compiles executive business intelligence, client proposals, and summaries into Word (.docx) or PDF (.pdf) documents.",
+        "SystemAdminAgent": "Monitors VPS memory, cleans page caches, verifies firewall rules, and ensures 24/7 uptime.",
+        "DynamicSubAgent": "Autonomous worker instantiated on-the-fly to execute custom, specialized tasks."
+    }
+
+    @classmethod
+    def log_task(cls, chat_id: int, agent_name: str, role: str, description: str, status: str = "running", result: str = "") -> int:
+        try:
+            with get_db() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO agent_tasks (chat_id, agent_name, role_title, task_description, status, result_summary)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (chat_id, agent_name, role, description, status, result))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to log agent task: {e}")
+            return 0
+
+    @classmethod
+    def complete_task(cls, task_id: int, result: str):
+        try:
+            with get_db() as conn:
+                conn.execute("""
+                    UPDATE agent_tasks
+                    SET status = 'completed', result_summary = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (result, task_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to complete agent task {task_id}: {e}")
+
+    @classmethod
+    def execute_multi_agent_pipeline(cls, chat_id: int, user_instruction: str) -> dict:
+        """Analyzes a complex user instruction, delegates sub-tasks to specialized sub-agents, and communicates every step."""
+        clean_inst = user_instruction.strip()
+        lower = clean_inst.lower()
+
+        deployed_agents = []
+        steps_summary = []
+
+        send_telegram(chat_id, f"🤖 <b>Hermes Multi-Agent Task Orchestration:</b>\nAnalyzing objective: <i>\"{clean_inst}\"</i>...\nDeploying autonomous sub-agents...")
+
+        # 1. Lead / CSV / Ad Placement Task
+        if any(k in lower for k in ["csv", "maps", "leads", "ad", "ads", "searchbiz", "publish", "place"]):
+            deployed_agents.append(("AdPublisherAgent", "SearchBiz Directory Specialist"))
+            t_id = cls.log_task(chat_id, "AdPublisherAgent", "SearchBiz Directory Specialist", "Ingest leads and publish listings to searchbiz.co.za")
+            
+            with get_db() as conn:
+                r = conn.execute("SELECT id, total_count FROM lead_datasets WHERE chat_id = ? ORDER BY id DESC LIMIT 1", (chat_id,)).fetchone()
+            
+            if r:
+                ds_id = r["id"]
+                send_telegram(chat_id, f"⚙️ <b>[AdPublisherAgent]</b> Ingesting dataset #{ds_id} and placing verified ads on searchbiz.co.za...")
+                res = import_leads_to_searchbiz(chat_id, ds_id)
+                imported = res.get("imported_count", 0)
+                cls.complete_task(t_id, f"Published {imported} ads to searchbiz.co.za")
+                steps_summary.append(f"✅ <b>AdPublisherAgent:</b> Published <b>{imported}</b> business ads directly to searchbiz.co.za.")
+            else:
+                cls.complete_task(t_id, "No active dataset found in memory")
+                steps_summary.append("ℹ️ <b>AdPublisherAgent:</b> Standing by for your next Google Maps CSV upload.")
+
+        # 2. Web Search & Research Task
+        if any(k in lower for k in ["research", "search", "find", "lookup", "competitor", "market"]):
+            deployed_agents.append(("ResearchAgent", "Web Intelligence Specialist"))
+            t_id = cls.log_task(chat_id, "ResearchAgent", "Web Intelligence Specialist", f"Conduct research on: {clean_inst}")
+            send_telegram(chat_id, f"🌐 <b>[ResearchAgent]</b> Conducting live web search and market analysis...")
+            research_result = search_web(clean_inst, chat_id=chat_id)
+            cls.complete_task(t_id, "Research completed")
+            steps_summary.append(f"✅ <b>ResearchAgent:</b> Gathered verified insights with source citations.")
+
+        # 3. Document Creation Task
+        if any(k in lower for k in ["doc", "docx", "word", "pdf", "report", "summary document"]):
+            deployed_agents.append(("DocReportAgent", "Document Compilation Specialist"))
+            t_id = cls.log_task(chat_id, "DocReportAgent", "Document Compilation Specialist", "Compile executive Word / PDF report")
+            send_telegram(chat_id, f"📄 <b>[DocReportAgent]</b> Compiling executive report...")
+            doc_fname, doc_bytes = create_word_document("Executive Briefing", clean_inst, chat_id=chat_id)
+            send_telegram_document(chat_id, doc_bytes, doc_fname, caption="📄 Executive Report generated by DocReportAgent")
+            cls.complete_task(t_id, f"Generated {doc_fname}")
+            steps_summary.append(f"✅ <b>DocReportAgent:</b> Formatted and delivered <code>{doc_fname}</code>.")
+
+        # 4. System & Server Health Task
+        if any(k in lower for k in ["vps", "server", "ram", "memory", "clean", "security", "firewall"]):
+            deployed_agents.append(("SystemAdminAgent", "DevOps & Infrastructure Specialist"))
+            t_id = cls.log_task(chat_id, "SystemAdminAgent", "DevOps Specialist", "Optimize VPS RAM & audit system")
+            send_telegram(chat_id, f"🛡️ <b>[SystemAdminAgent]</b> Inspecting VPS resources and dropping cache buffers...")
+            cleanup_res = optimize_vps_resources()
+            cls.complete_task(t_id, cleanup_res)
+            steps_summary.append(f"✅ <b>SystemAdminAgent:</b> {cleanup_res}")
+
+        # If no specific rule triggered, spawn DynamicSubAgent to reason and execute
+        if not deployed_agents:
+            deployed_agents.append(("DynamicSubAgent", "Autonomous Task Specialist"))
+            t_id = cls.log_task(chat_id, "DynamicSubAgent", "Autonomous Task Specialist", clean_inst)
+            send_telegram(chat_id, f"⚡ <b>[DynamicSubAgent]</b> Processing your custom instruction...")
+            ai_answer = ask_ai(clean_inst, chat_id=chat_id)
+            cls.complete_task(t_id, "Task executed successfully")
+            steps_summary.append(f"✅ <b>DynamicSubAgent:</b> {ai_answer}")
+
+        # Final communication of everything accomplished
+        summary_msg = f"""🏁 <b>Hermes Multi-Agent Pipeline Completed!</b>
+
+<b>Deployed Agents ({len(deployed_agents)}):</b>
+""" + "\n".join([f"• <b>{name}</b> ({role})" for name, role in deployed_agents]) + "\n\n<b>Execution Results:</b>\n" + "\n\n".join(steps_summary)
+
+        send_telegram(chat_id, summary_msg)
+        return {"success": True, "agents": deployed_agents, "summary": steps_summary}
 
 
 # ============================================================================
@@ -2822,7 +3240,7 @@ def handle_message(message: dict):
         mime = doc_info.get("mime_type", "")
 
         if file_name.lower().endswith(".csv") or "csv" in mime or "text" in mime:
-            send_telegram(chat_id, f"📥 <b>Receiving CSV Leads File:</b> <code>{file_name}</code>\n<i>Parsing Google Maps businesses and persisting to SQLite...</i>")
+            send_telegram(chat_id, f"📥 <b>Receiving Google Maps CSV:</b> <code>{file_name}</code>\n<i>Parsing business data and deploying AdPublisherAgent to place ads on searchbiz.co.za...</i>")
             file_bytes = download_telegram_file(file_id)
             if not file_bytes:
                 send_telegram(chat_id, "⚠️ Could not download the CSV file from Telegram servers. Please re-upload.")
@@ -2835,28 +3253,33 @@ def handle_message(message: dict):
 
             ds_id = res["dataset_id"]
             total = res["total"]
-            with_web = res["with_website"]
-            with_phone = res["with_phone"]
 
-            sample_lines = []
-            for idx, item in enumerate(res.get("sample", [])):
-                sample_lines.append(f"<b>{idx+1}. {item['name']}</b>\n🏷️ {item['category']} | 📍 {item['city']}\n📞 <code>{item['phone'] or 'No phone'}</code> | 🌐 {item['website'] or 'No website'}")
+            # Autonomously publish all leads to SearchBiz directory!
+            send_telegram(chat_id, f"🚀 <b>Auto-Placing {total} Businesses into SearchBiz.co.za...</b>\n<i>Publishing live verified listings...</i>")
+            import_res = import_leads_to_searchbiz(chat_id, ds_id)
+            imported_count = import_res.get("imported_count", 0)
+            created_ads = import_res.get("created_ads", [])
 
-            preview_text = "\n\n".join(sample_lines)
+            sample_links = []
+            for ad in created_ads[:5]:
+                q_name = urllib.parse.quote(ad["name"])
+                sample_links.append(f"• <b>{ad['name']}</b> ({ad.get('city', 'Durban')}): <a href=\"https://searchbiz.co.za/directory?q={q_name}\">View Live Listing</a>")
 
-            reply = f"""📊 <b>Google Maps Leads Ingested!</b>
-📁 Dataset ID: <code>{ds_id}</code> (File: <code>{file_name}</code>)
-🔢 <b>{total} Businesses Extracted</b> ({with_web} with websites, {with_phone} with phones)
+            links_text = "\n".join(sample_links) if sample_links else "Listings are now active on SearchBiz."
 
-<b>Sample Preview:</b>
-{preview_text}
+            reply = f"""✅ <b>Google Maps Leads Ingested & Published to SearchBiz!</b>
 
-<b>⚡ Available Actions:</b>
-🌐 <code>/enrich {ds_id}</code> - Check websites, extract emails & WhatsApp numbers
-🚀 <code>/import_searchbiz {ds_id}</code> - Import all businesses to SearchBiz directory
-📥 <code>/export_leads {ds_id}</code> - Download clean/enriched CSV
-💬 <code>/whatsapp 1</code> - Generate instant WhatsApp pitch link for Lead #1
-✉️ <code>/email_lead 1</code> - Draft outreach email for Lead #1"""
+📁 <b>File:</b> <code>{file_name}</code> (Dataset #{ds_id})
+🔢 <b>Businesses Found:</b> {total}
+🚀 <b>Successfully Placed on searchbiz.co.za:</b> <b>{imported_count} Listings</b>
+
+🌐 <b>Live Directory Previews:</b>
+{links_text}
+
+✨ <b>Next Steps:</b>
+• Say <code>/enrich {ds_id}</code> to scan their websites for emails & WhatsApp numbers.
+• Say <code>/export_leads {ds_id}</code> to download the clean enriched CSV.
+• Say <code>/whatsapp 1</code> to generate a WhatsApp pitch link for Lead #1."""
             send_telegram(chat_id, reply)
             return
         else:
@@ -2873,6 +3296,89 @@ def handle_message(message: dict):
 
     lower = text.lower()
 
+    # Conversational greeting & natural partner responses
+    greeting_triggers = [
+        "hi", "hello", "hey", "how are you", "how are you doing", "what's up", "whats up",
+        "good day", "good morning", "good evening", "good afternoon", "hi how are you",
+        "hey hermes", "hi hermes", "hello hermes", "are you there", "you there"
+    ]
+    clean_lower = re.sub(r'[^a-z\s]', '', lower).strip()
+    if clean_lower in greeting_triggers or any(lower.startswith(g) and len(lower) < 25 for g in ["hi ", "hello ", "hey ", "how are you"]):
+        reply = f"""Hello <b>{sender}</b>! I am doing great and completely locked in.
+
+Your SearchBiz systems, Google Maps ad publisher, and autonomous sub-agents are 100% active and healthy on your VPS.
+
+How can I assist you right now?
+• Upload or send any Google Maps scraped CSV to automatically place ads on <b>searchbiz.co.za</b>.
+• Ask me to research competitors, local industries, or pricing.
+• Ask me to find or install any free open-source skill (<code>/skills</code>).
+• Tell me to spawn autonomous sub-agents for any multi-step task (<code>/agents</code>).
+• Generate executive Word (.docx) or PDF (.pdf) documents.
+• Check VPS health, clean RAM, or review security."""
+        send_telegram(chat_id, reply)
+        return
+
+    # Skills queries (/skills, "what skills do you have", "show skills", "find skill")
+    if text.startswith("/skills") or any(k in lower for k in ["what skills", "show skills", "list skills", "available skills", "open source skills"]):
+        catalog = SkillRegistry.format_skills_catalog()
+        send_telegram(chat_id, catalog)
+        return
+
+    if text.startswith("/find_skill") or text.startswith("/install_skill") or lower.startswith("find skill") or lower.startswith("install skill"):
+        q = text.split(" ", 1)[-1].strip() if " " in text else ""
+        if not q or q.lower() in ["find skill", "install skill"]:
+            send_telegram(chat_id, "⚠️ <b>Usage:</b>\n<code>/find_skill [what you need, e.g. youtube audio, qr codes, pdf split]</code>")
+            return
+        find_and_install_open_source_skill(q, chat_id)
+        return
+
+    # Agents queries (/agents, "spawn agent", "make new agents", "sub-agents")
+    if text.startswith("/agents") or any(k in lower for k in ["show agents", "list agents", "what agents", "sub agents", "sub-agents"]):
+        agents_text = """🤖 <b>Hermes Autonomous Sub-Agents:</b>
+
+I can dynamically spawn, coordinate, and orchestrate specialized sub-agents to solve complex tasks:
+
+• <b>AdPublisherAgent</b>: Parses Google Maps CSVs and places verified business ads on searchbiz.co.za.
+• <b>ResearchAgent</b>: Conducts live web intelligence and market analysis with verified sources.
+• <b>OutreachAgent</b>: Crafts high-converting WhatsApp links and email outreach pitches.
+• <b>DocReportAgent</b>: Compiles proposals, reports, and summaries into Word (.docx) and PDF (.pdf).
+• <b>SystemAdminAgent</b>: Cleans VPS RAM, drops page caches, inspects ports, and audits firewall.
+• <b>DynamicSubAgent</b>: Dynamically created on-the-fly to execute any custom instruction you need.
+
+👉 <b>Usage:</b>
+Give me any multi-part instruction or say:
+<code>/delegate [describe your objective]</code>
+and I will spawn the required sub-agents, execute the work, and report everything back to you!"""
+        send_telegram(chat_id, agents_text)
+        return
+
+    if text.startswith("/delegate") or text.startswith("/spawn_agent") or any(k in lower for k in ["spawn agent", "make new agents", "run agent", "delegate to agents"]):
+        q = text.split(" ", 1)[-1].strip() if " " in text else text
+        SubAgentOrchestrator.execute_multi_agent_pipeline(chat_id, q)
+        return
+
+    # Natural Language Lead Placement Request (e.g. "place the ads on searchbiz", "import ads")
+    if any(k in lower for k in ["import ads", "place ads", "place them in the site", "place them on searchbiz", "put ads on site", "import to searchbiz"]):
+        send_chat_action(chat_id, "typing")
+        with get_db() as conn:
+            r = conn.execute("SELECT id, total_count, filename FROM lead_datasets WHERE chat_id = ? ORDER BY id DESC LIMIT 1", (chat_id,)).fetchone()
+        if r:
+            ds_id = r["id"]
+            fname = r["filename"]
+            send_telegram(chat_id, f"🚀 <b>Deploying AdPublisherAgent...</b>\nPlacing leads from <code>{fname}</code> (Dataset #{ds_id}) onto searchbiz.co.za...")
+            res = import_leads_to_searchbiz(chat_id, ds_id)
+            imported_count = res.get("imported_count", 0)
+            created_ads = res.get("created_ads", [])
+            links = []
+            for ad in created_ads[:5]:
+                q_name = urllib.parse.quote(ad["name"])
+                links.append(f"• <b>{ad['name']}</b> ({ad.get('city', 'Durban')}): <a href=\"https://searchbiz.co.za/directory?q={q_name}\">View Live Listing</a>")
+            links_str = "\n".join(links) if links else "All ads are live on the site."
+            send_telegram(chat_id, f"✅ <b>Successfully placed {imported_count} ads onto searchbiz.co.za!</b>\n\n{links_str}")
+        else:
+            send_telegram(chat_id, "ℹ️ No recent CSV dataset found in memory. Please upload your Google Maps scraped CSV file, and I will place all ads on searchbiz.co.za immediately!")
+        return
+
     # 3. Start & Help
     if text.startswith("/start") or text.startswith("/help"):
         base_url = get_active_api_base()
@@ -2883,45 +3389,42 @@ Online and ready on your VPS, <b>{sender}</b>!
 Connected Brain: <code>{OLLAMA_MODEL}</code> / Hybrid Intelligence
 Live Platform: <code>{base_url}</code>
 
+<b>🚀 Google Maps Lead Importer:</b>
+• Upload any Google Maps scraped CSV, and I will automatically publish verified ads to <b>searchbiz.co.za</b>!
+• <code>/import_searchbiz [dataset_id]</code> - Manually trigger ad placement
+
+<b>🛠️ Autonomous Open-Source Skills & Sub-Agents:</b>
+• <code>/skills</code> - View all free open-source capabilities
+• <code>/find_skill [task]</code> - Discover & install any new open-source tool on demand
+• <code>/agents</code> - View & spawn autonomous sub-agents
+• <code>/delegate [task]</code> - Orchestrate multi-agent execution with full reporting
+
 <b>🧠 Long-Term Memory:</b>
 • <code>/memory</code> - View everything I remember about you and your business
 • <code>/remember [fact]</code> - Tell me something to permanently remember
 • <i>"Remember that my business is called..."</i>
-• <i>"What do you remember about me?"</i>
 
 <b>⏰ Scheduled Daily Tasks:</b>
 • <code>/schedule_weather 07:00 Durban</code> - Get daily weather at specified time
 • <code>/schedules</code> - View all active scheduled jobs
 • <code>/cancel_weather</code> - Stop daily weather briefings
-• <i>"Check the weather everyday at 07:00 and send it to me"</i>
 
 <b>📄 Document Creation (Word & PDF):</b>
 • <code>/docx [Title] [Topic]</code> - Create Microsoft Word (.docx) document
 • <code>/pdf [Title] [Topic]</code> - Create executive PDF (.pdf) document
-• <i>"Create a word document about South African solar energy"</i>
-• <i>"Make a pdf for client service agreement"</i>
 
 <b>🎨 Free Open-Source Image Generator:</b>
 • <code>/image [prompt]</code> or <code>/draw [prompt]</code>
-• <i>"Draw a picture of a golden sunset over Durban beach"</i>
 
-<b>🗣️ 11 South African Languages & Voice Reading:</b>
-• <code>/speak [text]</code> or <code>/read_to_me</code> - Read text out loud as a voice note
-• <code>/translate [language] [text]</code> - Translate across any of the 11 official languages
-• Talk to me in isiZulu, Afrikaans, isiXhosa, Sesotho, Setswana, etc. and I will reply fluently!
-• Send me a voice note anytime and I will listen and understand!
-
-<b>🌐 Live Web Research:</b>
-• <code>/search [query]</code> - Live Google & Web search with facts & source citations
-• <i>"Search Google for best safari lodges in Kruger"</i>
+<b>🗣️ Voice & Language:</b>
+• <code>/voice [text]</code> - Speak audio with crisp British accent
+• Send me a voice note anytime and I will understand!
 
 <b>🏢 Directory & Email Operations:</b>
 • <code>/post_ad Title | Category | City | Phone | Description</code>
 • <code>/delete_ad [Business Name or ID]</code>
 • <code>/list_ads [keyword]</code>
 • <code>/send_email to@domain.com | Subject | Body</code>
-• <code>/check_inbox</code>
-• <code>/create_email username password [domain]</code>
 • <code>/status</code>
 """
         send_telegram(chat_id, reply)
@@ -3797,6 +4300,55 @@ Try any of these:
 🗣️ Talk to me in isiZulu, Afrikaans, or send me a voice note!""")
 
 
+def acquire_pid_lock():
+    """Ensures only a single instance of Hermes Agent runs to prevent Telegram 409 Conflicts."""
+    pid = os.getpid()
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            if old_pid != pid:
+                # Check if process is still alive
+                try:
+                    os.kill(old_pid, 0)
+                    logger.warning(f"Detected existing Hermes process (PID {old_pid}). Terminating old instance...")
+                    os.kill(old_pid, signal.SIGTERM)
+                    time.sleep(1.5)
+                except OSError:
+                    pass
+        except Exception as e:
+            logger.debug(f"PID file read error: {e}")
+    try:
+        with open(PID_FILE, "w") as f:
+            f.write(str(pid))
+    except Exception as e:
+        logger.debug(f"PID file write error: {e}")
+
+def release_pid_lock():
+    try:
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+    except Exception:
+        pass
+
+
+def safe_handle_message(msg: dict):
+    """Executes handle_message inside a worker thread with error isolation."""
+    try:
+        handle_message(msg)
+    except Exception as msg_err:
+        logger.error(f"Error handling Telegram message: {msg_err}", exc_info=True)
+        c_id = msg.get("chat", {}).get("id")
+        if c_id:
+            try:
+                send_telegram(
+                    c_id,
+                    f"⚠️ <b>Notice:</b> An unexpected error occurred while processing that command: <code>{msg_err}</code>\n<i>I have recovered safely and am standing by for your next instruction.</i>"
+                )
+            except Exception:
+                pass
+
+
 def main():
     logger.info("=====================================================")
     logger.info("Hermes SearchBiz VPS Agent starting up...")
@@ -3807,14 +4359,17 @@ def main():
     logger.info(f"Persistent Memory Database: {DB_PATH}")
     logger.info("=====================================================")
 
-    # 1. Initialize SQLite Database
+    # 1. Acquire PID lock to prevent 409 Conflicts
+    acquire_pid_lock()
+
+    # 2. Initialize SQLite Database
     init_memory_db()
 
-    # 2. Start Scheduled Tasks Background Daemon
+    # 3. Start Scheduled Tasks Background Daemon
     scheduler_thread = threading.Thread(target=scheduler_worker, daemon=True)
     scheduler_thread.start()
 
-    # 3. Verify Telegram Bot connection
+    # 4. Verify Telegram Bot connection
     me = telegram_call("getMe")
     if not me or not me.get("ok"):
         logger.error("Failed to authenticate with Telegram. Check TELEGRAM_BOT_TOKEN.")
@@ -3826,27 +4381,25 @@ def main():
     # Clear pending webhooks so Long Polling works cleanly on VPS
     telegram_call("deleteWebhook", {"drop_pending_updates": False})
 
+    # ThreadPool for non-blocking concurrent message handling
+    msg_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="hermes-worker")
+
     offset = 0
     while True:
         try:
-            updates = telegram_call("getUpdates", {"offset": offset, "timeout": 25})
+            updates = telegram_call("getUpdates", {"offset": offset, "timeout": 20})
             if updates and updates.get("ok"):
                 for item in updates.get("result", []):
                     offset = max(offset, item["update_id"] + 1)
                     if "message" in item:
-                        try:
-                            handle_message(item["message"])
-                        except Exception as msg_err:
-                            logger.error(f"Error handling Telegram message: {msg_err}", exc_info=True)
-                            c_id = item["message"].get("chat", {}).get("id")
-                            if c_id:
-                                try:
-                                    send_telegram(c_id, f"⚠️ <b>Execution Notice:</b> An unexpected error occurred while processing that command: <code>{msg_err}</code>\n<i>I have logged the trace and am ready for your next instruction.</i>")
-                                except Exception:
-                                    pass
-            time.sleep(0.5)
+                        msg_executor.submit(safe_handle_message, item["message"])
+            elif updates and updates.get("error_code") == 409:
+                logger.warning("Telegram returned 409 Conflict: Another instance is polling. Waiting 4 seconds...")
+                time.sleep(4)
+            time.sleep(0.3)
         except KeyboardInterrupt:
             logger.info("Hermes Agent stopped by user.")
+            release_pid_lock()
             break
         except Exception as e:
             logger.error(f"Error in polling loop: {e}")

@@ -17,10 +17,10 @@ if ! command -v ffmpeg &> /dev/null || ! command -v flac &> /dev/null; then
     fi
 fi
 
-echo "📦 Installing Open-Source Voice Reader (faster-whisper, vosk, edge-tts)..."
+echo "📦 Installing Open-Source Voice Reader & Automation Tools (faster-whisper, vosk, edge-tts, beautifulsoup4, schedule)..."
 if command -v pip3 &> /dev/null; then
-    pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts requests python-docx reportlab pillow || \
-    pip3 install --break-system-packages faster-whisper vosk edge-tts requests python-docx reportlab pillow || true
+    pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts requests python-docx reportlab pillow beautifulsoup4 schedule || \
+    pip3 install --break-system-packages faster-whisper vosk edge-tts requests python-docx reportlab pillow beautifulsoup4 schedule || true
 fi
 
 echo "🧠 Pre-caching Open-Source Whisper tiny model on VPS CPU..."
