@@ -39,9 +39,9 @@ except Exception as e:
 if command -v ollama &> /dev/null; then
     systemctl start ollama 2>/dev/null || true
     # Check if a model is installed; if not, pull qwen2.5:3b in background
-    if ! ollama list 2>/dev/null | grep -q -E 'qwen2.5|llama3|mistral'; then
-        echo "Pulling lightweight qwen2.5:3b model for Ollama..."
-        ollama pull qwen2.5:3b || true
+    if ! ollama list 2>/dev/null | grep -q -E 'llama3.2|llama3|qwen2.5'; then
+        echo "Pulling lightweight llama3.2:3b model for Ollama..."
+        ollama pull llama3.2:3b || true
     fi
 fi
 

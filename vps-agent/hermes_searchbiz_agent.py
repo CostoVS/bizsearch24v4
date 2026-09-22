@@ -25,6 +25,7 @@ import datetime
 import threading
 import json
 import logging
+import html
 import smtplib
 import imaplib
 import ssl
@@ -69,7 +70,29 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8957546599:AAGWICeBceFDMBw
 SEARCHBIZ_BOT_SECRET = os.getenv("SEARCHBIZ_BOT_SECRET", "searchbiz_agent_key_2026")
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+
+def get_active_ollama_model() -> str:
+    """Finds the best active Ollama model, checking OLLAMA_MODEL or auto-detecting llama3.2."""
+    configured = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    try:
+        url = f"{OLLAMA_API_URL}/api/tags"
+        req = urllib.request.Request(url, headers={"User-Agent": "Hermes/2026"})
+        with urllib.request.urlopen(req, timeout=3) as res:
+            data = json.loads(res.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            if configured in models:
+                return configured
+            # Check for any llama3.2 variant (llama3.2:3b, llama3.2:latest, llama3.2)
+            for m in models:
+                if "llama3.2" in m.lower() or "llama" in m.lower():
+                    return m
+            if models:
+                return models[0]
+    except Exception:
+        pass
+    return configured
+
 
 # Email Configurations (Mailcow VPS SMTP/IMAP for ai@searchbiz.co.za)
 SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip() or "127.0.0.1"
@@ -210,6 +233,17 @@ def init_memory_db():
         logger.info(f"Persistent memory SQLite database initialized at {DB_PATH}")
     except Exception as e:
         logger.error(f"Failed to initialize SQLite memory DB: {e}")
+
+def get_business_lead_by_id(lead_id: int) -> Optional[dict]:
+    """Fetches a business lead record by its integer primary key."""
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM business_leads WHERE id = ?", (lead_id,)).fetchone()
+            if row:
+                return dict(row)
+    except Exception as e:
+        logger.debug(f"get_business_lead_by_id error: {e}")
+    return None
 
 # In-memory fast cache
 _CHAT_HISTORIES: Dict[int, List[Dict[str, str]]] = {}
@@ -1950,7 +1984,46 @@ def searchbiz_audit_ads(limit: int = 50):
 # ============================================================================
 # Email Client (SMTP & IMAP on VPS)
 # ============================================================================
+def send_via_local_sendmail(to_email: str, subject: str, body_text: str, body_html: str = None) -> dict:
+    """Dispatches email directly via local host sendmail / Exim MTA binary if present."""
+    sendmail_path = shutil.which("sendmail") or "/usr/sbin/sendmail"
+    if not os.path.exists(sendmail_path):
+        return {"error": "sendmail binary not found"}
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"SearchBiz Executive AI <{SMTP_USER}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
+
+        part1 = MIMEText(body_text, "plain", "utf-8")
+        msg.attach(part1)
+        if body_html:
+            part2 = MIMEText(body_html, "html", "utf-8")
+            msg.attach(part2)
+
+        proc = subprocess.Popen([sendmail_path, "-t", "-i"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate(input=msg.as_bytes(), timeout=15)
+        if proc.returncode == 0:
+            logger.info(f"Email successfully delivered via local MTA binary to {to_email}")
+            return {"success": True, "message": f"Email queued via local Linux MTA for {to_email}"}
+        else:
+            return {"error": f"sendmail error: {stderr.decode('utf-8', errors='ignore')}"}
+    except Exception as e:
+        logger.debug(f"Local sendmail exception: {e}")
+        return {"error": str(e)}
+
 def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str = None):
+    to_email = to_email.strip()
+    
+    # 1. Try local Linux MTA on VPS first (DirectAdmin Exim / Postfix)
+    if os.path.exists("/usr/sbin/sendmail") or shutil.which("sendmail"):
+        mta_res = send_via_local_sendmail(to_email, subject, body_text, body_html)
+        if mta_res.get("success"):
+            return mta_res
+
+    # 2. Try SMTP connections across common ports (configured port, 587, 25, 465)
     msg = MIMEMultipart("alternative")
     msg["From"] = f"SearchBiz Executive AI <{SMTP_USER}>"
     msg["To"] = to_email
@@ -1965,35 +2038,55 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str 
         part2 = MIMEText(body_html, "html", "utf-8")
         msg.attach(part2)
 
-    try:
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+    ports_to_try = [SMTP_PORT]
+    for p in [587, 25, 465]:
+        if p not in ports_to_try:
+            ports_to_try.append(p)
+
+    for p in ports_to_try:
         try:
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            server.starttls(context=context)
-        except Exception:
-            pass
+            if p == 465:
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                server = smtplib.SMTP_SSL(SMTP_HOST, p, timeout=8, context=context)
+            else:
+                server = smtplib.SMTP(SMTP_HOST, p, timeout=8)
+                try:
+                    context = ssl.create_default_context()
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                    server.starttls(context=context)
+                except Exception:
+                    pass
 
-        if SMTP_USER and SMTP_PASS:
-            try:
-                server.login(SMTP_USER, SMTP_PASS)
-            except Exception as le:
-                logger.warning(f"SMTP authentication skipped or not required on local loopback: {le}")
+            if SMTP_USER and SMTP_PASS:
+                try:
+                    server.login(SMTP_USER, SMTP_PASS)
+                except Exception as le:
+                    logger.debug(f"SMTP authentication note on port {p}: {le}")
 
-        server.sendmail(SMTP_USER, [to_email], msg.as_string())
-        server.quit()
-        return {"success": True, "message": f"Email sent via SMTP to {to_email}"}
-    except Exception as e:
-        logger.error(f"SMTP error: {e}")
-        # Fallback to SearchBiz Cloud Email Gateway
-        logger.info("Falling back to SearchBiz Cloud Email Gateway...")
-        return api_request("/api/bot/send-email", method="POST", payload={
-            "to": to_email,
-            "subject": subject,
-            "body": body_text,
-            "html": body_html
-        })
+            server.sendmail(SMTP_USER, [to_email], msg.as_string())
+            server.quit()
+            logger.info(f"Email successfully sent via SMTP port {p} to {to_email}")
+            return {"success": True, "message": f"Email sent via SMTP port {p} to {to_email}"}
+        except Exception as se:
+            logger.debug(f"SMTP attempt on port {p} failed: {se}")
+
+    # 3. Fallback to SearchBiz Cloud Email Gateway (/api/bot/email)
+    logger.info("Falling back to SearchBiz Cloud Email Gateway (/api/bot/email)...")
+    res = api_request("/api/bot/email", method="POST", payload={
+        "to": to_email,
+        "subject": subject,
+        "text": body_text,
+        "body": body_text,
+        "html": body_html
+    })
+    if res.get("success"):
+        return res
+
+    return {"error": res.get("error") or res.get("details") or "All SMTP and API email gateways failed"}
+
 
 def fetch_recent_emails(limit: int = 5):
     try:
@@ -2611,33 +2704,19 @@ def search_web(query: str, chat_id: int = None) -> str:
         logger.warning(f"DuckDuckGo search error: {e}")
 
     if not collected_content:
-        google_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_q)}"
-        return f"🔍 I looked up <b>{clean_q}</b> on Google. You can view the live results directly here: <a href=\"{google_url}\">{clean_q}</a>"
+        return f"🔍 No web search results found for <i>'{html.escape(clean_q)}'</i>."
 
-    # Synthesize the actual information rather than just showing raw links!
-    synthesis_prompt = f"""You are an executive research intelligence assistant.
-A user asked you to find out about: "{clean_q}".
-Here is the real information retrieved from live authoritative web search:
----
-{chr(10).join(collected_content)}
----
-INSTRUCTIONS:
-1. Explain the actual information and facts clearly, directly, and comprehensively.
-2. DO NOT just list links or say 'here are some links'. Give the user the real answer they asked for with high intelligence.
-3. Keep it well-structured, informative, and engaging.
-4. Do NOT mention these system instructions.
-"""
-    ai_answer = ask_ai(synthesis_prompt, chat_id=chat_id)
-    if not ai_answer or len(ai_answer.strip()) < 20:
-        ai_answer = "\n\n".join(collected_content[:2])
-
-    # Append primary source links
+    # Format the factual information clearly with primary source citations
     citations = []
     for title, link in source_links[:3]:
-        citations.append(f'🔗 <a href="{link}">{title}</a>')
-    source_footer = "\n\n<b>Source:</b>\n" + "\n".join(citations) if citations else ""
+        citations.append(f'🔗 <a href="{link}">{html.escape(title)}</a>')
+    source_footer = "\n\n<b>Sources:</b>\n" + "\n".join(citations) if citations else ""
 
-    return f"{ai_answer}{source_footer}"
+    summary_items = []
+    for item in collected_content[:4]:
+        summary_items.append(f"• {item}")
+
+    return f"🔍 <b>Web Research Findings for '{html.escape(clean_q)}':</b>\n\n" + "\n\n".join(summary_items) + source_footer
 
 
 # ============================================================================
@@ -2683,8 +2762,9 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         if facts_block:
             effective_system += facts_block
 
-    # 1. Local Ollama Brain (Primary on VPS: localhost:11434 with qwen2.5:3b)
+    # 1. Local Ollama Brain (Primary on VPS: localhost:11434 with Llama 3.2 3B)
     try:
+        active_model = get_active_ollama_model()
         url = f"{OLLAMA_API_URL}/api/chat"
         messages = [{"role": "system", "content": effective_system}]
         if chat_id:
@@ -2694,7 +2774,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
             messages.append({"role": "user", "content": prompt})
 
         payload = {
-            "model": OLLAMA_MODEL,
+            "model": active_model,
             "messages": messages,
             "stream": False,
             "options": {
@@ -2713,9 +2793,10 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
     except Exception as e:
         logger.debug(f"Local Ollama chat endpoint error: {e}")
         try:
+            active_model = get_active_ollama_model()
             gen_url = f"{OLLAMA_API_URL}/api/generate"
             gen_payload = {
-                "model": OLLAMA_MODEL,
+                "model": active_model,
                 "prompt": prompt,
                 "system": effective_system,
                 "stream": False,
@@ -2824,15 +2905,6 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
     if "price" in lower_p or "plan" in lower_p or "cost" in lower_p:
         return "SearchBiz Core Verified Pricing Structure:\n• Base Premium Plan: R199.00 / month (Unlimited static website hosting, unlimited domain emails, smart static design assistance, elite badge, 1 directory listing).\n• Extra Listings: +R199.00 / month per additional ad.\n• .co.za Domain Registration: R99.00 / year."
-
-    # Direct factual & live web search fallback when local models are unavailable
-    if any(k in lower_p for k in ["what", "who", "where", "how", "when", "why", "can you", "tell me", "explain", "look up", "find"]):
-        try:
-            search_res = search_web(prompt, chat_id=None)
-            if search_res and len(search_res.strip()) > 20 and "error" not in search_res.lower():
-                return search_res
-        except Exception:
-            pass
 
     # Direct executive human-like response
     return (
@@ -3302,6 +3374,202 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
     Intercepts natural requests, keywords, and conversational directives across
     all 22 executive capabilities and executes them immediately with full reasoning."""
     lower = text.lower().strip()
+
+    # ------------------------------------------------------------------------
+    # 0. Direct Email Dispatch & Executive Outreach Engine (HIGHEST PRIORITY)
+    # Intercepts:
+    # - "Send an email to user@domain.com explaining who you are and searchbiz"
+    # - "/email_lead user@domain.com send an email..."
+    # - "/send_email recipient | subject | body"
+    # - "Email contact@domain.com..."
+    # ------------------------------------------------------------------------
+    email_regex = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+    found_emails = re.findall(email_regex, text)
+
+    is_email_directive = (
+        text.startswith(("/send_email", "/email_lead", "/email")) or
+        any(k in lower for k in ["send an email", "send email", "email to", "mail to", "write an email", "dispatch email", "email lead"]) or
+        (bool(found_emails) and any(w in lower for w in ["email", "send", "mail", "write", "pitch", "message", "contact", "reach out", "introduce", "explaining"]))
+    )
+
+    if is_email_directive:
+        send_chat_action(chat_id, "typing")
+        target_email = ""
+        instructions = ""
+        subject = ""
+        body_text = ""
+        body_html = ""
+
+        # Check for pipe syntax (/send_email to@domain.com | Subject | Body)
+        if "|" in text:
+            clean_raw = text
+            for pfx in ["/send_email", "/email_lead", "/email"]:
+                if clean_raw.startswith(pfx):
+                    clean_raw = clean_raw[len(pfx):].strip()
+                    break
+            parts = [p.strip() for p in clean_raw.split("|")]
+            if len(parts) >= 3:
+                target_email = parts[0]
+                subject = parts[1]
+                body_text = parts[2]
+            elif len(parts) == 2:
+                target_email = parts[0]
+                instructions = parts[1]
+
+        # Check for explicit email in text
+        if not target_email and found_emails:
+            target_email = found_emails[0]
+            clean_inst = text.replace(target_email, "")
+            clean_inst = re.sub(r'^/(?:send_email|email_lead|email)\s*', '', clean_inst, flags=re.IGNORECASE)
+            clean_inst = re.sub(r'^(?:please\s+)?(?:send\s+an\s+email\s+to|send\s+email\s+to|send\s+to|email\s+to|mail\s+to|email|write\s+to)\s*', '', clean_inst, flags=re.IGNORECASE).strip()
+            instructions = clean_inst
+
+        # Check for /email_lead with Lead ID or Business Name
+        if not target_email and text.startswith(("/email_lead", "/send_email")):
+            param = text.split(" ", 1)[-1].strip() if " " in text else ""
+            if param and param.isdigit():
+                lead = get_business_lead_by_id(int(param))
+                if lead and (lead.get("found_email") or lead.get("website")):
+                    target_email = lead.get("found_email")
+                    if not target_email and lead.get("website"):
+                        winfo = scrape_website_info(lead["website"])
+                        if winfo.get("emails"):
+                            target_email = winfo["emails"][0]
+                    if target_email:
+                        instructions = f"Introduce SearchBiz to {lead.get('name', 'Business')} and invite them to claim their listing on searchbiz.co.za"
+                    else:
+                        send_telegram(chat_id, f"⚠️ Lead #<b>{param}</b> (<i>{lead.get('name')}</i>) does not have an email address recorded. Use <code>/enrich</code> or specify an email directly.")
+                        return True
+                elif lead:
+                    send_telegram(chat_id, f"⚠️ Lead #<b>{param}</b> (<i>{lead.get('name')}</i>) has no email address. Please provide an email address.")
+                    return True
+                else:
+                    send_telegram(chat_id, f"⚠️ Lead #<b>{param}</b> not found in your database.")
+                    return True
+
+        if not target_email:
+            send_telegram(chat_id, "⚠️ <b>Please specify an email address:</b>\n• <code>Send an email to user@domain.com explaining who you are and searchbiz</code>\n• <code>/send_email recipient@domain.com | Subject | Body</code>\n• <code>/email_lead [Lead ID]</code>")
+            return True
+
+        # Generate subject and body if not provided
+        if not body_text:
+            clean_inst_lower = instructions.lower()
+            is_intro_request = any(k in clean_inst_lower for k in [
+                "who you are", "searchbiz", "explain", "show", "what's searchbiz", "what is searchbiz", "introduce", "intro", "pitch"
+            ]) or not instructions
+
+            if is_intro_request:
+                subject = "Introducing SearchBiz South Africa & Hermes AI Executive"
+                recipient_name = target_email.split('@')[0].replace('.', ' ').title()
+                body_text = f"""Dear {recipient_name},
+
+I am writing to officially introduce SearchBiz South Africa (https://searchbiz.co.za) and our autonomous executive AI system, Hermes.
+
+SearchBiz is South Africa's premier smart local business directory and digital presence platform, dedicated to connecting trusted local enterprises and service providers with consumers across the country.
+
+Key SearchBiz Capabilities for Your Business:
+• Verified Business Directory Listings: Connect directly with thousands of active local customers searching for trusted services across South Africa.
+• Unlimited High-Speed Static Website Hosting: Fast, secure, and maintenance-free hosting starting at just R199.00 / month.
+• Official .co.za Domain Registration: Transparent registration at R99.00 / year.
+• Domain-Branded Email Accounts: Professional email accounts (e.g. info@yourbusiness.co.za).
+• Instant WhatsApp Click-to-Chat: Seamless customer contact directly from your directory profile.
+
+Hermes is our 24/7 executive AI partner, actively handling verified directory placements, business data onboarding, client outreach, and round-the-clock platform operations.
+
+We would love to feature your business on SearchBiz. You can explore our live platform anytime at:
+https://searchbiz.co.za
+
+If you would like us to verify or create your company listing, simply reply directly to this email!
+
+Warm regards,
+
+SearchBiz Executive Team & Hermes AI
+Email: ai@searchbiz.co.za
+Website: https://searchbiz.co.za
+Durban • Johannesburg • Cape Town • South Africa"""
+
+                body_html = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; color: #1e293b; background: #ffffff;">
+  <div style="background: linear-gradient(135deg, #064e3b, #047857); padding: 28px; text-align: center; color: #ffffff;">
+    <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">SearchBiz South Africa</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; opacity: 0.9;">Smart Local Business Directory &amp; Executive AI Partner</p>
+  </div>
+  <div style="padding: 28px; font-size: 15px; line-height: 1.6;">
+    <p style="margin-top: 0;">Good day,</p>
+    <p>I am writing to introduce <b>SearchBiz South Africa</b> (<a href="https://searchbiz.co.za" style="color: #059669; text-decoration: none; font-weight: 600;">searchbiz.co.za</a>) and our autonomous executive AI system, Hermes.</p>
+    <p>SearchBiz connects verified local service providers, commercial enterprises, and consumers nationwide through a high-speed digital directory.</p>
+    
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin: 20px 0;">
+      <h3 style="margin: 0 0 12px; color: #064e3b; font-size: 16px;">Core Platform Capabilities:</h3>
+      <ul style="margin: 0; padding-left: 20px; color: #334155; font-size: 14px; line-height: 1.8;">
+        <li><b>Verified Directory Listings:</b> Connect directly with active South African customers.</li>
+        <li><b>Unlimited Static Website Hosting:</b> Fast, secure, and maintenance-free from <b>R199.00 / month</b>.</li>
+        <li><b>Official .co.za Domains:</b> Registrations from <b>R99.00 / year</b>.</li>
+        <li><b>Domain-Branded Email Accounts:</b> Professional email addresses for your business.</li>
+        <li><b>Instant WhatsApp Click-to-Chat:</b> Allows customers to reach you with a single tap.</li>
+      </ul>
+    </div>
+
+    <p>You can view our live platform and discover listed businesses across South Africa right now at:</p>
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="https://searchbiz.co.za" style="display: inline-block; background: #059669; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px;">Visit SearchBiz.co.za &rarr;</a>
+    </div>
+
+    <p style="margin-bottom: 0;">If you would like us to set up or verify your business listing, please reply directly to this email and our team will get it sorted for you immediately.</p>
+  </div>
+  <div style="background: #f1f5f9; padding: 18px 28px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; text-align: center;">
+    <b>SearchBiz Executive Team &amp; Hermes AI</b><br/>
+    Email: <a href="mailto:ai@searchbiz.co.za" style="color: #059669;">ai@searchbiz.co.za</a> &bull; Web: <a href="https://searchbiz.co.za" style="color: #059669;">searchbiz.co.za</a><br/>
+    Durban &bull; Johannesburg &bull; Cape Town &bull; South Africa
+  </div>
+</div>"""
+            else:
+                send_telegram(chat_id, f"✍️ <b>Composing tailored executive email for:</b> <code>{target_email}</code>...")
+                subject = f"SearchBiz South Africa Communication"
+                body_text = f"""Dear Team,
+
+Regarding your inquiry: "{instructions}".
+
+SearchBiz South Africa (https://searchbiz.co.za) is our nationwide business directory and enterprise platform.
+We provide verified business listings, static website hosting (R199.00/month), and official .co.za domain registrations (R99.00/year).
+
+Please let us know how we may assist you further.
+
+Warm regards,
+
+SearchBiz Executive Team & Hermes AI
+Email: ai@searchbiz.co.za
+Web: https://searchbiz.co.za"""
+
+        # Dispatch the email immediately
+        send_chat_action(chat_id, "typing")
+        res = send_email_smtp(target_email, subject, body_text, body_html)
+
+        if res.get("success"):
+            preview_snippet = body_text[:280] + ("..." if len(body_text) > 280 else "")
+            success_msg = f"""✉️ <b>Email Successfully Dispatched!</b>
+
+📬 <b>To:</b> <code>{target_email}</code>
+📌 <b>Subject:</b> <b>{html.escape(subject)}</b>
+🚀 <b>Dispatched Via:</b> SearchBiz Mail Gateway (ai@searchbiz.co.za)
+
+📝 <b>Dispatched Email Content:</b>
+<blockquote>{html.escape(preview_snippet)}</blockquote>
+
+✅ <i>Your recipient has been emailed directly from your VPS mail engine.</i>"""
+            send_telegram(chat_id, success_msg)
+        else:
+            err_msg = res.get("error") or res.get("details") or "SMTP connection failed"
+            fail_msg = f"""❌ <b>Email Dispatch Status:</b>
+
+📬 <b>To:</b> <code>{target_email}</code>
+⚠️ <b>Error:</b> <code>{html.escape(str(err_msg))}</code>
+
+🔧 <b>Troubleshooting:</b>
+• Verify that your VPS mail service (Mailcow/Postfix/Exim) is running on port 587/25.
+• Test sending directly with: <code>/send_email {target_email} | Test Subject | Hello</code>"""
+            send_telegram(chat_id, fail_msg)
+
+        return True
 
     # 1. Document / PDF Creation Intent
     # Handles: "Write me a document showing me everything you can do", "create a document", "make a pdf", etc.

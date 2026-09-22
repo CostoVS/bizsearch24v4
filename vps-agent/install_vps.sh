@@ -42,8 +42,8 @@ echo "🧠 Ensuring Ollama service is active..."
 systemctl start ollama || true
 sleep 3
 
-echo "📥 Pulling qwen2.5:3b model into Ollama..."
-ollama pull qwen2.5:3b
+echo "📥 Pulling llama3.2:3b (Llama-3.2-3B-Instruct Q4_K_M) into Ollama..."
+ollama pull llama3.2:3b
 
 # 4. Create App Directory
 APP_DIR="/opt/hermes-searchbiz"
