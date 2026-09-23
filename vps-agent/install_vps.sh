@@ -16,9 +16,13 @@ elif command -v yum &> /dev/null; then
     yum install -y python3 python3-pip sqlite curl git ffmpeg flac || true
 fi
 
-# Python speech, voice synthesis, and executive tools
-pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts reportlab python-docx requests pillow || \
-pip3 install --break-system-packages faster-whisper vosk edge-tts reportlab python-docx requests pillow || true
+# Python speech, voice synthesis, scraping, and executive tools
+pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts reportlab python-docx requests pillow beautifulsoup4 schedule playwright || \
+pip3 install --break-system-packages faster-whisper vosk edge-tts reportlab python-docx requests pillow beautifulsoup4 schedule playwright || true
+
+# Install Playwright Chromium browser binaries
+python3 -m playwright install chromium 2>/dev/null || true
+python3 -m playwright install-deps chromium 2>/dev/null || true
 
 # Pre-cache open source Whisper tiny model for instant zero-lag voice note transcription
 python3 -c "
