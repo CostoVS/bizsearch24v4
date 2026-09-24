@@ -1,12 +1,46 @@
-export interface CategoryGroup {
-  name: string;
-  subcategories: string[];
+export interface CategoryItem {
+  id: string; // e.g. "1.1"
+  name: string; // e.g. "Auto Body & Repair Shops"
+  fullName: string; // e.g. "1.1 Auto Body & Repair Shops"
 }
 
-export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
+export interface CategoryGroup {
+  id: number; // 1 to 20
+  code: string; // "1" to "20"
+  name: string; // "1. AUTOMOTIVE & VEHICLES"
+  cleanName: string; // "AUTOMOTIVE & VEHICLES"
+  subcategories: string[]; // ["1.1 Auto Body & Repair Shops", "1.2 Car Wash & Detailing", ...]
+  cleanSubcategories: string[]; // ["Auto Body & Repair Shops", "Car Wash & Detailing", ...]
+  items: CategoryItem[];
+}
+
+export const CATEGORY_ICONS: Record<string, string> = {
+  "AUTOMOTIVE & VEHICLES": "🚗",
+  "BEAUTY & PERSONAL CARE": "✂️",
+  "BUSINESS SERVICES": "💼",
+  "CLEANING & JANITORIAL": "🧹",
+  "COMMUNITY & PUBLIC": "🏛️",
+  "CONSTRUCTION & TRADES": "🔨",
+  "EDUCATION & TRAINING": "🎓",
+  "ENTERTAINMENT & RECREATION": "🎟️",
+  "EVENTS & WEDDINGS": "🎉",
+  "FINANCIAL SERVICES": "💳",
+  "FOOD & DINING": "🍽️",
+  "GROCERIES & MARKETS": "🛒",
+  "HEALTH & MEDICAL": "🏥",
+  "HOME & GARDEN": "🏡",
+  "HOTELS & TRAVEL": "🏨",
+  "MANUFACTURING & INDUSTRIAL": "🏭",
+  "REAL ESTATE & HOUSING": "🏢",
+  "RETAIL SHOPPING": "🛍️",
+  "SPORTS & FITNESS": "🏋️",
+  "TRANSPORTATION & LOGISTICS": "🚚"
+};
+
+const RAW_GROUPS: { name: string; subs: string[] }[] = [
   {
     name: "AUTOMOTIVE & VEHICLES",
-    subcategories: [
+    subs: [
       "Auto Body & Repair Shops",
       "Car Wash & Detailing",
       "Car Rental Agencies",
@@ -20,7 +54,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "BEAUTY & PERSONAL CARE",
-    subcategories: [
+    subs: [
       "Barbershops & Hair Salons",
       "Cosmetics & Skincare",
       "Day Spas & Wellness Centres",
@@ -34,7 +68,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "BUSINESS SERVICES",
-    subcategories: [
+    subs: [
       "Accounting & Bookkeeping",
       "Advertising, Marketing & PR",
       "Consultants (Management & Strategy)",
@@ -49,7 +83,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "CLEANING & JANITORIAL",
-    subcategories: [
+    subs: [
       "Carpet & Upholstery Cleaning",
       "Commercial & Office Cleaning",
       "Disaster Restoration",
@@ -60,7 +94,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "COMMUNITY & PUBLIC",
-    subcategories: [
+    subs: [
       "Fire & Police Stations",
       "Libraries & Community Centres",
       "Non-Profit Organisations",
@@ -71,7 +105,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "CONSTRUCTION & TRADES",
-    subcategories: [
+    subs: [
       "Carpentry & Woodworking",
       "Concrete & Masonry",
       "Demolition Services",
@@ -85,7 +119,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "EDUCATION & TRAINING",
-    subcategories: [
+    subs: [
       "Art & Music Schools",
       "Colleges & Universities",
       "Daycare & Preschools",
@@ -97,7 +131,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "ENTERTAINMENT & RECREATION",
-    subcategories: [
+    subs: [
       "Amusement Parks & Arcades",
       "Bowling Alleys & Skating Rinks",
       "Casinos & Gambling",
@@ -110,7 +144,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "EVENTS & WEDDINGS",
-    subcategories: [
+    subs: [
       "Bridal Shops",
       "Catering Services",
       "DJs & Live Entertainment",
@@ -122,7 +156,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "FINANCIAL SERVICES",
-    subcategories: [
+    subs: [
       "Banks & Credit Unions",
       "Insurance Agents & Brokers",
       "Loans & Financing",
@@ -132,7 +166,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "FOOD & DINING",
-    subcategories: [
+    subs: [
       "Bakeries & Dessert Shops",
       "Bars, Pubs & Taverns",
       "Breweries, Distilleries & Wineries",
@@ -145,7 +179,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "GROCERIES & MARKETS",
-    subcategories: [
+    subs: [
       "Convenience Stores",
       "Farmers Markets",
       "Gas Station Markets",
@@ -156,7 +190,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "HEALTH & MEDICAL",
-    subcategories: [
+    subs: [
       "Chiropractors",
       "Dental Clinics",
       "Hospitals & Emergency Rooms",
@@ -170,7 +204,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "HOME & GARDEN",
-    subcategories: [
+    subs: [
       "Appliance Repair",
       "Handyman Services",
       "Hardware & Tool Rental",
@@ -184,7 +218,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "HOTELS & TRAVEL",
-    subcategories: [
+    subs: [
       "Bed & Breakfasts",
       "Campgrounds & RV Parks",
       "Hostels",
@@ -195,7 +229,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "MANUFACTURING & INDUSTRIAL",
-    subcategories: [
+    subs: [
       "Chemical & Plastics Industry",
       "Electronics Manufacturing",
       "Food & Beverage Production",
@@ -207,7 +241,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "REAL ESTATE & HOUSING",
-    subcategories: [
+    subs: [
       "Apartments & Flat Rentals",
       "Commercial Real Estate Brokers",
       "Property Management",
@@ -218,7 +252,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "RETAIL SHOPPING",
-    subcategories: [
+    subs: [
       "Bookstores",
       "Clothing, Shoes & Apparel",
       "Electronics & Computer Shops",
@@ -232,7 +266,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "SPORTS & FITNESS",
-    subcategories: [
+    subs: [
       "Bicycle Shops & Repair",
       "Golf Courses & Country Clubs",
       "Gyms & Fitness Centres",
@@ -244,7 +278,7 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   },
   {
     name: "TRANSPORTATION & LOGISTICS",
-    subcategories: [
+    subs: [
       "Airport Shuttles & Limos",
       "Courier & Delivery Services",
       "Freight & Cargo Shipping",
@@ -255,31 +289,117 @@ export const CATEGORIES_STRUCTURED: CategoryGroup[] = [
   }
 ];
 
-// Flat export of all individual subcategories for backward compatibility, with "Other" as requested
+export const CATEGORIES_STRUCTURED: CategoryGroup[] = RAW_GROUPS.map((group, groupIdx) => {
+  const pNum = groupIdx + 1;
+  const pCode = `${pNum}`;
+  const pName = `${pNum}. ${group.name}`;
+  
+  const items: CategoryItem[] = group.subs.map((sub, subIdx) => {
+    const sNum = `${pNum}.${subIdx + 1}`;
+    return {
+      id: sNum,
+      name: sub,
+      fullName: `${sNum} ${sub}`
+    };
+  });
+
+  return {
+    id: pNum,
+    code: pCode,
+    name: pName,
+    cleanName: group.name,
+    subcategories: items.map(item => item.fullName),
+    cleanSubcategories: group.subs,
+    items
+  };
+});
+
+// Flat export of all individual numbered subcategories plus "Other"
 export const CATEGORIES = [
-  ...Array.from(new Set(CATEGORIES_STRUCTURED.flatMap(g => g.subcategories))).sort(),
+  ...CATEGORIES_STRUCTURED.flatMap(g => g.subcategories),
   "Other"
 ];
 
 /**
+ * Strips number prefix from a category string.
+ * Examples:
+ *  "1. AUTOMOTIVE & VEHICLES" -> "AUTOMOTIVE & VEHICLES"
+ *  "1.1 Auto Body & Repair Shops" -> "Auto Body & Repair Shops"
+ *  "Auto Body & Repair Shops" -> "Auto Body & Repair Shops"
+ */
+export function stripCategoryNumber(str: string): string {
+  if (!str) return '';
+  return str.replace(/^\d+(\.\d+)?\.?\s*[-:]?\s*/, '').trim();
+}
+
+/**
+ * Extracts numeric ID/code prefix from category name.
+ * Examples:
+ *  "1. AUTOMOTIVE & VEHICLES" -> "1"
+ *  "1.1 Auto Body & Repair Shops" -> "1.1"
+ *  "10.2 Insurance" -> "10.2"
+ */
+export function getCategoryCode(str: string): string {
+  if (!str) return '';
+  const match = str.trim().match(/^(\d+(\.\d+)?)/);
+  return match ? match[1] : '';
+}
+
+/**
+ * Returns the matching icon for a given category name or number.
+ */
+export function getCategoryIcon(name: string): string {
+  if (!name) return "📁";
+  const clean = stripCategoryNumber(name).toUpperCase().trim();
+  for (const [key, icon] of Object.entries(CATEGORY_ICONS)) {
+    if (clean === key || clean.includes(key) || key.includes(clean)) {
+      return icon;
+    }
+  }
+  return "📁";
+}
+
+/**
  * Checks if a child category is a direct match or belongs to the parent category/group.
+ * Supports comparison between numbered and unnumbered formats.
  */
 export function isSubcategoryOf(sub: string, parent: string): boolean {
   if (!sub || !parent) return false;
-  const parentClean = parent.toLowerCase().trim();
-  const subClean = sub.toLowerCase().trim();
+  
+  const rawSub = sub.toLowerCase().trim();
+  const rawParent = parent.toLowerCase().trim();
 
-  if (parentClean === subClean) return true;
+  // Direct string equality
+  if (rawSub === rawParent) return true;
 
-  // Find if parent matches a group name
-  const group = CATEGORIES_STRUCTURED.find(
-    g => g.name.toLowerCase().trim() === parentClean || g.name.toLowerCase().replace(/&/g, "and").trim() === parentClean
-  );
-  if (group) {
-    return group.subcategories.some(
-      s => s.toLowerCase().trim() === subClean
-    );
+  const cleanSub = stripCategoryNumber(sub).toLowerCase().trim();
+  const cleanParent = stripCategoryNumber(parent).toLowerCase().trim();
+
+  // Clean string equality (ignoring numbering difference)
+  if (cleanSub && cleanParent && cleanSub === cleanParent) return true;
+
+  // Code matching (e.g. parent is "1" and sub is "1.1 Auto Body" or "1.1")
+  const subCode = getCategoryCode(sub);
+  const parentCode = getCategoryCode(parent);
+  if (parentCode && subCode && (subCode === parentCode || subCode.startsWith(`${parentCode}.`))) {
+    return true;
   }
+
+  // Find if parent matches a group name or cleanName
+  const group = CATEGORIES_STRUCTURED.find(
+    g => g.name.toLowerCase() === rawParent ||
+         g.cleanName.toLowerCase() === cleanParent ||
+         g.code === parentCode ||
+         g.name.toLowerCase().replace(/&/g, "and") === cleanParent
+  );
+
+  if (group) {
+    return group.subcategories.some(s => {
+      const sRaw = s.toLowerCase().trim();
+      const sClean = stripCategoryNumber(s).toLowerCase().trim();
+      return sRaw === rawSub || sClean === cleanSub || (subCode && getCategoryCode(s) === subCode);
+    }) || group.cleanSubcategories.some(s => s.toLowerCase().trim() === cleanSub);
+  }
+
   return false;
 }
-

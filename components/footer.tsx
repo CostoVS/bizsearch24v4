@@ -139,6 +139,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
             </h3>
             <div className="space-y-2.5 text-sm">
               <Link href="/directory" className="block hover:text-emerald-400 transition-colors">Home Directory</Link>
+              <Link href="/categories" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">All Categories</Link>
               <Link href="/posts" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SHOWOFS Feed</Link>
               <Link href="/pricing" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SearchBiz.co.za Pricing</Link>
               <Link href="/tools" className="block hover:text-indigo-400 transition-colors font-bold text-indigo-400">SearchBiz.co.za Tools</Link>

@@ -7,6 +7,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const baseRoutes = [
     '',
     '/directory',
+    '/categories',
     '/services',
     '/news',
     '/tools',

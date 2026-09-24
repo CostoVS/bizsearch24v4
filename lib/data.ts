@@ -10,13 +10,25 @@ import {
   NORTH_WEST_SUBURBS,
   NORTHERN_CAPE_SUBURBS 
 } from './locations';
-import { CATEGORIES as ALL_CATS, CATEGORIES_STRUCTURED as ALL_CATS_STRUCT, isSubcategoryOf as IS_SUB } from './categories';
+import { 
+  CATEGORIES as ALL_CATS, 
+  CATEGORIES_STRUCTURED as ALL_CATS_STRUCT, 
+  isSubcategoryOf as IS_SUB,
+  CATEGORY_ICONS as ALL_CAT_ICONS,
+  getCategoryIcon as GET_CAT_ICON,
+  stripCategoryNumber as STRIP_CAT_NUM,
+  getCategoryCode as GET_CAT_CODE
+} from './categories';
 import { cleanAdsArray } from './clean-ad';
 
 export const PROVINCES = SA_PROVINCES;
 export const CATEGORIES = ALL_CATS;
 export const CATEGORIES_STRUCTURED = ALL_CATS_STRUCT;
 export const isSubcategoryOf = IS_SUB;
+export const CATEGORY_ICONS = ALL_CAT_ICONS;
+export const getCategoryIcon = GET_CAT_ICON;
+export const stripCategoryNumber = STRIP_CAT_NUM;
+export const getCategoryCode = GET_CAT_CODE;
 
 // Memoized static set of all lowercase South African location names (provinces, towns, suburbs)
 let locationsSet: Set<string> | null = null;

@@ -295,10 +295,18 @@ export default async function SitemapPage() {
 
         <div className="lg:col-span-1">
           <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 sticky top-28 block">
-            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center">
-              <Briefcase className="mr-2 text-emerald-600" />
-              All Categories
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center">
+                <Briefcase className="mr-2 text-emerald-600" />
+                Categories
+              </h2>
+              <Link 
+                href="/categories" 
+                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 underline"
+              >
+                Full Index →
+              </Link>
+            </div>
             <div className="flex flex-col space-y-2 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
               {CATEGORIES.map(cat => (
                 <Link 
