@@ -4488,20 +4488,63 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
     lower = text.lower().strip()
 
     # ------------------------------------------------------------------------
-    # 0. Direct Email Dispatch & Executive Outreach Engine (HIGHEST PRIORITY)
+    # 0. Google Maps Stealth Scraping & CSV Spreadsheet Generation (TOP PRIORITY)
     # Intercepts:
-    # - "Send an email to user@domain.com explaining who you are and searchbiz"
-    # - "/email_lead user@domain.com send an email..."
+    # - "/scrape ...", "/scrape_maps ...", "/maps_scrape ...", "/extract ..."
+    # - "scrape Google maps find all spare shops in umkomaas 4170 kzn..."
+    # - "Search for spare shops umkomaas kzn and show me everything also send me a spreadsheet..."
+    # - Any request asking to scrape, extract, or place business details into a spreadsheet/CSV
+    # ------------------------------------------------------------------------
+    is_maps_scrape_req = (
+        text.startswith(("/scrape_maps", "/scrape", "/maps_scrape", "/extract")) or
+        any(k in lower for k in [
+            "scrape google maps", "google maps scrape", "scrape maps", "maps scrape",
+            "extract google maps", "google maps extract", "scrape business listings",
+            "find business listings on google maps", "extract business listings",
+            "scrape spares", "scrape shops", "scrape leads", "scrape businesses",
+            "find all spare shops", "find all spares", "find all shops",
+            "place it all in a spreadsheet", "send me a spreadsheet", "make a spreadsheet",
+            "place in a spreadsheet", "send a spreadsheet", "export to spreadsheet",
+            "in a spreadsheet with", "spreadsheet with colomms", "spreadsheet with columns"
+        ]) or
+        any(w in lower for w in ["scrape", "extract", "scraping", "extraction"]) or
+        (any(w in lower for w in ["spreadsheet", "spread sheet", "csv", "excel", "colomm", "colomms", "column", "columns"]) and 
+         any(w in lower for w in ["spare", "spares", "shop", "shops", "business", "businesses", "store", "stores", "service", "services", "listings", "maps", "umkomaas", "scottburgh", "durban", "search for"])) or
+        (any(w in lower for w in ["search for", "find all", "find"]) and 
+         any(w in lower for w in ["spare", "spares", "shop", "shops", "motor spares"]) and
+         any(w in lower for w in ["spreadsheet", "csv", "email it to me", "send me", "show me everything", "details"]))
+    )
+    if is_maps_scrape_req:
+        send_chat_action(chat_id, "upload_document")
+        scrape_stealth_google_maps(text, chat_id)
+        return True
+
+    # ------------------------------------------------------------------------
+    # 1. Direct Email Dispatch & Executive Outreach Engine
+    # Intercepts:
     # - "/send_email recipient | subject | body"
-    # - "Email contact@domain.com..."
+    # - "/email_lead user@domain.com send an email..."
+    # - "Send an email to user@domain.com explaining who you are and searchbiz"
+    # - STRICT GUARD: Scraping/spreadsheet requests are NEVER treated as cold outreach!
     # ------------------------------------------------------------------------
     email_regex = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
     found_emails = re.findall(email_regex, text)
 
-    is_email_directive = (
+    is_scraping_or_data_request = (
+        is_maps_scrape_req or
+        any(w in lower for w in [
+            "scrape", "spreadsheet", "csv", "excel", "maps", "google maps",
+            "spare", "spares", "shops", "businesses", "colomm", "colomms", "column",
+            "columns", "extract", "find all", "show me everything", "details"
+        ]) or
+        text.startswith(("/scrape", "/extract"))
+    )
+
+    is_email_directive = not is_scraping_or_data_request and (
         text.startswith(("/send_email", "/email_lead", "/email")) or
-        any(k in lower for k in ["send an email", "send email", "email to", "mail to", "write an email", "dispatch email", "email lead"]) or
-        (bool(found_emails) and any(w in lower for w in ["email", "send", "mail", "write", "pitch", "message", "contact", "reach out", "introduce", "explaining"]))
+        any(k in lower for k in ["send an email to", "send email to", "email to", "mail to", "write an email to", "dispatch email to"]) or
+        (bool(found_emails) and any(w in lower for w in ["email", "send", "mail", "write", "pitch", "message", "contact", "reach out", "introduce", "explaining"]) and
+         any(w in lower for w in ["pitch", "introduce", "explaining", "reach out", "tell them", "saying", "invite"]))
     )
 
     if is_email_directive:
@@ -4972,23 +5015,7 @@ Format requirements:
         send_telegram(chat_id, res)
         return True
 
-    # 6. Google Maps Stealth Scraping & Extraction Intent
-    is_maps_scrape_req = (
-        text.startswith(("/scrape_maps", "/scrape", "/maps_scrape")) or
-        any(k in lower for k in [
-            "scrape google maps", "google maps scrape", "scrape maps", "maps scrape",
-            "extract google maps", "google maps extract", "scrape business listings",
-            "find business listings on google maps", "extract business listings",
-            "scrape spares", "scrape shops", "scrape leads"
-        ]) or
-        (any(w in lower for w in ["scrape", "extract"]) and any(w in lower for w in ["google maps", "maps", "listings", "csv"]))
-    )
-    if is_maps_scrape_req:
-        send_chat_action(chat_id, "upload_document")
-        scrape_stealth_google_maps(text, chat_id)
-        return True
-
-    # 7. Google Maps Search Natural Intent
+    # 6. Google Maps Search Natural Intent
     if any(k in lower for k in ["search google maps", "google maps search", "find businesses in", "search maps for"]):
         send_chat_action(chat_id, "typing")
         loc_q = text
