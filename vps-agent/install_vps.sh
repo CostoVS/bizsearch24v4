@@ -41,13 +41,20 @@ else
     echo "✅ Ollama already installed."
 fi
 
-# 3. Start Ollama and pull qwen2.5:3b (~2.2 GB)
+# 3. Setup Llama-3.2-3B-Instruct-Abliterated GGUF into Ollama
 echo "🧠 Ensuring Ollama service is active..."
 systemctl start ollama || true
 sleep 3
 
-echo "📥 Pulling llama3.2:3b (Llama-3.2-3B-Instruct Q4_K_M) into Ollama..."
-ollama pull llama3.2:3b
+if [ -f "./setup_abliterated_model.sh" ]; then
+    bash ./setup_abliterated_model.sh
+else
+    echo "📥 Pulling Llama-3.2-3B-Instruct-Abliterated GGUF into Ollama..."
+    ollama pull hf.co/MaziyarPanahi/Llama-3.2-3B-Instruct-abliterated-GGUF:Q4_K_M && \
+    ollama cp hf.co/MaziyarPanahi/Llama-3.2-3B-Instruct-abliterated-GGUF:Q4_K_M llama-3.2-3b-instruct-abliterated || \
+    ollama pull richardyoung/llama-3.2-3b-instruct-abliterated || \
+    ollama pull llama3.2:3b
+fi
 
 # 4. Create App Directory
 APP_DIR="/opt/hermes-searchbiz"

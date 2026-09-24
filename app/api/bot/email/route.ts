@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       body: rawBody, 
       from, 
       replyTo,
+      attachments,
       // Optional custom SMTP override (useful if connecting directly to DirectAdmin/VPS mail)
       smtpConfig 
     } = body;
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
 
     const sender = from || `"SearchBiz AI Executive" <${user}>`;
 
-    const mailOptions = {
+    const mailOptions: any = {
       from: sender,
       to: to.trim(),
       replyTo: replyTo || user,
@@ -117,7 +118,8 @@ ${emailContent}
             Sent automatically via SearchBiz AI Assistant &bull; searchbiz.co.za
           </p>
         </div>
-      `
+      `,
+      ...(attachments && Array.isArray(attachments) ? { attachments } : {})
     };
 
     const info = await transporter.sendMail(mailOptions);

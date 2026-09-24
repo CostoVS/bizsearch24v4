@@ -1,6 +1,6 @@
 # SearchBiz Hermes Autonomous Agent, VPS Monitoring & Security Suite
 
-This package connects **Hermes Executive Agent**, **Ollama (`qwen2.5:3b`)**, and **Telegram (`@Searchbiz_bot`)** directly to **searchbiz.co.za** to autonomously manage directory listings, scrape & enrich CSV business leads, generate watermark-free FLUX images, generate Word/PDF documents, and monitor/protect your VPS with open-source tools.
+This package connects **Hermes Executive Agent**, **Ollama (`Llama-3.2-3B-Instruct-Abliterated GGUF`)**, and **Telegram (`@Searchbiz_bot`)** directly to **searchbiz.co.za** to autonomously manage directory listings, scrape & enrich CSV business leads, generate watermark-free FLUX images, generate Word/PDF documents, and monitor/protect your VPS with open-source tools.
 
 ---
 
