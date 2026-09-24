@@ -3,9 +3,16 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
+# Optimize npm for network resilience and prevent ECONNRESET timeouts on cloud VPS
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-timeout 300000 \
+    && npm config set maxsockets 5
+
 # Install dependencies based on package-lock.json
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install --no-audit --no-fund
 
 # Stage 2: Rebuild the source code only when needed
 FROM node:20-alpine AS builder
