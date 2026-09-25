@@ -27,6 +27,8 @@ export interface BotAdPayload {
   verified?: boolean;
   isPremium?: boolean;
   isSponsor?: boolean;
+  isClaimed?: boolean;
+  plan?: string;
   image?: string;
   price?: string | number;
 }
@@ -131,6 +133,12 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     ? payload.description.trim()
     : `${payload.title.trim()} offers top-tier professional ${payload.category || 'business'} services in ${town}, ${province.toUpperCase()}. Contact us today for reliable support and quotes.`;
 
+  const isFree = payload.isClaimed === false || payload.plan === 'free' || payload.isPremium === false;
+  const isClaimed = payload.isClaimed !== undefined ? payload.isClaimed : !isFree;
+  const isPremium = payload.isPremium !== undefined ? payload.isPremium : !isFree;
+  const verified = payload.verified !== undefined ? payload.verified : !isFree;
+  const plan = payload.plan ? payload.plan : (isFree ? 'free' : 'PREMIUM');
+
   const newAd = {
     id: adId,
     userId: 'agent-bot',
@@ -143,21 +151,22 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     suburb: payload.suburb ? payload.suburb.trim() : '',
     serviceAreas: [],
     description: defaultDescription,
-    tradingHours: payload.tradingHours || 'Mon-Fri: 08:00 - 17:00',
+    tradingHours: isFree ? (payload.tradingHours || 'Contact business for operating hours') : (payload.tradingHours || 'Mon-Fri: 08:00 - 17:00'),
     servicesOffered: payload.servicesOffered || payload.category || 'Professional Services',
-    preferredContact: payload.preferredContact || (payload.whatsapp ? 'WhatsApp' : 'Phone'),
+    preferredContact: isFree ? 'Phone' : (payload.preferredContact || (payload.whatsapp ? 'WhatsApp' : 'Phone')),
     showCallOption: true,
-    verified: payload.verified !== undefined ? payload.verified : true,
-    isPremium: payload.isPremium !== undefined ? payload.isPremium : true,
-    isSponsor: payload.isSponsor || false,
-    isClaimed: true,
+    verified: verified,
+    isPremium: isPremium,
+    isSponsor: isFree ? false : (payload.isSponsor || false),
+    isClaimed: isClaimed,
+    plan: plan,
     source: 'agent_bot',
     image: payload.image || 'https://picsum.photos/seed/' + encodeURIComponent(payload.title) + '/800/600',
     address: payload.address ? payload.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
     phone: payload.phone.trim(),
-    whatsapp: payload.whatsapp ? payload.whatsapp.trim() : payload.phone.trim(),
-    email: payload.email ? payload.email.trim() : '',
-    website: payload.website ? payload.website.trim() : '',
+    whatsapp: isFree ? '' : (payload.whatsapp ? payload.whatsapp.trim() : payload.phone.trim()),
+    email: isFree ? '' : (payload.email ? payload.email.trim() : ''),
+    website: isFree ? '' : (payload.website ? payload.website.trim() : ''),
     price: payload.price !== undefined ? payload.price : undefined,
     createdAt: nowIso,
     updatedAt: nowIso
@@ -546,6 +555,69 @@ export async function updateBotAd(
   return {
     success: true,
     updatedAd
+  };
+}
+
+/**
+ * Upgrade an ad from Free / Unclaimed to Paid Premium Listing
+ */
+export async function upgradeBotAd(
+  idOrTitle: string,
+  updates?: Partial<BotAdPayload>
+): Promise<{ success: boolean; ad?: any; error?: string }> {
+  if (!idOrTitle || !idOrTitle.trim()) {
+    return { success: false, error: 'Ad ID or business title is required to upgrade.' };
+  }
+
+  const query = idOrTitle.trim().toLowerCase();
+  const dbData = readServerDb();
+  const ads = Array.isArray(dbData.ads) ? dbData.ads : [];
+
+  const adIndex = ads.findIndex((a: any) => 
+    a && (
+      (a.id && a.id.toLowerCase() === query) ||
+      (a.title && a.title.toLowerCase() === query) ||
+      (a.title && a.title.toLowerCase().includes(query))
+    )
+  );
+
+  if (adIndex === -1) {
+    return { success: false, error: `No advertisement found matching "${idOrTitle}" to upgrade.` };
+  }
+
+  const targetAd = ads[adIndex];
+  const nowIso = new Date().toISOString();
+
+  // Upgrade status to full Premium
+  targetAd.isClaimed = true;
+  targetAd.isPremium = true;
+  targetAd.verified = true;
+  targetAd.plan = 'PREMIUM';
+  targetAd.updatedAt = nowIso;
+
+  if (updates) {
+    if (updates.website) targetAd.website = updates.website.trim();
+    if (updates.email) targetAd.email = updates.email.trim();
+    if (updates.whatsapp) targetAd.whatsapp = updates.whatsapp.trim();
+    if (updates.description) targetAd.description = updates.description.trim();
+    if (updates.image) targetAd.image = updates.image;
+    if (updates.tradingHours) targetAd.tradingHours = updates.tradingHours;
+    if (updates.servicesOffered) targetAd.servicesOffered = updates.servicesOffered;
+    if (updates.address) targetAd.address = updates.address.trim();
+    if (updates.phone) targetAd.phone = updates.phone.trim();
+    if (updates.category) targetAd.category = updates.category.trim();
+  }
+
+  ads[adIndex] = targetAd;
+  dbData.ads = cleanAdsArray(ads);
+  writeServerDb(dbData);
+
+  return {
+    success: true,
+    ad: {
+      ...targetAd,
+      url: `/directory?q=${encodeURIComponent(targetAd.title)}`
+    }
   };
 }
 

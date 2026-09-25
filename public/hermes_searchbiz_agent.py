@@ -134,6 +134,13 @@ DB_PATH = os.getenv("HERMES_DB_PATH", os.path.join(os.path.dirname(os.path.abspa
 LEADS_DIR = os.getenv("HERMES_LEADS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "leads_storage"))
 os.makedirs(LEADS_DIR, exist_ok=True)
 
+# Dedicated Permanent Scraped Leads Vault (Stores all raw & enriched lead data for future upgrades)
+VAULT_DIR = os.getenv("HERMES_VAULT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "scraped_leads_vault"))
+VAULT_ARCHIVE_DIR = os.path.join(VAULT_DIR, "archive")
+VAULT_LEADS_DIR = os.path.join(VAULT_DIR, "leads")
+os.makedirs(VAULT_ARCHIVE_DIR, exist_ok=True)
+os.makedirs(VAULT_LEADS_DIR, exist_ok=True)
+
 # Image prompt memory cache per chat
 _LAST_IMAGE_PROMPTS: Dict[int, str] = {}
 
@@ -230,6 +237,35 @@ def init_memory_db():
                 conn.execute("ALTER TABLE business_leads ADD COLUMN maps_url TEXT DEFAULT ''")
             except Exception:
                 pass
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scraped_vault_leads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_name TEXT,
+                    category TEXT,
+                    province TEXT,
+                    city TEXT,
+                    postal_code TEXT,
+                    address TEXT,
+                    phone TEXT,
+                    telephone TEXT,
+                    whatsapp TEXT,
+                    email TEXT,
+                    website TEXT,
+                    trading_hours TEXT,
+                    rating TEXT,
+                    reviews_count TEXT,
+                    google_maps_url TEXT,
+                    social_links TEXT,
+                    raw_json TEXT,
+                    archive_file TEXT,
+                    searchbiz_ad_id TEXT DEFAULT '',
+                    plan TEXT DEFAULT 'free',
+                    is_claimed INTEGER DEFAULT 0,
+                    is_upgraded INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS installed_skills (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2096,8 +2132,167 @@ Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Emai
         "csv_bytes": csv_bytes
     }
 
-def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
-    """Bulk creates active listings on searchbiz.co.za from scraped Google Maps leads concurrently."""
+def save_scraped_lead_to_vault(lead: dict, archive_filename: str = "") -> dict:
+    """Stores full raw & enriched scrape details into dedicated scraped_leads_vault/ for future upgrades."""
+    clean_name = lead.get("name") or lead.get("business_name") or ""
+    clean_name = clean_name.strip()
+    if not clean_name:
+        return {"success": False, "error": "Lead must have a name"}
+    
+    slug = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_name.lower())[:50]
+    lead_file = os.path.join(VAULT_LEADS_DIR, f"{slug}.json")
+    
+    lead_record = {
+        "business_name": clean_name,
+        "category": lead.get("category", "Services"),
+        "province": lead.get("province", "kwazulu-natal"),
+        "city": lead.get("city", "Durban"),
+        "postal_code": lead.get("postal_code", ""),
+        "address": lead.get("address", ""),
+        "phone": lead.get("phone", ""),
+        "telephone": lead.get("telephone") or lead.get("phone", ""),
+        "whatsapp": normalize_sa_phone(lead.get("found_whatsapp") or lead.get("whatsapp") or lead.get("phone") or ""),
+        "email": lead.get("found_email") or lead.get("email") or "",
+        "website": lead.get("website", ""),
+        "trading_hours": lead.get("trading_hours", ""),
+        "rating": str(lead.get("rating", "")),
+        "reviews_count": str(lead.get("reviews_count") or lead.get("reviews") or ""),
+        "google_maps_url": lead.get("google_maps_url") or lead.get("maps_url", ""),
+        "social_links": lead.get("social_links", ""),
+        "archive_file": archive_filename or os.path.basename(lead_file),
+        "searchbiz_ad_id": lead.get("searchbiz_ad_id", ""),
+        "plan": lead.get("plan", "free"),
+        "is_claimed": lead.get("is_claimed", 0),
+        "is_upgraded": lead.get("is_upgraded", 0),
+        "scraped_at": datetime.now().isoformat()
+    }
+    
+    try:
+        with open(lead_file, "w", encoding="utf-8") as f:
+            json.dump(lead_record, f, indent=2, ensure_ascii=False)
+    except Exception as fe:
+        logger.debug(f"Vault JSON write note: {fe}")
+
+    vault_id = None
+    try:
+        init_memory_db()
+        with get_db() as conn:
+            cur = conn.execute("""
+                INSERT INTO scraped_vault_leads 
+                (business_name, category, province, city, postal_code, address, phone, telephone, whatsapp, email, website, trading_hours, rating, reviews_count, google_maps_url, social_links, raw_json, archive_file, searchbiz_ad_id, plan, is_claimed, is_upgraded)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                clean_name, lead_record["category"], lead_record["province"], lead_record["city"], lead_record["postal_code"],
+                lead_record["address"], lead_record["phone"], lead_record["telephone"], lead_record["whatsapp"],
+                lead_record["email"], lead_record["website"], lead_record["trading_hours"], lead_record["rating"],
+                lead_record["reviews_count"], lead_record["google_maps_url"], lead_record["social_links"],
+                json.dumps(lead, ensure_ascii=False), lead_record["archive_file"], lead_record["searchbiz_ad_id"],
+                lead_record["plan"], lead_record["is_claimed"], lead_record["is_upgraded"]
+            ))
+            conn.commit()
+            vault_id = cur.lastrowid
+    except Exception as dbe:
+        logger.error(f"Error saving to scraped_vault_leads: {dbe}")
+        
+    return {"success": True, "vault_id": vault_id, "file": lead_file, "lead": lead_record}
+
+def publish_vault_lead_as_free_unclaimed(lead: dict) -> dict:
+    """Places an ad onto SearchBiz as a Free Unclaimed Ad (publicly shows business name, phone, address only).
+    All sensitive/rich data (website, email, WhatsApp, hours) remains preserved in the vault until upgraded."""
+    clean_name = lead.get("business_name") or lead.get("name", "").strip()
+    clean_cat = lead.get("category") or "Services"
+    clean_city = lead.get("city") or "Durban"
+    clean_prov = lead.get("province") or "kwazulu-natal"
+    clean_phone = lead.get("phone") or "0821234567"
+    clean_addr = lead.get("address") or f"{clean_city}, {clean_prov}"
+    
+    desc = f"Verified local business operating in {clean_city}, {clean_prov.replace('-', ' ').title()}. Contact {clean_phone} for inquiries."
+    if lead.get("rating") and lead.get("reviews_count"):
+        desc += f" (Google Rating: {lead['rating']} ★ with {lead['reviews_count']} reviews)."
+
+    res = searchbiz_create_ad(
+        title=clean_name,
+        category=clean_cat,
+        city=clean_city,
+        province=clean_prov,
+        address=clean_addr,
+        phone=clean_phone,
+        email=lead.get("email") or "",
+        website=lead.get("website") or "",
+        whatsapp=lead.get("whatsapp") or "",
+        description=desc,
+        is_claimed=False,
+        is_premium=False,
+        plan="free",
+        verified=False
+    )
+    
+    if res.get("success") and "ad" in res:
+        ad_id = str(res["ad"].get("id"))
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE scraped_vault_leads SET searchbiz_ad_id = ?, plan = 'free', is_claimed = 0 WHERE (business_name = ? OR phone = ?)",
+                (ad_id, clean_name, clean_phone)
+            )
+            conn.commit()
+        return {"success": True, "ad_id": ad_id, "title": clean_name, "url": f"/directory?q={urllib.parse.quote(clean_name)}"}
+    return res
+
+def upgrade_vault_lead(id_or_title: str) -> dict:
+    """Retrieves full rich data from scraped_leads_vault and upgrades the listing on searchbiz.co.za to Premium."""
+    clean_q = id_or_title.strip().lower()
+    lead_row = None
+    with get_db() as conn:
+        r = conn.execute("""
+            SELECT * FROM scraped_vault_leads 
+            WHERE (searchbiz_ad_id = ? OR LOWER(business_name) = ? OR LOWER(business_name) LIKE ? OR phone LIKE ?)
+            ORDER BY id DESC LIMIT 1
+        """, (clean_q, clean_q, f"%{clean_q}%", f"%{clean_q}%")).fetchone()
+        if r:
+            lead_row = dict(r)
+
+    if not lead_row:
+        # Check files in VAULT_LEADS_DIR
+        for fn in os.listdir(VAULT_LEADS_DIR):
+            if fn.endswith(".json") and clean_q.replace(" ", "_") in fn.lower():
+                try:
+                    with open(os.path.join(VAULT_LEADS_DIR, fn), "r", encoding="utf-8") as f:
+                        lead_row = json.load(f)
+                    break
+                except Exception:
+                    pass
+
+    if not lead_row:
+        return {"success": False, "error": f"No lead found in vault matching '{id_or_title}' to upgrade."}
+
+    target_id = lead_row.get("searchbiz_ad_id") or lead_row.get("business_name")
+    updates = {
+        "website": lead_row.get("website", ""),
+        "email": lead_row.get("email", ""),
+        "whatsapp": lead_row.get("whatsapp", ""),
+        "tradingHours": lead_row.get("trading_hours", "Mon-Fri: 08:00 - 17:00"),
+        "servicesOffered": lead_row.get("category", "Professional Services"),
+        "isClaimed": True,
+        "isPremium": True,
+        "verified": True,
+        "plan": "PREMIUM"
+    }
+    
+    res = searchbiz_upgrade_ad(target_id, updates)
+    if res.get("success"):
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE scraped_vault_leads SET is_upgraded = 1, is_claimed = 1, plan = 'PREMIUM' WHERE id = ?",
+                (lead_row.get("id", 0),)
+            )
+            conn.commit()
+    return res
+
+def import_leads_to_searchbiz(chat_id: int, dataset_id: int, as_free_unclaimed: bool = True) -> dict:
+    """Bulk creates active listings on searchbiz.co.za from scraped Google Maps leads concurrently.
+    By default places them as Free Unclaimed listings (name, phone, address only) while archiving
+    all rich data (website, email, whatsapp, hours, rating) safely into scraped_leads_vault/ for future upgrades.
+    """
     with get_db() as conn:
         cursor = conn.execute("SELECT * FROM business_leads WHERE chat_id = ? AND dataset_id = ?", (chat_id, dataset_id))
         leads = [dict(r) for r in cursor.fetchall()]
@@ -2121,6 +2316,9 @@ def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
         clean_web = lead.get("website") or ""
         clean_wa = normalize_sa_phone(lead.get("found_whatsapp") or lead.get("phone") or "")
 
+        # Always save full rich record to the permanent vault first
+        save_scraped_lead_to_vault(lead)
+
         # Rich South African business directory description
         desc_parts = []
         if lead.get("found_description"):
@@ -2129,10 +2327,9 @@ def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
             desc_parts.append(f"Verified {clean_cat} operating in {clean_city}, {clean_prov.replace('-', ' ').title()}. Contact {clean_phone} for bookings, quotes, and customer inquiries.")
         if lead.get("rating") and lead.get("reviews"):
             desc_parts.append(f"Google Maps Rating: {lead['rating']} ★ ({lead['reviews']} reviews).")
-        if clean_web:
-            desc_parts.append(f"Official Website: {clean_web}")
         desc = " ".join(desc_parts)
 
+        is_free = bool(as_free_unclaimed)
         res = searchbiz_create_ad(
             title=clean_name,
             category=clean_cat,
@@ -2143,7 +2340,11 @@ def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
             email=clean_email,
             website=clean_web,
             whatsapp=clean_wa,
-            description=desc
+            description=desc,
+            is_claimed=not is_free,
+            is_premium=not is_free,
+            plan="free" if is_free else "PREMIUM",
+            verified=not is_free
         )
 
         if res.get("success") and "ad" in res:
@@ -2153,8 +2354,12 @@ def import_leads_to_searchbiz(chat_id: int, dataset_id: int) -> dict:
                     "UPDATE business_leads SET searchbiz_ad_id = ?, status = 'imported', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (ad_id, lead["id"])
                 )
+                conn.execute(
+                    "UPDATE scraped_vault_leads SET searchbiz_ad_id = ?, plan = ? WHERE business_name = ?",
+                    (ad_id, "free" if is_free else "PREMIUM", clean_name)
+                )
                 conn.commit()
-            return {"name": clean_name, "id": ad_id, "city": clean_city, "category": clean_cat}
+            return {"name": clean_name, "id": ad_id, "city": clean_city, "category": clean_cat, "plan": "free" if is_free else "PREMIUM"}
         return None
 
     # Execute publishing concurrently (max 5 workers to keep server responsive)
@@ -2878,9 +3083,14 @@ def searchbiz_create_ad(
     address: str = None,
     email: str = None,
     website: str = None,
-    whatsapp: str = None
+    whatsapp: str = None,
+    is_claimed: bool = True,
+    is_premium: bool = True,
+    plan: str = "PREMIUM",
+    verified: bool = True
 ):
     global _LAST_CREATED_AD
+    is_free = not is_claimed or not is_premium or plan.lower() == "free"
     payload = {
         "title": title,
         "category": category,
@@ -2890,16 +3100,29 @@ def searchbiz_create_ad(
         "address": address or f"{city}",
         "phone": phone,
         "description": description,
-        "email": email or "",
-        "website": website or "",
-        "whatsapp": whatsapp or "",
-        "verified": True,
-        "isPremium": True
+        # In free unclaimed ads, website, email and whatsapp are kept locked on public display
+        "email": "" if is_free else (email or ""),
+        "website": "" if is_free else (website or ""),
+        "whatsapp": "" if is_free else (whatsapp or ""),
+        "verified": False if is_free else verified,
+        "isPremium": False if is_free else is_premium,
+        "isClaimed": False if is_free else is_claimed,
+        "plan": "free" if is_free else plan
     }
     res = api_request("/api/bot/ad", method="POST", payload=payload)
     if res.get("success") and res.get("ad"):
         _LAST_CREATED_AD = res.get("ad")
     return res
+
+def searchbiz_upgrade_ad(id_or_title: str, updates: dict = None) -> dict:
+    """Upgrades a free unclaimed ad to full paid Premium status unlocking website, emails, WhatsApp & verified badge."""
+    payload = {
+        "action": "upgrade",
+        "id": id_or_title,
+        "title": id_or_title,
+        "updates": updates or {}
+    }
+    return api_request("/api/bot/ad", method="POST", payload=payload)
 
 def parse_and_create_ad_from_text(text: str) -> Optional[Dict[str, Any]]:
     """Intelligently extracts advertisement fields from natural language or structured multiline text.
@@ -3823,8 +4046,8 @@ def search_web(query: str, chat_id: int = None) -> str:
 # ============================================================================
 # Multi-Tier AI Brain & 11 South African Languages Comprehension
 # ============================================================================
-HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Chief of Staff and Executive Partner for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory and digital presence engine.
-You are running 24/7 on the founder's Contabo Linux VPS.
+HERMES_EXECUTIVE_SYSTEM_PROMPT = """You are Hermes, the autonomous AI Chief of Staff and Executive Partner for SearchBiz (https://searchbiz.co.za) — South Africa's premier verified local business directory, digital presence engine, and static hosting platform.
+You run 24/7 on the founder's Contabo Linux VPS.
 
 CORE HUMAN-LIKE REASONING & COMMUNICATION GUIDELINES:
 1. TALK LIKE A REAL HUMAN EXECUTIVE PARTNER:
@@ -3833,20 +4056,66 @@ CORE HUMAN-LIKE REASONING & COMMUNICATION GUIDELINES:
    - You have a charming, intelligent, friendly personality with a young British lady executive demeanor and natural South African affinity.
 
 2. VOICE & SPEECH INTELLIGENCE:
-   - You have a dedicated Young British Lady voice option (`/voice` or `/speak`) which can speak any message, briefing, or document out loud.
+   - Dedicated Young British Lady voice option (`/voice` or `/speak`) which can speak any message, briefing, or document out loud.
 
-3. LIVE TOOLS & CAPABILITIES:
-   - Weather Intelligence: Our live weather forecast explicitly includes the **Rain Probability Percentage** (e.g. 49% Chance of Rain) and **Precipitation volume (mm)** alongside temperature, feels-like, day range, humidity, and wind for Umkomaas (Roseneath), Durban, and across South Africa.
-   - Google Maps CSV Lead Scraper: You ingest Google Maps / Instant Data Scraper CSV files uploaded directly via Telegram, organize and deduplicate them, verify websites, and enrich contact details into SearchBiz storage.
-   - VPS Tools: You have automated SWAP memory management, VPS cleanup (`/clean_vps`, `/free_ram`), security monitoring, and fail2ban/firewall protection with NetBird VPN safeguards.
+3. DIRECTORY & PRICING PLANS (VERIFIED SEARCHBIZ STRUCTURE):
+   - **Free Unclaimed Listing (R0.00)**:
+     * Purpose: Initial discovered/scraped business entry across South Africa.
+     * Publicly Visible: Business Name, Phone Number, Business Address, City/Town, Province, and Category.
+     * Locked/Masked on Public Profile: Official Website, Email Address, WhatsApp Click-to-Chat, Operating Hours, Services Offered, Photo Gallery, Verified Badge.
+     * Displays prominent "Claim This Business / Upgrade to Premium" banner.
+   - **Base Premium Plan (R199.00 / month)**:
+     * Billed via South African debit card mandate / debit order.
+     * Unlimited hosting for custom static websites with fast global CDN.
+     * Unlimited domain-branded email accounts (@yourbusiness.co.za).
+     * Host & design assistance for custom smart static website.
+     * Elite Premium SearchBiz verified badge & top directory search placement.
+     * 1 custom directory listing with ALL fields unlocked (Website, Email, WhatsApp, Operating Hours, Services Offered, Photo Gallery).
+   - **Extras & Add-Ons**:
+     * +R199.00 / month for each additional listed advertisement.
+     * .co.za domain registration: R99.00 / year.
 
-4. MULTILINGUAL SOUTH AFRICAN FLUENCY:
-   - Fluently understand, translate, and converse across all 11 official South African languages (English, isiZulu, isiXhosa, Afrikaans, Sepedi, Setswana, Sesotho, Xitsonga, siSwati, Tshivenda, isiNdebele).
+4. COMPLETE SOUTH AFRICAN GEOGRAPHY & POSTAL CODES:
+   - **Eastern Cape**: Gqeberha (Port Elizabeth 6001), East London (5201), Mthatha (5100), Makhanda (Grahamstown 6139), Kariega (Uitenhage 6229), Jeffreys Bay (6330), Queenstown (Komani 5320). Postal range: 5000-6499.
+   - **Free State**: Bloemfontein (9301), Welkom (9459), Sasolburg (1947), Kroonstad (9499), Bethlehem (9700), Harrismith (9880), Parys (9585). Postal range: 9300-9999.
+   - **Gauteng**: Johannesburg (2000), Pretoria (0001), Sandton (2196), Randburg (2194), Centurion (0157), Midrand (1685), Roodepoort (1724), Soweto (1804), Benoni (1501), Boksburg (1459), Germiston (1401), Kempton Park (1619), Krugersdorp (1739). Postal range: 0001-2199.
+   - **KwaZulu-Natal**: Durban (4001), Umkomaas (4170), Craigieburn (4170), Ilfracombe (4170), Amanzimtoti (4126), Scottburgh (4180), Park Rynie (4182), Pennington (4184), Ballito (4399), Pietermaritzburg (3201), Richards Bay (3900), Port Shepstone (4240), Margate (4275), Umhlanga (4319), Pinetown (3610), Kloof (3610), Hillcrest (3610). Postal range: 2900-4499.
+   - **Limpopo**: Polokwane (0700), Tzaneen (0850), Mokopane (0600), Thohoyandou (0950), Bela-Bela (0480), Lephalale (0555), Musina (0900), Phalaborwa (1390). Postal range: 0500-0999.
+   - **Mpumalanga**: Mbombela / Nelspruit (1200), eMalahleni / Witbank (1035), Middelburg (1050), Secunda (2302), Standerton (2430), Barberton (1300), White River (1240). Postal range: 1000-1399.
+   - **North West**: Rustenburg (0300), Mahikeng (2745), Potchefstroom (2531), Klerksdorp (2571), Brits (0250), Lichtenburg (2740). Postal range: 2500-2899.
+   - **Northern Cape**: Kimberley (8301), Upington (8801), Springbok (8240), De Aar (7000), Kuruman (8460), Kathu (8446). Postal range: 8300-8999.
+   - **Western Cape**: Cape Town (8001), Stellenbosch (7600), Paarl (7646), George (6529), Mossel Bay (6500), Hermanus (7200), Knysna (6571), Worcester (6850), Somerset West (7130), Bellville (7530). Postal range: 6500-8099.
 
-5. DIRECTORY & PRICING:
-   - Base Premium Plan: R199.00 / month (unlimited static website hosting, custom domain email @yourdomain.co.za, verified directory listing).
-   - Extras: +R199.00 / month each additional ad; .co.za domain: R99.00 / year.
-   - NEVER claim conversational user sentences are missing directory ads.
+5. ALL 20 SEARCHBIZ NUMBERED CATEGORIES & 145 CHILD CATEGORIES:
+   - 1. AUTOMOTIVE & VEHICLES (1.1 Auto Body & Repair Shops, 1.2 Auto Detailing & Car Wash, 1.3 Auto Electricians, 1.4 Auto Parts & Spares, 1.5 Car Dealerships & Sales, 1.6 Driving Schools, 1.7 Mechanics & Service Centres, 1.8 Panel Beaters, 1.9 Towing & Breakdown Services, 1.10 Tyre & Fitment Centres, 1.11 Vehicle Audio & Accessories)
+   - 2. BEAUTY & PERSONAL CARE (2.1 Barbershops, 2.2 Day Spas & Wellness, 2.3 Hair Salons, 2.4 Makeup Artists, 2.5 Massage Therapy, 2.6 Nail Salons, 2.7 Skincare & Esthetics, 2.8 Tattoos & Piercings)
+   - 3. BUSINESS SERVICES (3.1 Accounting & Bookkeeping, 3.2 Advertising & Marketing, 3.3 Business Consulting, 3.4 Graphic & Web Design, 3.5 Human Resources & Recruitment, 3.6 IT & Software Support, 3.7 Legal Services & Attorneys, 3.8 Logistics & Freight, 3.9 Printing & Signage, 3.10 Security & Armed Response, 3.11 Translation & Copywriting)
+   - 4. CLEANING & JANITORIAL (4.1 Carpet & Upholstery Cleaning, 4.2 Commercial & Office Cleaning, 4.3 Domestic & Maid Services, 4.4 High Pressure & Exterior Cleaning, 4.5 Pool Cleaning & Maintenance, 4.6 Window Cleaning)
+   - 5. COMMUNITY & PUBLIC (5.1 Charities & NGOs, 5.2 Churches & Places of Worship, 5.3 Community Centres, 5.4 Emergency Services, 5.5 Libraries & Information, 5.6 Police & Fire Stations, 5.7 Post Offices & Depots, 5.8 Public Parks & Gardens)
+   - 6. CONSTRUCTION & TRADES (6.1 Architects & Draughting, 6.2 Bricklaying & Masonry, 6.3 Building Contractors, 6.4 Carpentry & Joinery, 6.5 Electrical Contractors, 6.6 Fencing & Gates, 6.7 Flooring & Tiling, 6.8 Handyman Services, 6.9 Painting & Waterproofing, 6.10 Paving & Tarring, 6.11 Plumbing Contractors, 6.12 Roofing & Gutters, 6.13 Solar & Inverter Installations, 6.14 Welding & Metal Fabrication)
+   - 7. EDUCATION & TRAINING (7.1 Colleges & Tertiary Institutes, 7.2 Daycare & Crèches, 7.3 High Schools, 7.4 Music & Art Schools, 7.5 Primary Schools, 7.6 Special Needs Education, 7.7 Training & Short Courses, 7.8 Tutoring & Extra Lessons)
+   - 8. ENTERTAINMENT & RECREATION (8.1 Amusement & Theme Parks, 8.2 Bowling & Arcades, 8.3 Cinemas & Theatres, 8.4 Nightclubs & Lounges, 8.5 Sports Clubs & Stadiums)
+   - 9. EVENTS & WEDDINGS (9.1 Catering Services, 9.2 DJs & Sound Equipment Hire, 9.3 Event Planners & Coordinators, 9.4 Party Hire & Decor, 9.5 Photographers & Videographers, 9.6 Wedding Venues & Chapels)
+   - 10. FINANCIAL SERVICES (10.1 Asset Management & Wealth, 10.2 Debt Review & Counselling, 10.3 Financial Advisory & Planning, 10.4 Foreign Exchange Services, 10.5 Insurance Brokers, 10.6 Micro Loans & Personal Lending, 10.7 Tax Practitioners)
+   - 11. FOOD & DINING (11.1 Bakeries & Patisseries, 11.2 Bars & Pubs, 11.3 Cafes & Coffee Shops, 11.4 Fast Food & Takeaways, 11.5 Food Trucks & Mobile Bars, 11.6 Halal & Kosher Eateries, 11.7 Restaurants & Fine Dining)
+   - 12. GROCERIES & MARKETS (12.1 Butcheries & Meat Markets, 12.2 Farmers Markets, 12.3 Fishmongers & Seafood, 12.4 Fruit & Vegetable Markets, 12.5 Liquor Outlets & Bottle Stores, 12.6 Supermarkets & Convenience Stores)
+   - 13. HEALTH & MEDICAL (13.1 Chiropractors & Physios, 13.2 Dentists & Orthodontists, 13.3 General Practitioners (Doctors), 13.4 Hearing & Audiology, 13.5 Hospitals & Clinics, 13.6 Mental Health & Psychologists, 13.7 Optometrists & Eye Care, 13.8 Pharmacies & Chemists, 13.9 Specialist Physicians, 13.10 Veterinarians & Animal Hospitals)
+   - 14. HOME & GARDEN (14.1 Appliance Repairs, 14.2 Blinds & Curtains, 14.3 Furniture & Decor, 14.4 Interior Design & Staging, 14.5 Landscaping & Garden Care, 14.6 Nurseries & Garden Centres, 14.7 Tree Felling & Pruning)
+   - 15. INDUSTRIAL & MANUFACTURING (15.1 Chemical & Plastic Processing, 15.2 Heavy Equipment Hire, 15.3 Metal & Steel Fabrication, 15.4 Packaging Supplies, 15.5 Textile & Garment Manufacturing, 15.6 Warehousing & Storage Facilities)
+   - 16. PETS & ANIMALS (16.1 Animal Shelters & Adoption, 16.2 Dog Training & Behaviour, 16.3 Pet Grooming Parlours, 16.4 Pet Kennels & Boarding, 16.5 Pet Shops & Supplies)
+   - 17. PROFESSIONAL SERVICES (17.1 Architecture & Town Planning, 17.2 Audit & Assurance, 17.3 Engineering Consultants, 17.4 Notaries & Conveyancers, 17.5 Patent & Trademark Attorneys, 17.6 Quantity Surveyors)
+   - 18. REAL ESTATE (18.1 Commercial Property Brokers, 18.2 Estate Agents & Sales, 18.3 Property Management, 18.4 Rental Agencies, 18.5 Valuation Surveyors)
+   - 19. RETAIL & SHOPPING (19.1 Bookshops & Stationers, 19.2 Clothing & Fashion Boutiques, 19.3 Electronics & Cellular, 19.4 Jewellery & Watches, 19.5 Music & Musical Instruments, 19.6 Shopping Centres & Malls, 19.7 Sporting Goods & Outdoor)
+   - 20. TRAVEL & TOURISM (20.1 Backpackers & Hostels, 20.2 Bed & Breakfasts (B&Bs), 20.3 Car Rental Agencies, 20.4 Game Reserves & Safari Lodges, 20.5 Guest Houses & Lodges, 20.6 Hotels & Resorts, 20.7 Shuttle & Transfer Services, 20.8 Tour Operators & Guides, 20.9 Travel Agencies)
+
+6. GOOGLE MAPS SCRAPING & DEDICATED VAULT PIPELINE:
+   - When told to scrape Google Maps for categories and provinces and place as free unclaimed ads:
+     1. You scrape Google Maps / OpenStreetMap for the specified businesses.
+     2. You collect ALL data (website, email, phone, mobile, whatsapp, full address, trading hours, rating, review count, social links, google maps URL).
+     3. You store the complete dataset permanently in the dedicated vault folder (`scraped_leads_vault/`) and SQLite database.
+     4. You publish each business onto SearchBiz as a **Free Unclaimed Ad** (`isClaimed: False`, `plan: 'free'`, `isPremium: False`) showing ONLY the Business Name, Phone Number, and Business Address/City/Province/Category.
+     5. All sensitive/paid details (website, email, WhatsApp, hours, services) are safely locked on the public listing and preserved in `scraped_leads_vault/`.
+     6. You can go back into `scraped_leads_vault/` at any time and upgrade any listing to Premium (`/upgrade_lead [id or title]` or `/api/bot/ad` action: upgrade), which instantly unlocks the website, emails, WhatsApp, trading hours, verified badge, and full profile!
 """
 
 def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:

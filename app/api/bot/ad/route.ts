@@ -7,7 +7,8 @@ import {
   restoreAllBotAds, 
   getBotTrashAds, 
   getBotStats,
-  updateBotAd
+  updateBotAd,
+  upgradeBotAd
 } from '@/lib/bot-ad-service';
 
 export const dynamic = 'force-dynamic';
@@ -86,19 +87,110 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
+
+    // Check if requesting an upgrade of an existing free/unclaimed listing to premium
+    if (body.action === 'upgrade' || body.action === 'claim') {
+      const upgradeTarget = body.id || body.title || body.query;
+      const upgradeResult = await upgradeBotAd(upgradeTarget, body.updates || body);
+      if (!upgradeResult.success) {
+        return NextResponse.json({ error: upgradeResult.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        success: true,
+        message: `Advertisement "${upgradeResult.ad.title}" successfully upgraded to Paid Premium!`,
+        ad: upgradeResult.ad
+      });
+    }
+
     const result = await createBotAd(body);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
+    const isFree = body.isClaimed === false || body.plan === 'free' || body.isPremium === false;
     return NextResponse.json({
       success: true,
-      message: 'Advertisement published successfully on searchbiz.co.za',
+      message: isFree 
+        ? 'Free Unclaimed listing published on searchbiz.co.za' 
+        : 'Advertisement published successfully on searchbiz.co.za',
       ad: result.ad
     }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to create ad', details: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create or upgrade ad', details: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/bot/ad
+ * Upgrade or update an existing listing, or restore from Recycle Bin
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    if (!checkAuth(req)) {
+      return NextResponse.json({ error: 'Unauthorized. Invalid API key.' }, { status: 401 });
+    }
+
+    const body = await req.json();
+
+    // Check if restore action
+    if (body.action === 'restore' || body.restore === true || body.all === true || body.restoreAll === true) {
+      if (body.all === true || body.restoreAll === true) {
+        const result = await restoreAllBotAds();
+        return NextResponse.json({
+          success: true,
+          message: `Successfully restored ${result.count} listings from Recycle Bin back into live directory! Total active: ${result.activeTotal}.`,
+          restoredCount: result.count,
+          activeTotal: result.activeTotal
+        });
+      }
+
+      const idOrTitle = body.id || body.title || '';
+      if (!idOrTitle) {
+        return NextResponse.json({ error: 'Please provide "id" or "title" to restore, or set "all": true.' }, { status: 400 });
+      }
+
+      const result = await restoreBotAd(idOrTitle);
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Listing "${result.restoredAd.title}" was restored back to the live directory!`,
+        ad: result.restoredAd
+      });
+    }
+
+    const target = body.id || body.title || '';
+    if (!target) {
+      return NextResponse.json({ error: 'Target ad ID or business title is required.' }, { status: 400 });
+    }
+
+    if (body.action === 'upgrade' || body.upgrade === true) {
+      const result = await upgradeBotAd(target, body.updates || body);
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        success: true,
+        message: 'Listing successfully upgraded to Premium',
+        ad: result.ad
+      });
+    }
+
+    const updateResult = await updateBotAd(target, body.updates || body);
+    if (!updateResult.success) {
+      return NextResponse.json({ error: updateResult.error }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Listing updated successfully',
+      ad: updateResult.updatedAd
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Failed to update/restore ad', details: error.message }, { status: 500 });
   }
 }
 
@@ -162,50 +254,6 @@ export async function DELETE(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to delete ad', details: error.message }, { status: 500 });
-  }
-}
-
-/**
- * PATCH /api/bot/ad
- * Restore an ad from the Recycle Bin
- */
-export async function PATCH(req: NextRequest) {
-  try {
-    if (!checkAuth(req)) {
-      return NextResponse.json({ error: 'Unauthorized. Invalid API key.' }, { status: 401 });
-    }
-
-    const body = await req.json();
-
-    if (body.all === true || body.restoreAll === true) {
-      const result = await restoreAllBotAds();
-      return NextResponse.json({
-        success: true,
-        message: `Successfully restored ${result.count} listings from Recycle Bin back into live directory! Total active: ${result.activeTotal}.`,
-        restoredCount: result.count,
-        activeTotal: result.activeTotal
-      });
-    }
-
-    const idOrTitle = body.id || body.title || '';
-
-    if (!idOrTitle) {
-      return NextResponse.json({ error: 'Please provide "id" or "title" to restore, or set "all": true.' }, { status: 400 });
-    }
-
-    const result = await restoreBotAd(idOrTitle);
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Listing "${result.restoredAd.title}" was restored back to the live directory!`,
-      ad: result.restoredAd
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to restore ad', details: error.message }, { status: 500 });
   }
 }
 
