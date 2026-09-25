@@ -739,27 +739,22 @@ function SearchBarForm() {
                           setCustomCategory('');
                           setOpenDropdown(null);
                         }}
-                        className={`flex-1 text-left px-2.5 py-1.5 rounded-xl font-extrabold text-xs uppercase tracking-wide flex items-center justify-between gap-2 transition min-w-0 ${
+                        className={`flex-1 text-left px-3 py-2 rounded-xl font-extrabold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-between gap-2 transition min-w-0 ${
                           isGroupSelected
                             ? 'bg-emerald-600 text-white shadow-sm'
                             : 'text-slate-900 hover:bg-emerald-100/80 hover:text-emerald-950'
                         }`}
                         title={`Select all ${group.name}`}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span className="text-base shrink-0">{icon}</span>
-                          <span className="font-extrabold truncate">{group.name}</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
-                            isGroupSelected ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
-                          }`}>
-                            {group.items.length} subcategories
-                          </span>
+                          <span className="font-extrabold break-words leading-tight">{group.name}</span>
                         </div>
-                        {isGroupSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                        {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0 ml-1.5" />}
                       </button>
                     </div>
 
-                    {/* ALL CHILD CATEGORIES DIRECTLY DISPLAYED AND VISIBLE */}
+                    {/* ALL CHILD CATEGORIES DIRECTLY DISPLAYED AND FULLY VISIBLE */}
                     <div className="p-2.5 bg-white grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {group.items.map((item) => {
                         const isSubSelected = category === item.fullName || category === item.name;
@@ -772,21 +767,21 @@ function SearchBarForm() {
                               setCustomCategory('');
                               setOpenDropdown(null);
                             }}
-                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition min-w-0 border ${
+                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition min-w-0 border ${
                               isSubSelected
                                 ? 'bg-emerald-600 text-white font-bold border-emerald-600 shadow-xs'
                                 : 'text-slate-800 hover:bg-emerald-50 hover:text-emerald-950 bg-slate-50/80 border-slate-200/60 hover:border-emerald-300'
                             }`}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
                               <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${
                                 isSubSelected ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800 border border-emerald-200/60'
                               }`}>
                                 {item.id}
                               </span>
-                              <span className="truncate">{item.name}</span>
+                              <span className="break-words leading-snug">{item.name}</span>
                             </div>
-                            {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />}
+                            {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1.5" />}
                           </button>
                         );
                       })}

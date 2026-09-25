@@ -446,7 +446,7 @@ export default function CategoriesClient() {
                                   <span className="font-mono text-[11px] font-bold bg-emerald-100/80 text-emerald-800 group-hover:bg-emerald-600 group-hover:text-white px-2 py-0.5 rounded-lg transition shrink-0 border border-emerald-200/80 group-hover:border-emerald-600">
                                     {item.id}
                                   </span>
-                                  <span className="text-xs sm:text-[13px] font-semibold text-slate-800 group-hover:text-emerald-950 transition truncate">
+                                  <span className="text-xs sm:text-[13px] font-semibold text-slate-800 group-hover:text-emerald-950 transition break-words">
                                     {item.name}
                                   </span>
                                 </div>
