@@ -110,7 +110,10 @@ def get_active_ollama_model() -> str:
     return configured
 
 
-# Email Configurations (Mailcow VPS SMTP/IMAP for ai@searchbiz.co.za)
+# Email Configurations (Mailcow VPS SMTP/IMAP for ai@searchbiz.co.za and admin@searchbiz.co.za)
+ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip() or "admin@searchbiz.co.za"
+ADMIN_SMTP_PASS = (os.getenv("ADMIN_SMTP_PASS") or "").strip() or "SearchBizAdmin@2026!"
+
 SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip() or "127.0.0.1"
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = (os.getenv("SMTP_USER") or "").strip() or "ai@searchbiz.co.za"
@@ -133,6 +136,10 @@ DB_PATH = os.getenv("HERMES_DB_PATH", os.path.join(os.path.dirname(os.path.abspa
 # Lead Storage Directory for Scraped CSV files
 LEADS_DIR = os.getenv("HERMES_LEADS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "leads_storage"))
 os.makedirs(LEADS_DIR, exist_ok=True)
+
+# Dedicated User Listings Folder (Scraped businesses & cold outreach data)
+LISTINGS_DIR = os.getenv("HERMES_LISTINGS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "listings"))
+os.makedirs(LISTINGS_DIR, exist_ok=True)
 
 # Dedicated Permanent Scraped Leads Vault (Stores all raw & enriched lead data for future upgrades)
 VAULT_DIR = os.getenv("HERMES_VAULT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "scraped_leads_vault"))
@@ -1962,6 +1969,27 @@ out center;
     except Exception as fe:
         logger.debug(f"CSV local file write note: {fe}")
 
+    # Always save copy directly to listings/ directory for permanent user access & cold outreach
+    try:
+        listings_csv_path = os.path.join(LISTINGS_DIR, csv_filename)
+        with open(listings_csv_path, "wb") as f:
+            f.write(csv_bytes)
+        
+        # Save structured JSON dump in listings/ folder
+        listings_json_fn = f"listings_{re.sub(r'[^a-zA-Z0-9_]', '_', category.lower())}_{re.sub(r'[^a-zA-Z0-9_]', '_', city.lower())}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        listings_json_path = os.path.join(LISTINGS_DIR, listings_json_fn)
+        with open(listings_json_path, "w", encoding="utf-8") as jf:
+            json.dump({
+                "category": category,
+                "city": city,
+                "province": province,
+                "scraped_at": datetime.now().isoformat(),
+                "total_businesses": len(businesses),
+                "businesses": businesses
+            }, jf, indent=2, ensure_ascii=False)
+    except Exception as le_err:
+        logger.debug(f"Listings directory sync note: {le_err}")
+
     # Step 5: Store into SQLite Persistent Database
     dataset_id = 1
     try:
@@ -2167,11 +2195,20 @@ def save_scraped_lead_to_vault(lead: dict, archive_filename: str = "") -> dict:
         "scraped_at": datetime.now().isoformat()
     }
     
+    # Save into permanent vault leads directory
     try:
         with open(lead_file, "w", encoding="utf-8") as f:
             json.dump(lead_record, f, indent=2, ensure_ascii=False)
     except Exception as fe:
         logger.debug(f"Vault JSON write note: {fe}")
+
+    # Also save copy directly into listings/ folder for easy user access
+    try:
+        listings_single_file = os.path.join(LISTINGS_DIR, f"{slug}.json")
+        with open(listings_single_file, "w", encoding="utf-8") as lf:
+            json.dump(lead_record, lf, indent=2, ensure_ascii=False)
+    except Exception as le_fe:
+        logger.debug(f"Listings single file write note: {le_fe}")
 
     vault_id = None
     try:
@@ -2425,8 +2462,251 @@ def generate_telegram_outreach_link(lead: dict) -> Tuple[str, str]:
     return link, msg
 
 # ============================================================================
-# Document Generation: Microsoft Word (.docx) & PDF (.pdf)
+# Dedicated Listings Folder & Cold Outreach Pipeline
 # ============================================================================
+def get_all_listings_storage_dirs() -> List[str]:
+    """Returns all directories where listings files may be stored."""
+    candidates = [
+        LISTINGS_DIR,
+        os.path.join(os.getcwd(), "listings"),
+        "/listings",
+        VAULT_LEADS_DIR,
+        VAULT_ARCHIVE_DIR,
+        LEADS_DIR
+    ]
+    seen = set()
+    dirs = []
+    for d in candidates:
+        if d and os.path.exists(d) and d not in seen:
+            seen.add(d)
+            dirs.append(d)
+    return dirs
+
+def get_listings_files_summary() -> dict:
+    """Scans listings/ folder and associated storage for CSV, JSON datasets and individual lead files."""
+    json_files = []
+    csv_files = []
+    total_leads_count = 0
+
+    for d in get_all_listings_storage_dirs():
+        try:
+            for fn in os.listdir(d):
+                fp = os.path.join(d, fn)
+                if not os.path.isfile(fp):
+                    continue
+                size_kb = round(os.path.getsize(fp) / 1024, 1)
+                mtime = datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d %H:%M")
+                if fn.endswith(".json"):
+                    json_files.append({"filename": fn, "path": fp, "size_kb": size_kb, "updated_at": mtime, "dir": os.path.basename(d)})
+                elif fn.endswith(".csv"):
+                    csv_files.append({"filename": fn, "path": fp, "size_kb": size_kb, "updated_at": mtime, "dir": os.path.basename(d)})
+        except Exception as e:
+            logger.debug(f"Listing scan error for {d}: {e}")
+
+    # Count database leads
+    try:
+        with get_db() as conn:
+            r = conn.execute("SELECT COUNT(*) as c FROM scraped_vault_leads").fetchone()
+            if r:
+                total_leads_count = r["c"]
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "listings_dir": LISTINGS_DIR,
+        "json_count": len(json_files),
+        "csv_count": len(csv_files),
+        "vault_db_count": total_leads_count,
+        "json_files": json_files[:30],
+        "csv_files": csv_files[:20]
+    }
+
+def load_leads_from_listings(filter_term: str = "") -> List[dict]:
+    """Loads and deduplicates all business leads found across the listings/ folder and vaults."""
+    leads = []
+    seen_names = set()
+    clean_q = filter_term.strip().lower()
+
+    # 1. Load from JSON files in listings/ and vault
+    for d in get_all_listings_storage_dirs():
+        try:
+            for fn in os.listdir(d):
+                if fn.endswith(".json"):
+                    fp = os.path.join(d, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            # Could be single lead dict or dataset dict with 'businesses' list
+                            items = data.get("businesses", [data]) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                            for it in items:
+                                if not isinstance(it, dict):
+                                    continue
+                                name = (it.get("business_name") or it.get("name") or "").strip()
+                                if not name or len(name) < 2:
+                                    continue
+                                norm = re.sub(r'[^a-z0-9]', '', name.lower())
+                                if norm in seen_names:
+                                    continue
+                                
+                                # Apply filter if specified
+                                if clean_q:
+                                    combined = f"{name} {it.get('category', '')} {it.get('city', '')} {it.get('province', '')}".lower()
+                                    if clean_q not in combined:
+                                        continue
+
+                                seen_names.add(norm)
+                                leads.append({
+                                    "name": name,
+                                    "category": it.get("category", "Local Business"),
+                                    "phone": it.get("phone", "") or it.get("telephone", ""),
+                                    "whatsapp": it.get("whatsapp") or it.get("found_whatsapp") or it.get("phone", ""),
+                                    "email": it.get("email") or it.get("found_email") or "",
+                                    "website": it.get("website", ""),
+                                    "address": it.get("address", ""),
+                                    "city": it.get("city", "Durban"),
+                                    "province": it.get("province", "kwazulu-natal"),
+                                    "trading_hours": it.get("trading_hours", "Mon-Fri 08:00 - 17:00"),
+                                    "rating": str(it.get("rating", "")),
+                                    "reviews": str(it.get("reviews_count") or it.get("reviews", "")),
+                                    "file_source": fn
+                                })
+                    except Exception as je:
+                        logger.debug(f"JSON lead read error for {fp}: {je}")
+        except Exception:
+            pass
+
+    # 2. Also query SQLite scraped_vault_leads
+    try:
+        with get_db() as conn:
+            if clean_q:
+                cursor = conn.execute("""
+                    SELECT * FROM scraped_vault_leads 
+                    WHERE LOWER(business_name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(city) LIKE ?
+                    ORDER BY id DESC LIMIT 200
+                """, (f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%"))
+            else:
+                cursor = conn.execute("SELECT * FROM scraped_vault_leads ORDER BY id DESC LIMIT 200")
+            for r in cursor.fetchall():
+                name = r["business_name"] or ""
+                norm = re.sub(r'[^a-z0-9]', '', name.lower())
+                if norm and norm not in seen_names:
+                    seen_names.add(norm)
+                    leads.append({
+                        "name": name,
+                        "category": r["category"] or "Local Business",
+                        "phone": r["phone"] or r["telephone"] or "",
+                        "whatsapp": r["whatsapp"] or r["phone"] or "",
+                        "email": r["email"] or "",
+                        "website": r["website"] or "",
+                        "address": r["address"] or "",
+                        "city": r["city"] or "Durban",
+                        "province": r["province"] or "kwazulu-natal",
+                        "trading_hours": r["trading_hours"] or "",
+                        "rating": str(r["rating"] or ""),
+                        "reviews": str(r["reviews_count"] or ""),
+                        "file_source": "SQLite Vault"
+                    })
+    except Exception as dbe:
+        logger.debug(f"Vault DB lead query error: {dbe}")
+
+    return leads
+
+def send_cold_outreach_to_listings(chat_id: int, query: str = "", limit: int = 10) -> dict:
+    """
+    Accesses all business files in listings/ folder, filters those with contact info,
+    dispatches high-converting SearchBiz South Africa outreach emails from ai@searchbiz.co.za,
+    and ALWAYS delivers a real-time copy/BCC to admin@searchbiz.co.za.
+    """
+    leads = load_leads_from_listings(query)
+    if not leads:
+        msg = f"⚠️ <b>[Listings Outreach]</b> No business files found in <code>listings/</code> matching <i>\"{query}\"</i>.\n\nTell Hermes or Layla to: <i>\"scrape Google Maps for [category] in [city]\"</i> to populate the listings folder first!"
+        send_telegram(chat_id, msg)
+        return {"success": False, "count": 0, "message": "No leads found"}
+
+    leads_with_email = [l for l in leads if l.get("email")]
+    leads_with_phone = [l for l in leads if l.get("phone") or l.get("whatsapp")]
+
+    send_telegram(chat_id, f"📬 <b>Initiating Cold Outreach from listings/ folder...</b>\n\n🎯 <b>Loaded from listings/:</b> {len(leads)} Businesses\n✉️ <b>With Harvested Emails:</b> {len(leads_with_email)}\n📱 <b>With Phone / WhatsApp:</b> {len(leads_with_phone)}\n🔒 <b>Admin Dual-Delivery:</b> All sent messages copied to <b>{ADMIN_EMAIL}</b>\n⏳ <i>Dispatching batch outreach now...</i>")
+
+    dispatched = []
+    whatsapp_links = []
+
+    for idx, lead in enumerate(leads_with_email[:limit]):
+        bname = lead["name"]
+        bemail = lead["email"]
+        bcat = lead["category"]
+        bcity = lead["city"]
+
+        subject = f"Exclusive Verified Feature for {bname} on SearchBiz South Africa"
+        body_text = f"""Good day {bname} Team,
+
+I noticed your business on Google Maps in {bcity} and wanted to reach out from SearchBiz South Africa (https://searchbiz.co.za).
+
+SearchBiz is featuring verified {bcat} businesses across South Africa. 
+
+We can set up your verified directory profile, plus unlimited smart static website hosting and domain-branded email accounts (@yourdomain.co.za) for only R199.00 / month.
+
+Would you like us to activate your verified company listing today?
+
+Kind regards,
+SearchBiz Executive Team
+ai@searchbiz.co.za | admin@searchbiz.co.za
+https://searchbiz.co.za
+"""
+        body_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; color: #1e293b;">
+            <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <h2 style="color: #0f172a; margin: 0; font-size: 18px;">SearchBiz South Africa &bull; Business Growth Invitation</h2>
+            </div>
+            <p>Good day <strong>{html.escape(bname)}</strong>,</p>
+            <p>We found your business listed in <strong>{html.escape(bcity)}</strong> and would love to feature your <strong>{html.escape(bcat)}</strong> services on SearchBiz South Africa.</p>
+            <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+                <h3 style="margin: 0 0 8px 0; font-size: 15px; color: #1e40af;">SearchBiz Verified Business Package (R199.00 / mo):</h3>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+                    <li>Verified Listing in SearchBiz South African Directory</li>
+                    <li>Unlimited Fast Smart Static Website Hosting</li>
+                    <li>Unlimited Domain-Branded Email Accounts (@yourdomain.co.za)</li>
+                    <li>Priority Local Search Placement & Direct WhatsApp / Phone Inquiries</li>
+                </ul>
+            </div>
+            <p>Would you like us to activate your profile today?</p>
+            <p style="margin-top: 24px; font-size: 13px; color: #64748b;">
+                Best regards,<br>
+                <strong>SearchBiz Executive Team</strong><br>
+                <a href="https://searchbiz.co.za" style="color: #2563eb;">searchbiz.co.za</a>
+            </p>
+        </div>
+        """
+
+        # Dispatch via SMTP (send_email_smtp automatically delivers a copy to admin@searchbiz.co.za)
+        res = send_email_smtp(to_email=bemail, subject=subject, body_text=body_text, body_html=body_html, cc_admin=True)
+        if res.get("success"):
+            dispatched.append({"name": bname, "email": bemail, "city": bcity})
+
+    # Generate 1-tap WhatsApp links for businesses with phone numbers
+    for lead in leads_with_phone[:5]:
+        wa_url, _ = generate_whatsapp_pitch_url(lead)
+        whatsapp_links.append(f"• <a href='{wa_url}'>📱 Chat with <b>{html.escape(lead['name'])}</b> ({lead.get('city')})</a>")
+
+    wa_block = "\n".join(whatsapp_links) if whatsapp_links else "• <i>No direct mobile numbers found in this batch</i>"
+
+    summary_msg = f"""✅ <b>[Listings Outreach Complete]</b>
+
+📁 <b>Source Directory:</b> <code>listings/</code>
+🚀 <b>Emails Dispatched:</b> <b>{len(dispatched)}</b> businesses
+🔒 <b>Admin Dual-Delivery:</b> A real-time copy of every single email was sent to <b>{ADMIN_EMAIL}</b>
+
+📋 <b>Contacted Businesses via Email:</b>
+""" + "\n".join([f"• <b>{d['name']}</b> (<code>{d['email']}</code> - {d['city']})" for d in dispatched]) + f"""
+
+📲 <b>1-Tap WhatsApp Proposals:</b>
+{wa_block}
+
+<i>All replies from these businesses will be forwarded to <b>{ADMIN_EMAIL}</b> for full conversation management.</i>"""
+
+    send_telegram(chat_id, summary_msg)
+    return {"success": True, "dispatched_count": len(dispatched), "dispatched": dispatched}
 def generate_word_document(title: str, body_text: str) -> bytes:
     """Generates a styled, valid Microsoft Word (.docx) file in pure Python standard library."""
     # Check if python-docx package is installed for extra styling
@@ -3282,9 +3562,9 @@ def searchbiz_audit_ads(limit: int = 50):
 
 
 # ============================================================================
-# Email Client (SMTP & IMAP on VPS)
+# Email Client (SMTP & IMAP on VPS with Guaranteed Admin Dual-Delivery)
 # ============================================================================
-def send_via_local_sendmail(to_email: str, subject: str, body_text: str, body_html: str = None, attachment_bytes: bytes = None, attachment_filename: str = None) -> dict:
+def send_via_local_sendmail(to_email: str, subject: str, body_text: str, body_html: str = None, attachment_bytes: bytes = None, attachment_filename: str = None, cc_admin: bool = True) -> dict:
     """Dispatches email directly via local host sendmail / Exim MTA binary if present."""
     sendmail_path = shutil.which("sendmail") or "/usr/sbin/sendmail"
     if not os.path.exists(sendmail_path):
@@ -3294,6 +3574,9 @@ def send_via_local_sendmail(to_email: str, subject: str, body_text: str, body_ht
         msg = MIMEMultipart("mixed")
         msg["From"] = f"SearchBiz Executive AI <{SMTP_USER}>"
         msg["To"] = to_email
+        if cc_admin and ADMIN_EMAIL and to_email.lower() != ADMIN_EMAIL.lower():
+            msg["Bcc"] = ADMIN_EMAIL
+        msg["Reply-To"] = f"SearchBiz Executive AI <{SMTP_USER}>, <{ADMIN_EMAIL}>"
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
         msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
@@ -3314,20 +3597,26 @@ def send_via_local_sendmail(to_email: str, subject: str, body_text: str, body_ht
         proc = subprocess.Popen([sendmail_path, "-t", "-i"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate(input=msg.as_bytes(), timeout=15)
         if proc.returncode == 0:
-            logger.info(f"Email successfully delivered via local MTA binary to {to_email}")
-            return {"success": True, "message": f"Email queued via local Linux MTA for {to_email}"}
+            logger.info(f"Email successfully delivered via local MTA binary to {to_email} (and copied to {ADMIN_EMAIL})")
+            return {"success": True, "message": f"Email queued via local Linux MTA for {to_email} and {ADMIN_EMAIL}"}
         else:
             return {"error": f"sendmail error: {stderr.decode('utf-8', errors='ignore')}"}
     except Exception as e:
         logger.debug(f"Local sendmail exception: {e}")
         return {"error": str(e)}
 
-def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str = None, attachment_bytes: bytes = None, attachment_filename: str = None):
+def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str = None, attachment_bytes: bytes = None, attachment_filename: str = None, cc_admin: bool = True):
     to_email = to_email.strip()
+    
+    # Target envelope recipients (always includes admin@searchbiz.co.za)
+    recipients = [to_email]
+    if cc_admin and ADMIN_EMAIL and to_email.lower() != ADMIN_EMAIL.lower():
+        if ADMIN_EMAIL not in recipients:
+            recipients.append(ADMIN_EMAIL)
     
     # 1. Try local Linux MTA on VPS first (DirectAdmin Exim / Postfix)
     if os.path.exists("/usr/sbin/sendmail") or shutil.which("sendmail"):
-        mta_res = send_via_local_sendmail(to_email, subject, body_text, body_html, attachment_bytes, attachment_filename)
+        mta_res = send_via_local_sendmail(to_email, subject, body_text, body_html, attachment_bytes, attachment_filename, cc_admin=cc_admin)
         if mta_res.get("success"):
             return mta_res
 
@@ -3336,6 +3625,9 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str 
     msg = MIMEMultipart("mixed")
     msg["From"] = f"SearchBiz Executive AI <{SMTP_USER}>"
     msg["To"] = to_email
+    if cc_admin and ADMIN_EMAIL and to_email.lower() != ADMIN_EMAIL.lower():
+        msg["Bcc"] = ADMIN_EMAIL
+    msg["Reply-To"] = f"SearchBiz Executive AI <{SMTP_USER}>, <{ADMIN_EMAIL}>"
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain="searchbiz.co.za")
@@ -3382,10 +3674,10 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str 
                 except Exception as le:
                     logger.debug(f"SMTP authentication note on port {p}: {le}")
 
-            server.sendmail(SMTP_USER, [to_email], msg.as_string())
+            server.sendmail(SMTP_USER, list(set(recipients)), msg.as_string())
             server.quit()
-            logger.info(f"Email successfully sent via SMTP port {p} to {to_email}")
-            return {"success": True, "message": f"Email sent via SMTP port {p} to {to_email}"}
+            logger.info(f"Email successfully sent via SMTP port {p} to {to_email} and delivered to {ADMIN_EMAIL}")
+            return {"success": True, "message": f"Email sent via SMTP port {p} to {to_email} (delivered to {ADMIN_EMAIL})"}
         except Exception as se:
             logger.debug(f"SMTP attempt on port {p} failed: {se}")
 
@@ -3393,6 +3685,7 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str 
     logger.info("Falling back to SearchBiz Cloud Email Gateway (/api/bot/email)...")
     payload = {
         "to": to_email,
+        "bcc": ADMIN_EMAIL if (cc_admin and to_email.lower() != ADMIN_EMAIL.lower()) else None,
         "subject": subject,
         "text": body_text,
         "body": body_text,
@@ -3410,6 +3703,141 @@ def send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str 
         return res
 
     return {"error": res.get("error") or res.get("details") or "All SMTP and API email gateways failed"}
+
+
+def check_and_forward_inbox_replies(chat_id: Optional[int] = None) -> dict:
+    """
+    Checks the IMAP mailbox for incoming emails or replies to ai@searchbiz.co.za.
+    Automatically forwards any external replies to admin@searchbiz.co.za so you can manage conversations,
+    and alerts Telegram in real-time.
+    """
+    try:
+        init_memory_db()
+        with get_db() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS forwarded_email_replies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    msg_uid TEXT UNIQUE,
+                    from_email TEXT,
+                    subject TEXT,
+                    forwarded_to TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, ssl_context=context)
+        mail.login(IMAP_USER, IMAP_PASS)
+        mail.select("INBOX")
+
+        status, messages = mail.search(None, "ALL")
+        if status != "OK":
+            mail.logout()
+            return {"error": "Could not access IMAP inbox"}
+
+        email_ids = messages[0].split()
+        recent_ids = email_ids[-20:] if len(email_ids) >= 20 else email_ids
+        recent_ids.reverse()
+
+        forwarded_count = 0
+        new_replies = []
+
+        for eid in recent_ids:
+            res, msg_data = mail.fetch(eid, "(RFC822)")
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    
+                    # Decode headers
+                    subject_header = decode_header(msg.get("Subject", "No Subject"))[0]
+                    subject = subject_header[0]
+                    if isinstance(subject, bytes):
+                        subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
+
+                    from_header = decode_header(msg.get("From", ""))[0]
+                    from_addr = from_header[0]
+                    if isinstance(from_addr, bytes):
+                        from_addr = from_addr.decode(from_header[1] or "utf-8", errors="ignore")
+
+                    date_str = msg.get("Date", "")
+                    clean_from = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', from_addr)
+                    sender_email = clean_from[0].lower() if clean_from else from_addr.lower()
+
+                    # Ignore emails sent by Hermes or Admin themselves to prevent loops
+                    if sender_email in [SMTP_USER.lower(), ADMIN_EMAIL.lower()]:
+                        continue
+
+                    # Extract body text
+                    body_text = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            ctype = part.get_content_type()
+                            cdisp = str(part.get('Content-Disposition'))
+                            if ctype == 'text/plain' and 'attachment' not in cdisp:
+                                body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                                break
+                    else:
+                        body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+
+                    msg_uid = f"{sender_email}_{date_str}_{subject}"[:100]
+
+                    # Check if already forwarded in SQLite
+                    with get_db() as conn:
+                        existing = conn.execute("SELECT id FROM forwarded_email_replies WHERE msg_uid = ?", (msg_uid,)).fetchone()
+                    if existing:
+                        continue
+
+                    # Forward to admin@searchbiz.co.za
+                    fwd_subject = f"[Forwarded Client Reply] from {from_addr}: {subject}"
+                    fwd_body = f"""Incoming Email Reply Captured by SearchBiz AI Daemon
+============================================================
+From:    {from_addr}
+To:      {SMTP_USER}
+Date:    {date_str}
+Subject: {subject}
+============================================================
+
+Message Content:
+{body_text}
+"""
+                    send_email_smtp(
+                        to_email=ADMIN_EMAIL,
+                        subject=fwd_subject,
+                        body_text=fwd_body,
+                        cc_admin=False  # Already going directly to admin
+                    )
+
+                    with get_db() as conn:
+                        conn.execute("INSERT OR IGNORE INTO forwarded_email_replies (msg_uid, from_email, subject, forwarded_to) VALUES (?, ?, ?, ?)", (msg_uid, from_addr, subject, ADMIN_EMAIL))
+                        conn.commit()
+
+                    forwarded_count += 1
+                    new_replies.append({"from": from_addr, "subject": subject, "date": date_str, "body": body_text[:300]})
+
+                    # Notify Telegram chat if active
+                    if chat_id:
+                        snippet = html.escape(body_text[:400]) + ("..." if len(body_text) > 400 else "")
+                        tg_msg = f"""📬 <b>[New Inbound Email / Reply Forwarded]</b>
+
+👤 <b>From:</b> <code>{html.escape(from_addr)}</code>
+🎯 <b>Subject:</b> <b>{html.escape(subject)}</b>
+⏰ <b>Date:</b> <i>{html.escape(date_str)}</i>
+🔒 <b>Delivered to:</b> <b>{ADMIN_EMAIL}</b>
+
+💬 <b>Message Preview:</b>
+<blockquote>{snippet}</blockquote>
+
+<i>You can reply directly to this customer from <b>{ADMIN_EMAIL}</b> or ask Hermes to compose a follow-up.</i>"""
+                        send_telegram(chat_id, tg_msg)
+
+        mail.logout()
+        return {"success": True, "forwarded_count": forwarded_count, "new_replies": new_replies}
+    except Exception as e:
+        logger.error(f"IMAP forwarding check error: {e}")
+        return {"error": str(e)}
 
 
 def fetch_recent_emails(limit: int = 5):
@@ -4120,6 +4548,26 @@ CORE HUMAN-LIKE REASONING & COMMUNICATION GUIDELINES:
 7. LAYA AUTONOMOUS ACTION & EXECUTION PARTNER:
    - You work directly with LAYA — your local-first decision engine, notification command center, and autonomous action staging partner.
    - When the founder commands Laya ("Laya do X", "tell Laya to scrape...", "Laya place ads", "Laya generate report", or "/laya [task]"), Laya evaluates the decision matrix (Choice, Score, Route) and collaborates with Hermes and sub-agents to execute every stage of the work autonomously, delivering structured Action Cards with 100% execution!
+
+8. MAILCOW EMAIL & DUAL-DELIVERY ARCHITECTURE (admin@searchbiz.co.za):
+   - **Executive Admin Mailbox**: `admin@searchbiz.co.za`
+     * Password: `SearchBizAdmin@2026!`
+     * IMAP (Incoming): `mail.searchbiz.co.za` (or `127.0.0.1`) Port `993` (SSL/TLS)
+     * SMTP (Outgoing): `mail.searchbiz.co.za` (or `127.0.0.1`) Port `587` (STARTTLS) or `465` (SSL/TLS)
+     * Webmail (SOGo / Roundcube): `https://mail.searchbiz.co.za`
+   - **Guaranteed Dual-Delivery (Auto-BCC)**:
+     * Every single email that Hermes or Laya sends out to any company, client, prospect, or user is ALWAYS automatically delivered / BCCed to `admin@searchbiz.co.za`.
+   - **Automated Reply Forwarding**:
+     * Any reply or incoming email sent by any business or client to `ai@searchbiz.co.za` is automatically forwarded directly to `admin@searchbiz.co.za` so the founder can manage, review, and reply to all chats from one central inbox.
+
+9. CONTINUOUS LISTINGS FOLDER ACCESS & COLD OUTREACH:
+   - All scraped Google Maps datasets and company records are permanently preserved in the `listings/` folder (`listings/*.json`, `listings/*.csv`, `scraped_leads_vault/`, `leads_storage/`).
+   - Whenever asked to access files in `listings/` or send cold outreach emails:
+     1. Hermes and Laya immediately read and parse all files in `listings/`.
+     2. Hermes/Laya dispatches high-converting SearchBiz business growth invitations from `ai@searchbiz.co.za` offering the verified listing + smart static website hosting + domain-branded emails for R199.00 / month.
+     3. Every single email sent automatically delivers a copy to `admin@searchbiz.co.za`.
+     4. Hermes/Laya generates 1-tap WhatsApp direct chat links for instant mobile messaging.
+     5. All replies from prospects are forwarded to `admin@searchbiz.co.za`.
 """
 
 def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
@@ -4694,11 +5142,32 @@ class LayaExecutionEngine:
         # Step 1: Decision Evaluation & Action Staging Card
         stage_items = []
         action_type = "general"
-        if any(k in lower for k in ["scrape", "maps", "leads", "business listings", "spares", "shops", "extract"]):
+        if any(k in lower for k in ["admin@searchbiz.co.za", "mailcow", "admin email settings", "admin settings", "admin password", "admin credentials"]):
+            action_type = "admin_settings"
+            stage_items.append("1. Fetch Mailcow & DirectAdmin mailbox credentials for admin@searchbiz.co.za")
+            stage_items.append("2. Verify IMAP (port 993) and SMTP (port 587) endpoints")
+            stage_items.append("3. Format complete connection & credentials profile card")
+        elif any(k in lower for k in ["forward", "check inbox", "incoming", "view chats", "manage chats", "inbox replies"]):
+            action_type = "forward_replies"
+            stage_items.append("1. Connect to IMAP mailbox for ai@searchbiz.co.za")
+            stage_items.append("2. Extract all incoming client inquiries and replies")
+            stage_items.append("3. Forward complete copies to admin@searchbiz.co.za and alert Telegram")
+        elif any(k in lower for k in ["outreach", "cold email", "cold outreach", "email companies in listings", "send to listings", "reach out to listings", "access files in listings"]):
+            action_type = "listings_outreach"
+            stage_items.append("1. Deploy OutreachAgent to access all business files in listings/ folder")
+            stage_items.append("2. Filter companies with verified emails and contact channels")
+            stage_items.append("3. Dispatch personalized cold outreach proposals offering R199/mo verified package")
+            stage_items.append(f"4. Deliver guaranteed real-time copy/BCC to {ADMIN_EMAIL}")
+        elif any(k in lower for k in ["show listings", "view listings", "list files in listings", "listings folder", "check listings"]):
+            action_type = "listings_summary"
+            stage_items.append("1. Inspect listings/ directory and permanent data vault")
+            stage_items.append("2. Aggregate all JSON files, CSV exports, and database records")
+            stage_items.append("3. Present comprehensive inventory report")
+        elif any(k in lower for k in ["scrape", "maps", "leads", "business listings", "spares", "shops", "extract"]):
             action_type = "scrape"
             stage_items.append("1. Launch MapsScraperAgent (Stealth geospatial Google Maps crawler)")
             stage_items.append("2. Ingest contact details (Phone, Address, Hours, Website, Rating)")
-            stage_items.append("3. Archive full rich dataset into permanent scraped_leads_vault/")
+            stage_items.append("3. Save raw CSV and JSON datasets into listings/ folder and permanent vault")
             stage_items.append("4. Publish Free Unclaimed Ads onto searchbiz.co.za directory")
         elif any(k in lower for k in ["place ad", "import ad", "put ad", "publish ad", "create ad", "post ad", "upload ad"]):
             action_type = "publish"
@@ -4742,7 +5211,79 @@ class LayaExecutionEngine:
         send_telegram(chat_id, staging_card)
 
         # Step 2: Execute actual mission
-        if action_type == "scrape":
+        if action_type == "admin_settings":
+            card = f"""📧 <b>[Laya Action Card — Mailcow Settings for admin@searchbiz.co.za]</b>
+
+📍 <b>Email Address:</b>     <code>{ADMIN_EMAIL}</code>
+👤 <b>Username / Login:</b>  <code>{ADMIN_EMAIL}</code>
+🔑 <b>Password:</b>          <code>{ADMIN_SMTP_PASS}</code>
+
+📥 <b>Incoming Mail (IMAP):</b>
+• <b>Server:</b>   <code>{IMAP_HOST}</code> (or mail.searchbiz.co.za)
+• <b>Port:</b>     <b>{IMAP_PORT}</b> (SSL/TLS)
+• <b>Security:</b> SSL/TLS
+• <b>Username:</b> <code>{ADMIN_EMAIL}</code>
+
+📤 <b>Outgoing Mail (SMTP):</b>
+• <b>Server:</b>   <code>{SMTP_HOST}</code> (or mail.searchbiz.co.za)
+• <b>Port:</b>     <b>{SMTP_PORT}</b> (STARTTLS) or <b>465</b> (SSL/TLS)
+• <b>Security:</b> STARTTLS / SSL
+• <b>Username:</b> <code>{ADMIN_EMAIL}</code>
+• <b>Auth:</b>     Required (Same password)
+
+🌐 <b>Webmail Portal (SOGo):</b>
+• <b>URL:</b>      https://mail.searchbiz.co.za
+
+🔒 <b>Dual-Delivery & Auto-Forwarding:</b>
+• <b>Outbound:</b> Every email sent by Hermes or Laya is automatically BCCed/copied to <code>{ADMIN_EMAIL}</code>.
+• <b>Inbound:</b> Every reply or inquiry received from clients is automatically forwarded to <code>{ADMIN_EMAIL}</code>."""
+            send_telegram(chat_id, card)
+            return {"success": True, "action": "admin_settings"}
+
+        elif action_type == "forward_replies":
+            fwd_res = check_and_forward_inbox_replies(chat_id)
+            c = fwd_res.get("forwarded_count", 0)
+            completed_msg = f"""✅ <b>[Laya Action Card — Inbox Sync & Forward Complete]</b>
+
+📥 <b>Forwarded to Admin:</b> <b>{c}</b> new client replies delivered to <b>{ADMIN_EMAIL}</b>!
+🔒 <i>All future replies will continuously route to <b>{ADMIN_EMAIL}</b> so you can manage conversations directly.</i>"""
+            send_telegram(chat_id, completed_msg)
+            return {"success": True, "count": c, "action": "forward_replies"}
+
+        elif action_type == "listings_outreach":
+            outreach_res = send_cold_outreach_to_listings(chat_id, clean_dir)
+            return outreach_res
+
+        elif action_type == "listings_summary":
+            summary = get_listings_files_summary()
+            j_cnt = summary["json_count"]
+            c_cnt = summary["csv_count"]
+            v_cnt = summary["vault_db_count"]
+            
+            sample_files = []
+            for f in summary["json_files"][:5]:
+                sample_files.append(f"• 📄 <code>{f['filename']}</code> ({f['size_kb']} KB)")
+            for f in summary["csv_files"][:5]:
+                sample_files.append(f"• 📊 <code>{f['filename']}</code> ({f['size_kb']} KB)")
+            files_str = "\n".join(sample_files) if sample_files else "• <i>No files yet in listings/ folder</i>"
+
+            card = f"""📁 <b>[Laya Action Card — Listings Folder Inventory]</b>
+
+📍 <b>Directory:</b> <code>{summary['listings_dir']}</code>
+🔢 <b>JSON Dataset Files:</b> <b>{j_cnt}</b>
+📊 <b>CSV Spreadsheets:</b> <b>{c_cnt}</b>
+💾 <b>Total Vault Businesses:</b> <b>{v_cnt}</b>
+
+📋 <b>Recent Files Available for Cold Outreach:</b>
+{files_str}
+
+👉 <b>Commands:</b>
+• <code>/outreach_listings [filter]</code> - Send cold outreach emails to all companies in listings
+• <i>\"Laya send cold email to companies in listings folder\"</i>"""
+            send_telegram(chat_id, card)
+            return {"success": True, "summary": summary}
+
+        elif action_type == "scrape":
             scrape_res = scrape_stealth_google_maps(clean_dir, chat_id)
             c = scrape_res.get("count", 0)
             completed_msg = f"""✅ <b>[Laya Action Card — Mission Complete]</b>
@@ -5001,6 +5542,130 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
     if is_maps_scrape_req:
         send_chat_action(chat_id, "upload_document")
         scrape_stealth_google_maps(text, chat_id)
+        return True
+
+    # ------------------------------------------------------------------------
+    # 0A. Mailcow & Admin Email Settings (admin@searchbiz.co.za)
+    # Intercepts:
+    # - "/admin_email", "/mailcow_settings", "/mailcow"
+    # - "show me the settings and username and password for admin@searchbiz.co.za"
+    # - "mailcow settings", "settings for admin email", "admin email credentials"
+    # ------------------------------------------------------------------------
+    is_admin_email_req = (
+        text.startswith(("/admin_email", "/mailcow_settings", "/mailcow", "/email_settings")) or
+        any(k in lower for k in [
+            "admin@searchbiz.co.za", "mailcow settings", "settings for admin", "password for admin",
+            "username and password for admin", "credentials for admin", "setup mailcow", "mailcow email"
+        ])
+    )
+    if is_admin_email_req:
+        send_chat_action(chat_id, "typing")
+        card = f"""📧 <b>SearchBiz Mailcow Email Configuration: admin@searchbiz.co.za</b>
+
+📍 <b>Email Address:</b>     <code>{ADMIN_EMAIL}</code>
+👤 <b>Username / Login:</b>  <code>{ADMIN_EMAIL}</code>
+🔑 <b>Password:</b>          <code>{ADMIN_SMTP_PASS}</code>
+
+📥 <b>Incoming Mail Server (IMAP):</b>
+• <b>Host:</b>       <code>{IMAP_HOST}</code> (or <code>mail.searchbiz.co.za</code>)
+• <b>Port:</b>       <b>{IMAP_PORT}</b> (SSL/TLS) or <b>143</b> (STARTTLS)
+• <b>Security:</b>   SSL/TLS
+• <b>Username:</b>   <code>{ADMIN_EMAIL}</code>
+• <b>Password:</b>   <code>{ADMIN_SMTP_PASS}</code>
+
+📤 <b>Outgoing Mail Server (SMTP):</b>
+• <b>Host:</b>       <code>{SMTP_HOST}</code> (or <code>mail.searchbiz.co.za</code>)
+• <b>Port:</b>       <b>{SMTP_PORT}</b> (STARTTLS) or <b>465</b> (SSL/TLS)
+• <b>Security:</b>   STARTTLS / SSL
+• <b>Username:</b>   <code>{ADMIN_EMAIL}</code>
+• <b>Password:</b>   <code>{ADMIN_SMTP_PASS}</code>
+• <b>Auth:</b>       Required (Same as IMAP)
+
+🌐 <b>Webmail Access (SOGo / Roundcube):</b>
+• <b>URL:</b>        https://mail.searchbiz.co.za (or http://{SMTP_HOST}:8080)
+
+🔒 <b>Automated Routing Active:</b>
+1. <b>Outbound Copy:</b> Every single email Hermes or Laya sends to any recipient is automatically delivered / BCCed to <b>{ADMIN_EMAIL}</b>.
+2. <b>Inbound Forwarding:</b> Any replies received from leads/clients are automatically forwarded to <b>{ADMIN_EMAIL}</b> for complete chat visibility."""
+        send_telegram(chat_id, card)
+        return True
+
+    # ------------------------------------------------------------------------
+    # 0B. Inbound Reply Sync & Forwarder Engine
+    # Intercepts:
+    # - "/forward_inbox", "/check_inbox", "/sync_inbox"
+    # - "forward replies to admin", "check inbox", "forward incoming emails", "manage chats"
+    # ------------------------------------------------------------------------
+    is_fwd_inbox_req = (
+        text.startswith(("/forward_inbox", "/check_inbox", "/sync_inbox")) or
+        any(k in lower for k in [
+            "forward replies", "check inbox", "forward inbox", "sync inbox", "forward incoming", "view chats", "manage chats", "any replies"
+        ])
+    )
+    if is_fwd_inbox_req:
+        send_chat_action(chat_id, "typing")
+        res = check_and_forward_inbox_replies(chat_id)
+        c = res.get("forwarded_count", 0)
+        send_telegram(chat_id, f"✅ <b>Inbox Sync Complete:</b> Checked IMAP inbox on <code>{SMTP_USER}</code>. Forwarded <b>{c}</b> new client replies directly to <b>{ADMIN_EMAIL}</b>!")
+        return True
+
+    # ------------------------------------------------------------------------
+    # 0C. Dedicated Listings Folder & Cold Outreach Pipeline
+    # Intercepts:
+    # - "/listings", "/outreach_listings", "/cold_outreach"
+    # - "access those files in that folder... send a cold outreach email"
+    # - "send cold email to companies in listings folder"
+    # - "show listings folder", "check listings folder", "view listings"
+    # ------------------------------------------------------------------------
+    is_listings_outreach_req = (
+        text.startswith(("/outreach_listings", "/cold_outreach", "/outreach")) or
+        any(k in lower for k in [
+            "send a cold outreach email", "send cold outreach", "send cold email",
+            "access those files in that folder to send", "access files in listings",
+            "email to those companies", "send those emails to those companies",
+            "outreach to listings", "email companies in listings", "reach out to companies in listings",
+            "cold outreach to companies in listings", "send cold emails to listings"
+        ])
+    )
+    if is_listings_outreach_req:
+        send_chat_action(chat_id, "typing")
+        filter_param = ""
+        for pfx in ["/outreach_listings", "/cold_outreach", "/outreach"]:
+            if text.startswith(pfx):
+                filter_param = text[len(pfx):].strip()
+                break
+        send_cold_outreach_to_listings(chat_id, filter_param or text)
+        return True
+
+    is_listings_view_req = (
+        text in ["/listings", "/listings_folder", "/show_listings", "/vault_leads"] or
+        any(k in lower for k in ["show listings folder", "check listings folder", "view listings folder", "list files in listings", "show files in listings", "what files in listings"])
+    )
+    if is_listings_view_req:
+        send_chat_action(chat_id, "typing")
+        summary = get_listings_files_summary()
+        sample_files = []
+        for f in summary["json_files"][:6]:
+            sample_files.append(f"• 📄 <code>{f['filename']}</code> ({f['size_kb']} KB in {f['dir']}/)")
+        for f in summary["csv_files"][:6]:
+            sample_files.append(f"• 📊 <code>{f['filename']}</code> ({f['size_kb']} KB in {f['dir']}/)")
+        files_str = "\n".join(sample_files) if sample_files else "• <i>No files recorded yet</i>"
+
+        msg = f"""📁 <b>SearchBiz Listings Folder & Lead Vault Inventory</b>
+
+📍 <b>Active Directory:</b> <code>{summary['listings_dir']}</code>
+🔢 <b>JSON Dataset Files:</b> <b>{summary['json_count']}</b>
+📊 <b>CSV Spreadsheets:</b> <b>{summary['csv_count']}</b>
+💾 <b>Total Stored Business Records:</b> <b>{summary['vault_db_count']}</b>
+
+📋 <b>Available Files in listings/:</b>
+{files_str}
+
+👉 <b>Actions:</b>
+• <code>/outreach_listings [filter]</code> - Send personalized cold outreach emails (auto-copied to <code>{ADMIN_EMAIL}</code>)
+• <i>\"Laya send cold email to companies in listings\"</i>
+• <i>\"scrape Google maps for [category] in [city]\"</i> (saves new files directly into <code>listings/</code>)"""
+        send_telegram(chat_id, msg)
         return True
 
     # ------------------------------------------------------------------------
@@ -5797,6 +6462,12 @@ Live Platform: <code>{base_url}</code>
 <b>🗣️ Voice & Language:</b>
 • <code>/voice [text]</code> - Speak audio with crisp British accent
 • Send me a voice note anytime and I will understand!
+
+<b>📁 Listings Folder & Cold Outreach Pipeline:</b>
+• <code>/listings</code> - Inspect all business files in the <code>listings/</code> folder
+• <code>/outreach_listings [filter]</code> - Send high-converting cold outreach to companies in <code>listings/</code>
+• <code>/admin_email</code> - View connection settings for <code>admin@searchbiz.co.za</code>
+• <code>/forward_inbox</code> - Check IMAP inbox & forward all incoming replies to <code>admin@searchbiz.co.za</code>
 
 <b>🏢 Directory & Email Operations:</b>
 • <code>/post_ad Title | Category | City | Phone | Description</code>

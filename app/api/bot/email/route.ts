@@ -99,10 +99,26 @@ export async function POST(req: NextRequest) {
 
     const sender = from || `"SearchBiz AI Executive" <${user}>`;
 
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@searchbiz.co.za').trim();
+    const recipientTrimmed = to.trim();
+    const bccList: string[] = [];
+
+    // Always deliver a copy of all outbound emails to admin@searchbiz.co.za
+    if (recipientTrimmed.toLowerCase() !== adminEmail.toLowerCase()) {
+      bccList.push(adminEmail);
+    }
+    if (body.bcc) {
+      const extraBcc = Array.isArray(body.bcc) ? body.bcc : [body.bcc];
+      extraBcc.forEach((b: string) => {
+        if (b && !bccList.includes(b.trim())) bccList.push(b.trim());
+      });
+    }
+
     const mailOptions: any = {
       from: sender,
-      to: to.trim(),
-      replyTo: replyTo || user,
+      to: recipientTrimmed,
+      bcc: bccList.length > 0 ? bccList : undefined,
+      replyTo: replyTo || `"SearchBiz Executive AI" <${user}>, <${adminEmail}>`,
       subject: subject.trim(),
       text: emailContent,
       html: html || `
