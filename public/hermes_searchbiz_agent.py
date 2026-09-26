@@ -3576,13 +3576,13 @@ def generate_pdf_document(title: str, body_text: str) -> bytes:
         add_obj(p_id, f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents {c_id} 0 R /Resources << /Font << /F1 {font_obj_id} 0 R >> >> >>'.encode('latin1'))
 
         stream = []
-        safe_t = title.replace('\\', '\\\\').replace('(', '\(').replace(')', '\)')
+        safe_t = title.replace('\\', '\\\\').replace('(', r'\(').replace(')', r'\)')
         stream.append('BT /F1 16 Tf 50 790 Td 0.05 0.15 0.35 rg (' + safe_t + ') Tj ET')
         stream.append('0.7 0.7 0.7 RG 1 w 50 778 m 545 778 l S')
 
         y = 750
         for ltype, ltext in pages[idx]:
-            safe_text = ltext.replace('\\', '\\\\').replace('(', '\(').replace(')', '\)')
+            safe_text = ltext.replace('\\', '\\\\').replace('(', r'\(').replace(')', r'\)')
             if ltype == 'heading':
                 y -= 22
                 stream.append(f'BT /F1 12 Tf 50 {y} Td 0.1 0.25 0.6 rg ({safe_text}) Tj ET')
