@@ -189,8 +189,176 @@ IMPORTANT RULES:
 4. When recommending a business, always output its actual registered contact details (telephone, WhatsApp, email, address) as listed so the user can reach out.
 `;
 
-    // --- 1. GEMINI CLOUD LLM (FASTEST, HIGHEST QUALITY, ACTIVE DATA GROUNDING) ---
-    if (process.env.GEMINI_API_KEY) {
+    // --- 1. LOCAL VPS OLLAMA (PRIMARY: LLAMA 3.2 3B) ---
+    const ollamaHost = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "");
+    const targetModel = process.env.LLAMA3_MODEL || "llama3.2:3b";
+    let isOllamaOnline = false;
+    let finalModel = targetModel;
+
+    try {
+      const tagsController = new AbortController();
+      const tagsTimeout = setTimeout(() => tagsController.abort(), 1200); // 1.2s check
+      const tagsResponse = await fetch(`${ollamaHost}/api/tags`, {
+        signal: tagsController.signal
+      });
+      clearTimeout(tagsTimeout);
+
+      if (tagsResponse.ok) {
+        isOllamaOnline = true;
+        const tagsData = await tagsResponse.json();
+        const availableModels = tagsData.models || [];
+        if (availableModels.length > 0) {
+          const matchingModel = availableModels.find((m: any) => 
+            (m.name || "").toLowerCase().includes("llama3.2") ||
+            (m.name || "").toLowerCase().includes("3.2") ||
+            (m.name || "").toLowerCase().includes(targetModel.toLowerCase()) || 
+            (m.model || "").toLowerCase().includes(targetModel.toLowerCase())
+          );
+          if (matchingModel) {
+            finalModel = matchingModel.name;
+          } else {
+            finalModel = availableModels[0].name;
+          }
+        }
+      }
+    } catch {
+      isOllamaOnline = false;
+    }
+
+    if (isOllamaOnline) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: finalModel,
+            messages: [
+              { role: "system", content: systemInstruction },
+              ...(history || []).map((msg: any) => ({
+                role: msg.sender === "user" ? "user" : "assistant",
+                content: msg.text
+              })),
+              { role: "user", content: message }
+            ],
+            options: {
+              temperature: 0.4
+            },
+            stream: false
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (ollamaResponse.ok) {
+          const ollamaData = await ollamaResponse.json();
+          if (ollamaData.message?.content) {
+            return NextResponse.json({ text: ollamaData.message.content });
+          }
+        }
+      } catch (ollamaErr) {
+        console.warn("Ollama chat call failed:", ollamaErr);
+      }
+    }
+
+    // --- 2. FREE OPEN-SOURCE ZERO-QUOTA TEXT AI (POLLINATIONS: OPENAI / LLAMA 3.3 / MISTRAL) ---
+    // If external online information is needed, fetch rapid DuckDuckGo / Wikipedia context
+    let liveWebContext = "";
+    const lowerQ = message.toLowerCase();
+    const needsOnlineLookup = (
+      message.length > 10 &&
+      !lowerQ.includes("category") &&
+      !lowerQ.includes("province") &&
+      !lowerQ.includes("pricing") &&
+      !lowerQ.includes("r199") &&
+      (
+        lowerQ.includes("online") ||
+        lowerQ.includes("search") ||
+        lowerQ.includes("google") ||
+        lowerQ.includes("who is") ||
+        lowerQ.includes("what is") ||
+        lowerQ.includes("how to") ||
+        lowerQ.includes("figure it out") ||
+        lowerQ.includes("look up") ||
+        lowerQ.includes("explain") ||
+        lowerQ.includes("tutorial") ||
+        lowerQ.includes("weather") ||
+        lowerQ.includes("news")
+      )
+    );
+
+    if (needsOnlineLookup) {
+      try {
+        const cleanSearchQuery = message
+          .replace(/^(?:can\s+you\s+)?(?:please\s+)?(?:search\s+(?:online|google)?\s+for|look\s+(?:online|up)\s+for|figure\s+out|what\s+is|tell\s+me\s+about)\s*/i, "")
+          .trim();
+        const ddgRes = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanSearchQuery)}`, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+          signal: AbortSignal.timeout(3000)
+        });
+        if (ddgRes.ok) {
+          const htmlText = await ddgRes.text();
+          const snippets = Array.from(htmlText.matchAll(/<a class="result__snippet[^"]*"[^>]*>(.*?)<\/a>/g))
+            .map(m => m[1].replace(/<[^>]+>/g, '').trim())
+            .filter(Boolean)
+            .slice(0, 3);
+          if (snippets.length > 0) {
+            liveWebContext = `\n\n[LIVE INTERNET RESEARCH FINDINGS FOR "${cleanSearchQuery}"]:\n` + snippets.map(s => `• ${s}`).join("\n");
+          }
+        }
+      } catch (webErr) {
+        console.debug("Web lookup note in chat route:", webErr);
+      }
+    }
+
+    const enhancedSystemInstruction = systemInstruction + (liveWebContext ? liveWebContext : "") + `
+UNIVERSAL COGNITION & REASONING CONSTITUTION:
+- You have normal, natural, human understanding of conversation for ANYTHING AND EVERYTHING.
+- Reason at the highest possible level. Understand whatever the user asks you to do.
+- Break down the goal, solve the problem, and do what the user commands.
+- If external facts were retrieved online or from searchbiz.co.za crawled knowledge, synthesize them clearly.
+- Never output robotic refusal messages.
+`;
+
+    // Try free zero-quota open-source model inference
+    try {
+      const pollPayload = {
+        messages: [
+          { role: "system", content: enhancedSystemInstruction },
+          ...(history || []).map((msg: any) => ({
+            role: msg.sender === "user" ? "user" : "assistant",
+            content: msg.text
+          })),
+          { role: "user", content: message }
+        ],
+        model: "openai",
+        seed: 42
+      };
+
+      const pollRes = await fetch("https://text.pollinations.ai/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "SearchBizExecutive/2026" },
+        body: JSON.stringify(pollPayload),
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (pollRes.ok) {
+        const replyText = (await pollRes.text()).trim();
+        if (replyText && replyText.length > 8 && !replyText.toLowerCase().includes("error")) {
+          return NextResponse.json({ text: replyText });
+        }
+      }
+    } catch (pollErr) {
+      console.warn("Pollinations open-source text engine note:", pollErr);
+    }
+
+    // --- 3. OPTIONAL GEMINI FALLBACK (NON-BLOCKING) ---
+    if (process.env.GEMINI_API_KEY && process.env.USE_GEMINI_FALLBACK === "true") {
       try {
         const ai = new GoogleGenAI({
           apiKey: process.env.GEMINI_API_KEY,
@@ -220,13 +388,13 @@ IMPORTANT RULES:
           model: "gemini-2.5-flash",
           contents,
           config: {
-            systemInstruction,
+            systemInstruction: enhancedSystemInstruction,
             temperature: 0.3,
           },
         });
 
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Gemini call timed out after 5s")), 5000)
+          setTimeout(() => reject(new Error("Gemini call timed out after 4s")), 4000)
         );
 
         const response: any = await Promise.race([generatePromise, timeoutPromise]);
@@ -235,83 +403,7 @@ IMPORTANT RULES:
           return NextResponse.json({ text: response.text });
         }
       } catch (geminiError) {
-        console.error("Gemini model execution failed, attempting local fallback...", geminiError);
-      }
-    }
-
-    // --- 2. LOCAL VPS OLLAMA (IF HOST IS ONLINE) ---
-    const ollamaHost = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "");
-    const targetModel = process.env.LLAMA3_MODEL || "llama3";
-    let isOllamaOnline = false;
-    let finalModel = targetModel;
-
-    try {
-      const tagsController = new AbortController();
-      const tagsTimeout = setTimeout(() => tagsController.abort(), 1200); // 1.2s check
-      const tagsResponse = await fetch(`${ollamaHost}/api/tags`, {
-        signal: tagsController.signal
-      });
-      clearTimeout(tagsTimeout);
-
-      if (tagsResponse.ok) {
-        isOllamaOnline = true;
-        const tagsData = await tagsResponse.json();
-        const availableModels = tagsData.models || [];
-        if (availableModels.length > 0) {
-          const matchingModel = availableModels.find((m: any) => 
-            (m.name || "").toLowerCase().includes(targetModel.toLowerCase()) || 
-            (m.model || "").toLowerCase().includes(targetModel.toLowerCase())
-          );
-          if (matchingModel) {
-            finalModel = matchingModel.name;
-          } else {
-            finalModel = availableModels[0].name;
-          }
-        }
-      }
-    } catch {
-      // Ollama offline, skip cleanly without hanging
-      isOllamaOnline = false;
-    }
-
-    if (isOllamaOnline) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: finalModel,
-            messages: [
-              { role: "system", content: systemInstruction },
-              ...(history || []).map((msg: any) => ({
-                role: msg.sender === "user" ? "user" : "assistant",
-                content: msg.text
-              })),
-              { role: "user", content: message }
-            ],
-            options: {
-              temperature: 0.3
-            },
-            stream: false
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (ollamaResponse.ok) {
-          const ollamaData = await ollamaResponse.json();
-          if (ollamaData.message?.content) {
-            return NextResponse.json({ text: ollamaData.message.content });
-          }
-        }
-      } catch (ollamaErr) {
-        console.warn("Ollama chat call failed:", ollamaErr);
+        console.error("Gemini optional fallback note:", geminiError);
       }
     }
 
