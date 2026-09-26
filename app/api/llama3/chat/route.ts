@@ -189,6 +189,100 @@ IMPORTANT RULES:
 4. When recommending a business, always output its actual registered contact details (telephone, WhatsApp, email, address) as listed so the user can reach out.
 `;
 
+    // --- 0.1 INSTANT SEARCHBIZ DIRECTORY DETERMINISTIC KNOWLEDGE (SUB-MILLISECOND RESPONSE) ---
+    const norm = lowerMessage.trim();
+
+    // Categories
+    if (
+      norm.includes("categor") ||
+      norm.includes("business type") ||
+      norm.includes("what are all the categories") ||
+      norm.includes("which categories")
+    ) {
+      return NextResponse.json({
+        text: `📂 **SearchBiz South Africa — All 20 Official Directory Categories & Subcategories**\n\n` +
+          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
+          `2. **Beauty & Personal Care:** Barbershops, Day Spas, Hair Salons, Makeup Artists, Massage, Nail Salons, Skincare\n` +
+          `3. **Business Services:** Accounting, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage\n` +
+          `4. **Cleaning & Janitorial:** Carpet & Upholstery, Commercial Office Cleaning, Domestic Maid Services, Window Cleaning, Pressure Washing\n` +
+          `5. **Community & Public:** Charities, Churches, Community Centres, Emergency Services, Libraries, Police & Fire Stations\n` +
+          `6. **Construction & Trades:** Carpentry, Building Contractors, Electricians, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding\n` +
+          `7. **Education & Training:** Colleges, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools\n` +
+          `8. **Entertainment & Recreation:** Amusement Parks, Bowling, Cinemas, Nightclubs, Sports Clubs & Stadiums\n` +
+          `9. **Events & Weddings:** Catering, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues\n` +
+          `10. **Financial Services:** Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners\n` +
+          `11. **Food & Dining:** Bakeries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Restaurants & Fine Dining\n` +
+          `12. **Groceries & Markets:** Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets\n` +
+          `13. **Health & Medical:** Chiropractors, Dentists, Doctors (GPs), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Vets\n` +
+          `14. **Home & Garden:** Appliance Repairs, Blinds & Curtains, Furniture, Interior Design, Landscaping & Garden Care, Nurseries, Tree Felling\n` +
+          `15. **Industrial & Manufacturing:** Chemical & Plastic, Heavy Equipment, Metal & Steel Fabrication, Packaging, Warehousing\n` +
+          `16. **Pets & Animals:** Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops\n` +
+          `17. **Professional Services:** Architecture, Audit & Assurance, Engineering Consultants, Notaries, Conveyancers, Quantity Surveyors\n` +
+          `18. **Real Estate:** Commercial Brokers, Estate Agents, Property Management, Rental Agencies, Valuation Surveyors\n` +
+          `19. **Retail & Shopping:** Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery, Shopping Centres & Malls\n` +
+          `20. **Travel & Tourism:** B&Bs, Car Rental, Game Reserves, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators\n\n` +
+          `🌐 Explore live: https://searchbiz.co.za/directory`
+      });
+    }
+
+    // Provinces
+    if (
+      norm.includes("province") ||
+      norm.includes("provinces")
+    ) {
+      return NextResponse.json({
+        text: `🇿🇦 **SearchBiz South Africa — All 9 Provinces & Major Hubs**\n\n` +
+          `1. **Eastern Cape:** Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega, Jeffreys Bay (5000–6499)\n` +
+          `2. **Free State:** Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)\n` +
+          `3. **Gauteng:** Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto (0001–2199)\n` +
+          `4. **KwaZulu-Natal:** Durban (4001), Umkomaas (4170), Craigieburn, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg (2900–4499)\n` +
+          `5. **Limpopo:** Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina (0500–0999)\n` +
+          `6. **Mpumalanga:** Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton (1000–1399)\n` +
+          `7. **North West:** Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)\n` +
+          `8. **Northern Cape:** Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)\n` +
+          `9. **Western Cape:** Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna (6500–8099)\n\n` +
+          `🌐 Directory listings available across every province: https://searchbiz.co.za/directory`
+      });
+    }
+
+    // Pricing & Plans
+    if (
+      norm.includes("price") ||
+      norm.includes("cost") ||
+      norm.includes("plan") ||
+      norm.includes("premium") ||
+      norm.includes("subscription") ||
+      norm.includes("r199") ||
+      norm.includes("membership")
+    ) {
+      return NextResponse.json({
+        text: `💎 **SearchBiz South Africa — Official Pricing & Membership Architecture**\n\n` +
+          `🇿🇦 **1. Free Unclaimed Listing (R0.00):**\n` +
+          `• Basic profile with Name, Phone, Address, Category (Sensitive fields locked until claimed).\n\n` +
+          `⭐ **2. Base Premium Plan (R199.00 / month):**\n` +
+          `• Unlimited static website hosting\n` +
+          `• Unlimited domain-branded email accounts (@yourbusiness.co.za)\n` +
+          `• Design/hosting setup assistance\n` +
+          `• Elite Verified Badge\n` +
+          `• 1 custom listing with ALL fields unlocked\n\n` +
+          `➕ **3. Extras & Add-Ons:**\n` +
+          `• **+R199.00 / month** per additional listed ad\n` +
+          `• **Official .co.za Domain Registration:** **R99.00 / year**\n\n` +
+          `🌐 Manage or register listings: https://searchbiz.co.za/pricing`
+      });
+    }
+
+    // Greeting
+    if (
+      norm === "hi" || norm === "hello" || norm === "hey" || norm === "yo" ||
+      norm.startsWith("hi ") || norm.startsWith("hello ") || norm.startsWith("hey ") ||
+      norm.includes("how are you") || norm.includes("how you")
+    ) {
+      return NextResponse.json({
+        text: `Hello! I am doing great and completely locked in. I am connected with deep knowledge of searchbiz.co.za: all 9 provinces, all 20 categories, verified directory listings, and pricing. What would you like to execute or explore?`
+      });
+    }
+
     // --- 1. LOCAL VPS OLLAMA (PRIMARY: LLAMA 3.2 3B) ---
     const ollamaHost = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/$/, "");
     const targetModel = process.env.LLAMA3_MODEL || "llama3.2:3b";
@@ -424,7 +518,59 @@ UNIVERSAL COGNITION & REASONING CONSTITUTION:
     ) {
       return NextResponse.json({
         text: `The verified pricing structure for SearchBiz directory subscriptions and services is as follows:\n• **Base Premium Plan:** **R199.00 / month** (Billed via South African debit card mandate)\n  * Unlimited hosting for static websites\n  * Unlimited domain-branded email accounts\n  * Custom host/design assistance for a smart static website\n  * Elite Premium SearchBiz account features\n  * 1 custom directory listing in the SearchBiz index\n• **Extras & Add-Ons:**\n  * **+R199.00 / month** for each additional listed ad\n  * **.co.za domain registration:** **R99.00 / year**\nLet me know if you would like me to find a specific registered business or search listings!`
+      });
+    }
 
+    // SearchBiz Directory Categories Questions
+    if (
+      normalizedQuery.includes("categor") ||
+      normalizedQuery.includes("business type") ||
+      normalizedQuery.includes("industry") ||
+      normalizedQuery.includes("industries")
+    ) {
+      return NextResponse.json({
+        text: `📂 **SearchBiz South Africa — All 20 Official Directory Categories & Subcategories**\n\n` +
+          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
+          `2. **Beauty & Personal Care:** Barbershops, Day Spas, Hair Salons, Makeup Artists, Massage, Nail Salons, Skincare\n` +
+          `3. **Business Services:** Accounting, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage\n` +
+          `4. **Cleaning & Janitorial:** Carpet & Upholstery, Commercial Office Cleaning, Domestic Maid Services, Window Cleaning, Pressure Washing\n` +
+          `5. **Community & Public:** Charities, Churches, Community Centres, Emergency Services, Libraries, Police & Fire Stations\n` +
+          `6. **Construction & Trades:** Carpentry, Building Contractors, Electricians, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding\n` +
+          `7. **Education & Training:** Colleges, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools\n` +
+          `8. **Entertainment & Recreation:** Amusement Parks, Bowling, Cinemas, Nightclubs, Sports Clubs & Stadiums\n` +
+          `9. **Events & Weddings:** Catering, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues\n` +
+          `10. **Financial Services:** Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners\n` +
+          `11. **Food & Dining:** Bakeries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Restaurants & Fine Dining\n` +
+          `12. **Groceries & Markets:** Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets\n` +
+          `13. **Health & Medical:** Chiropractors, Dentists, Doctors (GPs), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Vets\n` +
+          `14. **Home & Garden:** Appliance Repairs, Blinds & Curtains, Furniture, Interior Design, Landscaping & Garden Care, Nurseries, Tree Felling\n` +
+          `15. **Industrial & Manufacturing:** Chemical & Plastic, Heavy Equipment, Metal & Steel Fabrication, Packaging, Warehousing\n` +
+          `16. **Pets & Animals:** Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops\n` +
+          `17. **Professional Services:** Architecture, Audit & Assurance, Engineering Consultants, Notaries, Conveyancers, Quantity Surveyors\n` +
+          `18. **Real Estate:** Commercial Brokers, Estate Agents, Property Management, Rental Agencies, Valuation Surveyors\n` +
+          `19. **Retail & Shopping:** Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery, Shopping Centres & Malls\n` +
+          `20. **Travel & Tourism:** B&Bs, Car Rental, Game Reserves, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators\n\n` +
+          `🌐 Explore live: https://searchbiz.co.za/directory`
+      });
+    }
+
+    // SearchBiz Provinces Questions
+    if (
+      normalizedQuery.includes("province") ||
+      normalizedQuery.includes("provinces")
+    ) {
+      return NextResponse.json({
+        text: `🇿🇦 **SearchBiz South Africa — All 9 Provinces & Major Hubs**\n\n` +
+          `1. **Eastern Cape:** Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega, Jeffreys Bay (5000–6499)\n` +
+          `2. **Free State:** Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)\n` +
+          `3. **Gauteng:** Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto (0001–2199)\n` +
+          `4. **KwaZulu-Natal:** Durban (4001), Umkomaas (4170), Craigieburn, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg (2900–4499)\n` +
+          `5. **Limpopo:** Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina (0500–0999)\n` +
+          `6. **Mpumalanga:** Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton (1000–1399)\n` +
+          `7. **North West:** Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)\n` +
+          `8. **Northern Cape:** Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)\n` +
+          `9. **Western Cape:** Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna (6500–8099)\n\n` +
+          `🌐 Directory listings available across every province: https://searchbiz.co.za/directory`
       });
     }
 

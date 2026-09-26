@@ -651,23 +651,72 @@ def make_multipart_body(fields: dict, files: dict) -> Tuple[bytes, str]:
     lines.append(f"--{boundary}--\r\n".encode("utf-8"))
     return b"".join(lines), f"multipart/form-data; boundary={boundary}"
 
+def split_message_chunks(text: str, max_len: int = 3800) -> List[str]:
+    """Splits long text into clean chunks strictly under Telegram's 4096-character limit."""
+    if not text:
+        return []
+    if len(text) <= max_len:
+        return [text]
+
+    chunks = []
+    current = ""
+    paragraphs = text.split("\n\n")
+    for para in paragraphs:
+        if len(para) > max_len:
+            lines = para.split("\n")
+            for line in lines:
+                if len(line) > max_len:
+                    words = line.split(" ")
+                    for word in words:
+                        if len(current) + len(word) + 1 > max_len:
+                            if current.strip():
+                                chunks.append(current.strip())
+                            current = word + " "
+                        else:
+                            current += word + " "
+                else:
+                    if len(current) + len(line) + 1 > max_len:
+                        if current.strip():
+                            chunks.append(current.strip())
+                        current = line + "\n"
+                    else:
+                        current += line + "\n"
+        else:
+            if len(current) + len(para) + 2 > max_len:
+                if current.strip():
+                    chunks.append(current.strip())
+                current = para + "\n\n"
+            else:
+                current += para + "\n\n"
+
+    if current.strip():
+        chunks.append(current.strip())
+
+    return chunks or [text]
+
 def send_telegram(chat_id: int, text: str):
+    if not text:
+        return None
     record_chat_turn(chat_id, "assistant", text)
-    res = telegram_call("sendMessage", {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    })
-    if not res or not res.get("ok"):
-        # Resilient fallback: Strip HTML tags and send clean plain text to ensure message is never lost
-        clean_text = re.sub(r'<[^>]+>', '', text)
+    chunks = split_message_chunks(text, max_len=3800)
+    last_res = None
+    for chunk in chunks:
         res = telegram_call("sendMessage", {
             "chat_id": chat_id,
-            "text": clean_text,
+            "text": chunk,
+            "parse_mode": "HTML",
             "disable_web_page_preview": False
         })
-    return res
+        if not res or not res.get("ok"):
+            # Resilient fallback: Strip HTML tags and send clean plain text to ensure message is never lost
+            clean_text = re.sub(r'<[^>]+>', '', chunk)
+            res = telegram_call("sendMessage", {
+                "chat_id": chat_id,
+                "text": clean_text,
+                "disable_web_page_preview": False
+            })
+        last_res = res
+    return last_res
 
 def send_chat_action(chat_id: int, action: str = "typing"):
     """Shows native 'typing...', 'upload_photo', 'upload_document' indicator in Telegram."""
@@ -4201,6 +4250,51 @@ def fetch_live_searchbiz_knowledge(force_refresh: bool = False) -> dict:
         return res
     return _CACHED_SEARCHBIZ_KNOWLEDGE or {}
 
+def get_searchbiz_categories_card() -> str:
+    """Returns a focused, comprehensive breakdown of all 20 SearchBiz categories and 145 subcategories."""
+    return """📂 <b>SearchBiz South Africa — All 20 Official Directory Categories & Subcategories</b>
+🌐 <b>Directory:</b> <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>
+
+• <b>1. AUTOMOTIVE & VEHICLES:</b> Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics
+• <b>2. BEAUTY & PERSONAL CARE:</b> Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare
+• <b>3. BUSINESS SERVICES:</b> Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage
+• <b>4. CLEANING & JANITORIAL:</b> Carpet & Upholstery Cleaning, Commercial & Office, Domestic Maid Services, Window Cleaning, High Pressure Washing
+• <b>5. COMMUNITY & PUBLIC:</b> Charities & NGOs, Churches & Worship, Community Centres, Emergency Services, Libraries, Police & Fire Stations
+• <b>6. CONSTRUCTION & TRADES:</b> Carpentry, Building Contractors, Electrical Contractors, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding & Metal
+• <b>7. EDUCATION & TRAINING:</b> Colleges & Tertiary, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools
+• <b>8. ENTERTAINMENT & RECREATION:</b> Amusement Parks, Bowling & Arcades, Cinemas & Theatres, Nightclubs, Sports Clubs & Stadiums
+• <b>9. EVENTS & WEDDINGS:</b> Catering Services, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues
+• <b>10. FINANCIAL SERVICES:</b> Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners
+• <b>11. FOOD & DINING:</b> Bakeries & Patisseries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Halal/Kosher, Restaurants & Fine Dining
+• <b>12. GROCERIES & MARKETS:</b> Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets
+• <b>13. HEALTH & MEDICAL:</b> Chiropractors, Dentists, General Practitioners (Doctors), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Veterinarians
+• <b>14. HOME & GARDEN:</b> Appliance Repairs, Blinds & Curtains, Furniture & Decor, Interior Design, Landscaping, Nurseries, Tree Felling
+• <b>15. INDUSTRIAL & MANUFACTURING:</b> Chemical & Plastic, Heavy Equipment Hire, Metal & Steel Fabrication, Packaging, Warehousing
+• <b>16. PETS & ANIMALS:</b> Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops
+• <b>17. PROFESSIONAL SERVICES:</b> Architecture & Town Planning, Audit & Assurance, Engineering Consultants, Notaries & Conveyancers, Quantity Surveyors
+• <b>18. REAL ESTATE:</b> Commercial Brokers, Estate Agents & Sales, Property Management, Rental Agencies, Valuation Surveyors
+• <b>19. RETAIL & SHOPPING:</b> Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery & Watches, Shopping Centres & Malls
+• <b>20. TRAVEL & TOURISM:</b> Bed & Breakfasts (B&Bs), Car Rental, Game Reserves & Safari Lodges, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators
+
+💡 <i>Ask me to find businesses in any category or say <code>/sweep_provinces [category]</code> to scrape leads nationwide!</i>"""
+
+def get_searchbiz_provinces_card() -> str:
+    """Returns a focused breakdown of all 9 South African provinces, major hubs, and postal code ranges."""
+    return """🇿🇦 <b>SearchBiz South Africa — All 9 Provinces & Major Hubs</b>
+🌐 <b>Live Platform:</b> <a href="https://searchbiz.co.za">searchbiz.co.za</a>
+
+1. <b>Eastern Cape:</b> Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega (Uitenhage), Jeffreys Bay, Queenstown (5000–6499)
+2. <b>Free State:</b> Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)
+3. <b>Gauteng:</b> Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto, Benoni, Boksburg, Kempton Park, Krugersdorp (0001–2199)
+4. <b>KwaZulu-Natal:</b> Durban (4001), Umkomaas (4170), Craigieburn, Ilfracombe, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg, Richards Bay, Port Shepstone, Margate, Umhlanga, Pinetown (2900–4499)
+5. <b>Limpopo:</b> Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina, Phalaborwa (0500–0999)
+6. <b>Mpumalanga:</b> Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton, Barberton, White River (1000–1399)
+7. <b>North West:</b> Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)
+8. <b>Northern Cape:</b> Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)
+9. <b>Western Cape:</b> Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville (6500–8099)
+
+💡 <i>Tell me any town or city, and I can list matching businesses or publish new advertisements!</i>"""
+
 def get_searchbiz_provinces_and_categories_card() -> str:
     """Returns a comprehensive, beautifully structured breakdown of SearchBiz 9 provinces and 20 categories."""
     base_url = get_active_api_base()
@@ -5959,6 +6053,27 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
     3. Free Open-Source Text AI (Pollinations API with full SearchBiz site context)
     4. Grounded Local SearchBiz & Empathetic Contextual Fallback
     """
+    lower_p = prompt.lower().strip()
+
+    # Instant Deterministic SearchBiz Directory Knowledge
+    is_cat = any(k in lower_p for k in ["category", "categories", "subcategories", "sub categories", "sub-categories", "what are all the categories", "what categories", "list categories", "show categories"])
+    is_prov = any(k in lower_p for k in ["province", "provinces", "what are all the provinces", "what provinces", "which provinces", "list provinces", "show provinces"])
+    
+    if is_cat and not is_prov:
+        return get_searchbiz_categories_card()
+    if is_prov and not is_cat:
+        return get_searchbiz_provinces_card()
+    if is_cat and is_prov:
+        return get_searchbiz_provinces_and_categories_card()
+    if any(k in lower_p for k in ["pricing", "plan", "plans", "price", "prices", "cost", "costs", "fee", "fees", "membership", "memberships", "r199", "r99", "subscription"]):
+        return get_searchbiz_pricing_card()
+    if any(k in lower_p for k in ["link to searchbiz", "website link", "linking to searchbiz", "connected to searchbiz"]):
+        return get_searchbiz_website_link_card()
+    if lower_p in ["?", "??", "???", "help", "who is this", "are you there", "you there"]:
+        return "I am right here, fully active and ready to assist you on your VPS! What task or question can I solve for you right now?"
+    if lower_p in ["hi", "hello", "hey", "yo", "hi how you", "how are you", "how you"]:
+        return "Hello! I am doing great and completely locked in. How can I assist you with SearchBiz, lead scraping, document authoring, or system tasks today?"
+
     # 0. Deep Grounding from Crawled searchbiz.co.za Site Knowledge
     crawled_summary = SearchBizSiteCrawler.get_crawled_summary_context()
     relevant_snippets = get_relevant_site_knowledge_snippets(prompt)
@@ -5969,13 +6084,12 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         effective_system += f"\n\n{relevant_snippets}"
 
     # Autonomous Live Web Intelligence & Online Problem-Solving
-    lower_prompt = prompt.lower()
     needs_live_web = (
         len(prompt) > 8 and
-        not any(k in lower_prompt for k in ["province", "category", "categories", "pricing", "membership", "r199", "sent_listings", "listings/", "sent_listings/"]) and
-        any(k in lower_prompt for k in [
+        not any(k in lower_p for k in ["province", "category", "categories", "pricing", "membership", "r199", "sent_listings", "listings/", "sent_listings/"]) and
+        any(k in lower_p for k in [
             "who is", "what is", "where is", "how do", "how to", "why is", "tell me about",
-            "search", "google", "online", "find out", "research", "news", "price", "cost",
+            "search", "google", "online", "find out", "research", "news",
             "weather", "crypto", "bitcoin", "explain", "compare", "tutorial", "figure it out",
             "understand", "look online", "check online", "strategy", "competitor", "business"
         ])
@@ -6016,7 +6130,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         }
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=8) as res:
+        with urllib.request.urlopen(req, timeout=35) as res:
             ans = json.loads(res.read().decode("utf-8"))
             resp = ans.get("message", {}).get("content", "").strip()
             if resp:
@@ -6034,7 +6148,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
                 "options": {"temperature": 0.7, "num_predict": 350, "num_thread": 2}
             }
             gen_req = urllib.request.Request(gen_url, data=json.dumps(gen_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(gen_req, timeout=6) as gen_res:
+            with urllib.request.urlopen(gen_req, timeout=30) as gen_res:
                 ans = json.loads(gen_res.read().decode("utf-8"))
                 resp = ans.get("response", "").strip()
                 if resp:
@@ -6992,9 +7106,24 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
         return True
 
     # Immediate check for categories & provinces before generic laya routing
+    is_cat_specific = any(k in lower for k in ["category", "categories", "subcategories", "sub categories", "sub-categories"])
+    is_prov_specific = any(k in lower for k in ["province", "provinces"])
+
+    if is_cat_specific and not is_prov_specific:
+        send_chat_action(chat_id, "typing")
+        card = get_searchbiz_categories_card()
+        send_telegram(chat_id, card)
+        return True
+
+    if is_prov_specific and not is_cat_specific:
+        send_chat_action(chat_id, "typing")
+        card = get_searchbiz_provinces_card()
+        send_telegram(chat_id, card)
+        return True
+
     if (
-        any(k in lower for k in ["category", "categories", "subcategories", "sub categories", "sub-categories", "province", "provinces"]) or
-        ("searchbiz" in lower and any(k in lower for k in ["what are", "which are", "inside", "list", "show", "structure"]))
+        (is_cat_specific and is_prov_specific) or
+        ("searchbiz" in lower and any(k in lower for k in ["what are", "which are", "inside", "list", "show", "structure", "know anything", "know everything"]))
     ):
         send_chat_action(chat_id, "typing")
         card = get_searchbiz_provinces_and_categories_card()
