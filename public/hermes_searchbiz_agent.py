@@ -1672,8 +1672,8 @@ out center;
     # 3. Human Pacing Delay (1.5 - 2.5 seconds jitter)
     time.sleep(random.uniform(1.5, 2.5))
 
-    # 4. Verified Directory Dataset for Spares in Umkomaas / Craigieburn / Scottburgh / South Coast
-    if is_spares_query and ("umkomaas" in city.lower() or "scottburgh" in city.lower() or len(businesses) < 5):
+    # 4. Verified Directory Dataset for Spares ONLY when explicitly querying Umkomaas or Scottburgh
+    if is_spares_query and ("umkomaas" in city.lower() or "scottburgh" in city.lower()):
         verified_spares = [
             {
                 "name": "Umkomaas Motor Spares",
