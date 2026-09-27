@@ -3241,14 +3241,11 @@ def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
     """
     lower = query_directive.lower()
     
-    # Detect target category
-    target_category = "Spares Shops"
+    # Detect target categories
+    all_categories_mode = any(k in lower for k in ["each business category", "all business categories", "all categories", "each category", "every category", "one category at a time", "all 20 categories", "each category business"])
+    
     common_categories = [
         ("spares", "Auto Parts & Spares"),
-        ("spare", "Auto Parts & Spares"),
-        ("auto part", "Auto Parts & Spares"),
-        ("car part", "Auto Parts & Spares"),
-        ("motor spares", "Auto Parts & Spares"),
         ("panel beater", "Panel Beaters"),
         ("mechanic", "Mechanics & Service Centres"),
         ("tyre", "Tyre & Fitment Centres"),
@@ -3258,17 +3255,22 @@ def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
         ("hardware", "Building Contractors"),
         ("restaurant", "Restaurants & Fine Dining"),
         ("lawyer", "Legal Services & Attorneys"),
-        ("attorney", "Legal Services & Attorneys"),
         ("doctor", "General Practitioners (Doctors)"),
         ("dentist", "Dentists & Orthodontists"),
         ("pharmacy", "Pharmacies & Chemists"),
         ("security", "Security & Armed Response"),
         ("cleaning", "Commercial & Office Cleaning")
     ]
-    for kw, cat in common_categories:
-        if kw in lower:
-            target_category = cat
-            break
+    
+    if all_categories_mode:
+        target_categories = list(dict.fromkeys([cat for _, cat in common_categories]))
+    else:
+        target_category = "Auto Parts & Spares"
+        for kw, cat in common_categories:
+            if kw in lower:
+                target_category = cat
+                break
+        target_categories = [target_category]
 
     # Determine which provinces to scrape
     provinces_to_scrape = ALL_9_PROVINCES
@@ -3279,57 +3281,58 @@ def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
     if detected_provinces and not any(k in lower for k in ["all 9", "all provinces", "all nine", "each province", "every province", "all"]):
         provinces_to_scrape = detected_provinces
 
-    should_place_ads = any(k in lower for k in ["place ad", "place ads", "make ad", "post ad", "create ad", "publish", "unclaimed ad", "free ad", "ads"])
+    should_place_ads = any(k in lower for k in ["place ad", "place ads", "make ad", "post ad", "create ad", "publish", "unclaimed ad", "free ad", "ads", "free tier", "not claimed", "upload them"])
 
     init_msg = f"""🗺️ <b>Multi-Province Autonomous Scraper Activated</b>
 
-🎯 <b>Category:</b> <b>{target_category}</b>
+🎯 <b>Categories:</b> <b>{len(target_categories)} Categories</b> ({', '.join(target_categories[:4])}{'...' if len(target_categories) > 4 else ''})
 🇿🇦 <b>Provinces:</b> <b>{len(provinces_to_scrape)} Provinces</b> ({', '.join([p['name'] for p in provinces_to_scrape])})
 📁 <b>Storage Destination:</b> <code>listings/[province]/[category]/</code>
-🌐 <b>SearchBiz Directory Placement:</b> {'✅ Auto-publish Free Unclaimed Ads' if should_place_ads else '📁 Stored in listings/ only'}
+🌐 <b>SearchBiz Directory Placement:</b> {'✅ Auto-publish Free Unclaimed Ads (No Images, Name/Phone/Address Only)' if should_place_ads else '📁 Stored in listings/ only'}
 🔒 <b>Outreach Policy:</b> 🛡️ ZERO emails sent to businesses during scrape (Gated until you command outreach)
 
-⏳ <i>Crawling businesses across all provinces now...</i>"""
+⏳ <i>Crawling businesses across provinces and categories one by one...</i>"""
     send_telegram(chat_id, init_msg)
 
     total_scraped = 0
     total_ads_placed = 0
     province_summaries = []
 
-    for prov_info in provinces_to_scrape:
-        prov_name = prov_info["name"]
-        prov_slug = prov_info["slug"]
-        hub_city = prov_info["hubs"][0]
+    for cat_name in target_categories:
+        for prov_info in provinces_to_scrape:
+            prov_name = prov_info["name"]
+            prov_slug = prov_info["slug"]
+            hub_city = prov_info["hubs"][0]
 
-        # Scrape for this province hub
-        scrape_query = f"{target_category} in {hub_city} {prov_name} South Africa"
-        subfolder = get_listings_subfolder(prov_slug, target_category)
+            # Scrape for this category and province hub
+            scrape_query = f"{cat_name} in {hub_city} {prov_name} South Africa"
+            subfolder = get_listings_subfolder(prov_slug, cat_name)
 
-        send_telegram(chat_id, f"📍 <b>Crawling {prov_name} ({hub_city})...</b>")
-        scrape_res = scrape_stealth_google_maps(scrape_query, chat_id)
-        c = scrape_res.get("count", 0)
-        total_scraped += c
+            send_telegram(chat_id, f"📍 <b>Crawling category '{cat_name}' in {prov_name} ({hub_city})...</b>")
+            scrape_res = scrape_stealth_google_maps(scrape_query, chat_id)
+            c = scrape_res.get("count", 0)
+            total_scraped += c
 
-        # Move/sync newly saved files to hierarchical subfolder
-        for fn in os.listdir(LISTINGS_DIR):
-            if fn.endswith(".json") or fn.endswith(".csv"):
-                src = os.path.join(LISTINGS_DIR, fn)
-                if os.path.isfile(src) and prov_slug in fn.lower() or hub_city.lower() in fn.lower():
-                    dest = os.path.join(subfolder, fn)
-                    try:
-                        shutil.copy2(src, dest)
-                    except Exception:
-                        pass
+            # Move/sync newly saved files to hierarchical subfolder
+            for fn in os.listdir(LISTINGS_DIR):
+                if fn.endswith(".json") or fn.endswith(".csv"):
+                    src = os.path.join(LISTINGS_DIR, fn)
+                    if os.path.isfile(src) and (prov_slug in fn.lower() or hub_city.lower() in fn.lower()):
+                        dest = os.path.join(subfolder, fn)
+                        try:
+                            shutil.copy2(src, dest)
+                        except Exception:
+                            pass
 
-        # Publish ads if requested
-        if should_place_ads and scrape_res.get("dataset_id"):
-            ds_id = scrape_res["dataset_id"]
-            import_res = import_leads_to_searchbiz(chat_id, ds_id, as_free_unclaimed=True)
-            ads_count = import_res.get("imported_count", 0)
-            total_ads_placed += ads_count
-            province_summaries.append(f"• <b>{prov_name}:</b> {c} businesses extracted & <b>{ads_count}</b> Free Ads placed ({hub_city})")
-        else:
-            province_summaries.append(f"• <b>{prov_name}:</b> {c} businesses extracted and stored in <code>listings/{prov_slug}/</code>")
+            # Publish ads if requested
+            if should_place_ads and scrape_res.get("dataset_id"):
+                ds_id = scrape_res["dataset_id"]
+                import_res = import_leads_to_searchbiz(chat_id, ds_id, as_free_unclaimed=True)
+                ads_count = import_res.get("imported_count", 0)
+                total_ads_placed += ads_count
+                province_summaries.append(f"• <b>{cat_name} — {prov_name}:</b> {c} businesses extracted & <b>{ads_count}</b> Free Ads placed ({hub_city})")
+            else:
+                province_summaries.append(f"• <b>{cat_name} — {prov_name}:</b> {c} businesses extracted & stored in <code>listings/{prov_slug}/</code>")
 
     summary_msg = f"""🏁 <b>Multi-Province Extraction Mission Complete!</b>
 
@@ -6728,20 +6731,30 @@ class LayaExecutionEngine:
         # Step 1: Decision Evaluation & Action Staging Card
         stage_items = []
         action_type = "general"
-        if (
-            any(k in lower for k in ["category", "categories", "subcategories", "sub categories", "sub-categories", "province", "provinces", "directory structure", "searchbiz structure"]) or
-            ("searchbiz" in lower and any(k in lower for k in ["what are", "which are", "inside", "list", "show", "types", "structure"]))
-        ):
-            action_type = "provinces_and_categories"
-            stage_items.append("1. Query live searchbiz.co.za knowledge base and API endpoint")
-            stage_items.append("2. Compile all 9 South African provinces with hub cities, towns, and postal ranges")
-            stage_items.append("3. Compile all 20 numbered parent categories and 145 child subcategories")
-            stage_items.append("4. Present verified membership pricing tiers (Free Unclaimed R0 vs Base Premium R199/mo)")
-        elif any(k in lower for k in ["price", "pricing", "plan", "plans", "cost", "membership", "memberships", "fee", "fees", "r199", "r99"]):
-            action_type = "pricing"
-            stage_items.append("1. Query official SearchBiz South Africa pricing architecture")
-            stage_items.append("2. Format verified subscription tiers (Free Unclaimed R0, Base Premium R199/mo, .co.za R99/yr)")
-            stage_items.append("3. Deliver comprehensive pricing breakdown")
+
+        # Action directives (Scrape, Publish, Sweep, Outreach) MUST take priority over passive info queries!
+        if any(k in lower for k in ["all 9 provinces", "all provinces", "each category in all 9", "multi province", "sweep all provinces", "each business category", "all business categories", "all categories", "one category at a time"]):
+            action_type = "multi_province_sweep"
+            stage_items.append("1. Launch multi-province crawler across all 9 South African provinces")
+            stage_items.append("2. Save structured datasets to listings/{province}/{category}/")
+            stage_items.append("3. Prepare listings vault (Zero unauthorized cold emails dispatched)")
+        elif any(k in lower for k in ["scrape google maps", "google maps scrape", "scrape maps", "maps scrape", "scrape business", "scrape leads", "scrape spares", "scrape shops", "extract google maps"]):
+            action_type = "scrape"
+            stage_items.append("1. Launch MapsScraperAgent (Stealth geospatial Google Maps crawler)")
+            stage_items.append("2. Ingest contact details (Phone, Address, Hours, Website, Rating)")
+            stage_items.append("3. Save raw CSV and JSON datasets into listings/ folder and permanent vault")
+            stage_items.append("4. Place as Free Unclaimed Ads on searchbiz.co.za if requested (No cold email sent!)")
+        elif any(k in lower for k in ["publish listings", "place as ads", "place has ads", "place them has ads", "place ads on searchbiz", "publish stored listings", "post ads from listings"]):
+            action_type = "listings_publish"
+            stage_items.append("1. Access business lead files across listings/ vault")
+            stage_items.append("2. Map Province, City/Town, Category, and Pricing Membership Tier")
+            stage_items.append("3. Publish verified live listings directly to searchbiz.co.za")
+        elif any(k in lower for k in ["outreach", "cold email", "cold outreach", "email companies in listings", "send to listings", "reach out to listings", "access files in listings", "email each of those business"]):
+            action_type = "listings_outreach"
+            stage_items.append("1. Deploy OutreachAgent to access all business files in listings/ folder")
+            stage_items.append("2. Filter companies with verified emails and contact channels")
+            stage_items.append("3. Dispatch personalized cold outreach proposals offering R199/mo verified package")
+            stage_items.append(f"4. Deliver guaranteed real-time copy/BCC to {ADMIN_EMAIL}")
         elif (
             (any(k in lower for k in ["scrape", "crawl", "reindex", "learn"]) and any(k in lower for k in ["site", "website", "searchbiz", "all pages", "all links", "searchbiz.co.za"])) or
             any(k in lower for k in ["scrape site", "crawl site", "scrape searchbiz", "crawl searchbiz", "know everything about searchbiz", "know anything and everything", "know all pages"])
@@ -6750,42 +6763,11 @@ class LayaExecutionEngine:
             stage_items.append("1. Launch SearchBizSiteCrawler (Recursive full-site crawler engine)")
             stage_items.append("2. Extract & index all 9 provinces, 20 categories, pricing, and live listings")
             stage_items.append("3. Persist knowledge into SQLite database and build Llama-3.2 3B context matrix")
-        elif any(k in lower for k in ["link to searchbiz", "linking to searchbiz", "link in the vps", "link to the searchbiz", "website link", "connected to searchbiz"]):
-            action_type = "searchbiz_link"
-            stage_items.append("1. Perform handshake with active SearchBiz endpoint (https://searchbiz.co.za)")
-            stage_items.append("2. Verify API authentication and database synchronization status")
-            stage_items.append("3. Format live linking status and capability overview")
-        elif any(k in lower for k in ["admin@searchbiz.co.za", "mailcow", "admin email settings", "admin settings", "admin password", "admin credentials"]):
-            action_type = "admin_settings"
-            stage_items.append("1. Fetch Mailcow & DirectAdmin mailbox credentials for admin@searchbiz.co.za")
-            stage_items.append("2. Verify IMAP (port 993) and SMTP (port 587) endpoints")
-            stage_items.append("3. Format complete connection & credentials profile card")
-        elif any(k in lower for k in ["forward", "check inbox", "incoming", "view chats", "manage chats", "inbox replies"]):
-            action_type = "forward_replies"
-            stage_items.append("1. Connect to IMAP mailbox for ai@searchbiz.co.za")
-            stage_items.append("2. Extract all incoming client inquiries and replies")
-            stage_items.append("3. Forward complete copies to admin@searchbiz.co.za and alert Telegram")
         elif any(k in lower for k in ["mkdir", "create folder", "create new folder", "new folder in listings", "make folder"]):
             action_type = "listings_mkdir"
             stage_items.append("1. Parse target directory path inside listings/ vault")
             stage_items.append("2. Autonomous filesystem allocation and permission setup")
             stage_items.append("3. Confirm directory creation and update inventory tree")
-        elif any(k in lower for k in ["publish listings", "place as ads", "place has ads", "place them has ads", "place ads on searchbiz", "publish stored listings", "post ads from listings"]):
-            action_type = "listings_publish"
-            stage_items.append("1. Access business lead files across listings/ vault")
-            stage_items.append("2. Map Province, City/Town, Category, and Pricing Membership Tier")
-            stage_items.append("3. Publish verified live listings directly to searchbiz.co.za")
-        elif any(k in lower for k in ["all 9 provinces", "all provinces", "each category in all 9", "multi province", "sweep all provinces"]):
-            action_type = "multi_province_sweep"
-            stage_items.append("1. Launch multi-province crawler across all 9 South African provinces")
-            stage_items.append("2. Save structured datasets to listings/{province}/{category}/")
-            stage_items.append("3. Prepare listings vault (Zero unauthorized cold emails dispatched)")
-        elif any(k in lower for k in ["outreach", "cold email", "cold outreach", "email companies in listings", "send to listings", "reach out to listings", "access files in listings", "email each of those business"]):
-            action_type = "listings_outreach"
-            stage_items.append("1. Deploy OutreachAgent to access all business files in listings/ folder")
-            stage_items.append("2. Filter companies with verified emails and contact channels")
-            stage_items.append("3. Dispatch personalized cold outreach proposals offering R199/mo verified package")
-            stage_items.append(f"4. Deliver guaranteed real-time copy/BCC to {ADMIN_EMAIL}")
         elif any(k in lower for k in ["sent_listings", "sent listings", "contacted listings", "contacted companies", "who have we contacted", "companies contacted", "sent folder"]):
             action_type = "sent_listings_summary"
             stage_items.append("1. Inspect sent_listings/ quarantine vault")
@@ -6807,6 +6789,34 @@ class LayaExecutionEngine:
             stage_items.append("1. Deploy AdPublisherAgent to process leads dataset")
             stage_items.append("2. Verify location and category mapping")
             stage_items.append("3. Publish active listings live to searchbiz.co.za")
+        elif any(k in lower for k in ["link to searchbiz", "linking to searchbiz", "link in the vps", "link to the searchbiz", "website link", "connected to searchbiz"]):
+            action_type = "searchbiz_link"
+            stage_items.append("1. Perform handshake with active SearchBiz endpoint (https://searchbiz.co.za)")
+            stage_items.append("2. Verify API authentication and database synchronization status")
+            stage_items.append("3. Format live linking status and capability overview")
+        elif any(k in lower for k in ["admin@searchbiz.co.za", "mailcow", "admin email settings", "admin settings", "admin password", "admin credentials"]):
+            action_type = "admin_settings"
+            stage_items.append("1. Fetch Mailcow & DirectAdmin mailbox credentials for admin@searchbiz.co.za")
+            stage_items.append("2. Verify IMAP (port 993) and SMTP (port 587) endpoints")
+            stage_items.append("3. Format complete connection & credentials profile card")
+        elif any(k in lower for k in ["forward", "check inbox", "incoming", "view chats", "manage chats", "inbox replies"]):
+            action_type = "forward_replies"
+            stage_items.append("1. Connect to IMAP mailbox for ai@searchbiz.co.za")
+            stage_items.append("2. Extract all incoming client inquiries and replies")
+            stage_items.append("3. Forward complete copies to admin@searchbiz.co.za and alert Telegram")
+        elif any(k in lower for k in ["what are the prices", "how much is searchbiz", "subscription pricing", "pricing architecture", "what does it cost", "price plans"]):
+            action_type = "pricing"
+            stage_items.append("1. Query official SearchBiz South Africa pricing architecture")
+            stage_items.append("2. Format verified subscription tiers (Free Unclaimed R0, Base Premium R199/mo, .co.za R99/yr)")
+            stage_items.append("3. Deliver comprehensive pricing breakdown")
+        elif (
+            any(k in lower for k in ["what categories", "what provinces", "which categories", "which provinces", "list categories", "list provinces", "show structure", "knowledge tree"])
+        ):
+            action_type = "provinces_and_categories"
+            stage_items.append("1. Query live searchbiz.co.za knowledge base and API endpoint")
+            stage_items.append("2. Compile all 9 South African provinces with hub cities, towns, and postal ranges")
+            stage_items.append("3. Compile all 20 numbered parent categories and 145 child subcategories")
+            stage_items.append("4. Present verified membership pricing tiers (Free Unclaimed R0 vs Base Premium R199/mo)")
         elif any(k in lower for k in ["doc", "docx", "word", "pdf", "report", "proposal", "invoice"]):
             action_type = "document"
             stage_items.append("1. Deploy DocReportAgent for executive synthesis")
@@ -7200,40 +7210,52 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
         send_telegram(chat_id, status_card)
         return True
 
-    # Immediate check for categories & provinces before generic laya routing
-    is_cat_specific = any(k in lower for k in ["category", "categories", "subcategories", "sub categories", "sub-categories"])
-    is_prov_specific = any(k in lower for k in ["province", "provinces"])
+    # Action directive check: If the message is a command to DO something (scrape, upload, publish, place ads, etc.), skip passive info cards!
+    is_action_command = (
+        text.startswith(("/", "laya", "hermes")) or
+        any(k in raw_lower for k in [
+            "scrape", "extract", "upload", "place", "post", "publish", "find", "collect",
+            "search for", "save", "import", "create", "add", "run", "execute", "sweep",
+            "free tier", "not claimed", "do one category", "one category at a time",
+            "place all ads", "put them", "place them", "each category", "all categories",
+            "all provinces", "all 9 provinces", "send email", "cold outreach"
+        ])
+    )
 
-    if is_cat_specific and not is_prov_specific:
-        send_chat_action(chat_id, "typing")
-        card = get_searchbiz_categories_card()
-        send_telegram(chat_id, card)
-        return True
+    if not is_action_command:
+        is_cat_question = any(k in lower for k in ["category", "categories", "subcategories", "sub categories"]) and any(k in lower for k in ["what", "which", "list", "show", "tell me", "available", "have", "structure"])
+        is_prov_question = any(k in lower for k in ["province", "provinces"]) and any(k in lower for k in ["what", "which", "list", "show", "tell me", "available", "have", "structure"])
 
-    if is_prov_specific and not is_cat_specific:
-        send_chat_action(chat_id, "typing")
-        card = get_searchbiz_provinces_card()
-        send_telegram(chat_id, card)
-        return True
+        if is_cat_question and not is_prov_question:
+            send_chat_action(chat_id, "typing")
+            card = get_searchbiz_categories_card()
+            send_telegram(chat_id, card)
+            return True
 
-    if (
-        (is_cat_specific and is_prov_specific) or
-        ("searchbiz" in lower and any(k in lower for k in ["what are", "which are", "inside", "list", "show", "structure", "know anything", "know everything"]))
-    ):
-        send_chat_action(chat_id, "typing")
-        card = get_searchbiz_provinces_and_categories_card()
-        send_telegram(chat_id, card)
-        return True
+        if is_prov_question and not is_cat_question:
+            send_chat_action(chat_id, "typing")
+            card = get_searchbiz_provinces_card()
+            send_telegram(chat_id, card)
+            return True
 
-    if any(k in lower for k in ["price", "pricing", "plan", "plans", "cost", "membership", "memberships", "fee", "fees", "r199", "r99"]):
-        send_chat_action(chat_id, "typing")
-        p_card = get_searchbiz_pricing_card()
-        send_telegram(chat_id, p_card)
-        return True
+        if (
+            (is_cat_question and is_prov_question) or
+            ("searchbiz" in lower and any(k in lower for k in ["what are", "which are", "inside", "list", "show", "structure", "know anything", "know everything"]))
+        ):
+            send_chat_action(chat_id, "typing")
+            card = get_searchbiz_provinces_and_categories_card()
+            send_telegram(chat_id, card)
+            return True
+
+        if any(k in lower for k in ["what are the prices", "how much is searchbiz", "subscription pricing", "pricing architecture", "what does it cost", "price plans"]):
+            send_chat_action(chat_id, "typing")
+            p_card = get_searchbiz_pricing_card()
+            send_telegram(chat_id, p_card)
+            return True
 
     is_laya_req = (
-        text.startswith(("/laya ", "/laya_task", "/laya_execute", "/laya_run")) or
-        raw_lower.startswith(("laya ", "hey laya", "hi laya", "tell laya", "ask laya", "laya,", "laya:")) or
+        text.startswith(("/laya ", "/laya_task", "/laya_execute", "/laya_run", "/laya")) or
+        raw_lower.startswith(("laya ", "laya", "hey laya", "hi laya", "tell laya", "ask laya", "laya,", "laya:")) or
         any(k in raw_lower for k in ["tell laya to", "ask laya to", "have laya", "laya do", "laya please", "laya execute", "laya and hermes", "laya to work", "laya work with", "install laya", "laya mission"])
     )
     if is_laya_req:
