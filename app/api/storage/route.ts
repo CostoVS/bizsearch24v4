@@ -280,31 +280,20 @@ async function revalidateCacheBackground(): Promise<void> {
 
 export async function GET(req: Request) {
   try {
-    const now = Date.now();
-
-    // Serve from cache immediately if warm and young (under 4 seconds)
-    if (globalRef.storageCache && (now - globalRef.storageCacheTime < 4000)) {
-      return NextResponse.json(globalRef.storageCache, {
+    // Read local .data/db.json disk database directly first for zero-latency reflection of agent ads
+    const localData = getLocalDataNoCache();
+    if (localData && Array.isArray(localData.ads) && localData.ads.length > 0) {
+      globalRef.storageCache = localData;
+      globalRef.storageCacheTime = Date.now();
+      return NextResponse.json(localData, {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'X-Cache': 'HIT-FAST',
-          'X-Cache-Age': String(now - globalRef.storageCacheTime)
+          'X-Cache': 'FRESH-DISK-LIVE'
         }
       });
     }
 
-    // If cache is present but older, return stale immediately and revalidate in background!
-    if (globalRef.storageCache) {
-      revalidateCacheBackground(); // trigger non-blocking update
-      return NextResponse.json(globalRef.storageCache, {
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'X-Cache': 'HIT-STALE'
-        }
-      });
-    }
-
-    // First time load - blocking but optimized
+    // Fallback to load and reconcile database
     const finalData = await loadAndReconcileData();
     globalRef.storageCache = finalData;
     globalRef.storageCacheTime = Date.now();
@@ -312,7 +301,7 @@ export async function GET(req: Request) {
     return NextResponse.json(finalData, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'X-Cache': 'MISS'
+        'X-Cache': 'RECONCILED'
       }
     });
   } catch (error: any) {

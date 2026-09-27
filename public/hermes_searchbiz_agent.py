@@ -1429,41 +1429,47 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
 
     lower_q = raw_query.lower()
 
-    # 1. Advanced 6000+ SA Suburb & City/Town Detection Engine
+    # 1. Advanced 6,000+ SA Suburb & City/Town Detection Engine
     detected_city = None
     detected_suburb = None
     detected_province = None
     detected_postal_code = None
 
+    # Parse location string segment from raw_query (e.g. "1.1 Auto Body in Adelaide, Eastern Cape South Africa")
+    loc_part = raw_query
+    for sep in [" in ", " near ", " around ", " at "]:
+        if sep in f" {raw_query.lower()} ":
+            parts = re.split(rf'\s+{sep.strip()}\s+', raw_query, flags=re.IGNORECASE)
+            if len(parts) >= 2:
+                loc_part = parts[-1].strip()
+                break
+
+    # Clean location search token (strip "south africa")
+    clean_loc_token = re.sub(r'(?i)\b(south africa|category|business)\b', '', loc_part).strip()
+
     # Search against 6,931 suburbs & 663 major towns database
-    matched_areas = search_sa_areas(raw_query, limit=5)
+    matched_areas = search_sa_areas(clean_loc_token, limit=5)
+    if not matched_areas and clean_loc_token:
+        # Search individual tokens (e.g. "Adelaide", "Polokwane", "Ballito")
+        for token in re.findall(r'\b[A-Za-z]{3,}\b', clean_loc_token):
+            if token.lower() not in ["auto", "body", "repair", "shops", "south", "africa"]:
+                m = search_sa_areas(token, limit=1)
+                if m:
+                    matched_areas = m
+                    break
+
     if matched_areas:
         first_m = matched_areas[0]
         detected_suburb = first_m.get("name")
-        detected_city = first_m.get("town")
+        detected_city = first_m.get("town") or first_m.get("name")
         detected_province = first_m.get("province")
         detected_postal_code = first_m.get("postalCode")
 
-    if not detected_city:
-        # Check chat history
-        try:
-            hist = get_chat_history(chat_id, limit=8)
-            for h in reversed(hist):
-                c_text = h.get("content", "").lower()
-                hist_matches = search_sa_areas(c_text, limit=1)
-                if hist_matches:
-                    first_m = hist_matches[0]
-                    detected_suburb = first_m.get("name")
-                    detected_city = first_m.get("town")
-                    detected_province = first_m.get("province")
-                    detected_postal_code = first_m.get("postalCode")
-                    break
-        except Exception:
-            pass
-
-    city = detected_city or "Umkomaas"
+    # Fallback to extracted location token directly if database lookup yielded no result
+    fallback_loc = re.sub(r'[\(\)]', '', clean_loc_token).strip() or "Johannesburg"
+    city = detected_city or fallback_loc
     suburb = detected_suburb or ""
-    province = detected_province or "KwaZulu-Natal"
+    province = detected_province or "Gauteng"
 
     # 2. Detect category
     common_categories = [
