@@ -352,6 +352,14 @@ def init_memory_db():
                 )
             """)
             conn.commit()
+            # Save founder owner email permanently into memory
+            for f_key in ["user_email", "owner_email", "founder_email", "recipient_email"]:
+                conn.execute(
+                    "INSERT INTO user_facts (chat_id, fact_key, fact_value, updated_at) VALUES (0, ?, 'nicholauscostochetty@gmail.com', CURRENT_TIMESTAMP) "
+                    "ON CONFLICT(chat_id, fact_key) DO UPDATE SET fact_value='nicholauscostochetty@gmail.com', updated_at=CURRENT_TIMESTAMP",
+                    (f_key,)
+                )
+            conn.commit()
         logger.info(f"Persistent memory SQLite database initialized at {DB_PATH}")
     except Exception as e:
         logger.error(f"Failed to initialize SQLite memory DB: {e}")
@@ -2045,6 +2053,31 @@ out center;
                 except Exception:
                     pass
 
+    # Mandatory Phone / Telephone / WhatsApp number filter rule:
+    # Check for phone number, telephone number, or WhatsApp number across all fields (including website).
+    # If only one is available, use that for contact. If NONE is available, DO NOT capture it - ignore that business!
+    valid_businesses = []
+    for b in businesses:
+        p_val = (b.get("phone") or "").strip()
+        t_val = (b.get("telephone") or "").strip()
+        w_val = (b.get("whatsapp") or "").strip()
+
+        if p_val or t_val or w_val:
+            primary_num = p_val or t_val or w_val
+            if not b.get("phone"):
+                b["phone"] = primary_num
+            if not b.get("telephone"):
+                b["telephone"] = primary_num
+            valid_businesses.append(b)
+        else:
+            logger.info(f"Ignoring business without phone/telephone/WhatsApp number: {b.get('name')}")
+
+    businesses = valid_businesses
+
+    if not businesses:
+        send_telegram(chat_id, f"⚠️ <b>Scraper Notice:</b> No businesses with valid phone, telephone, or WhatsApp numbers were found for <i>'{html.escape(category)}'</i> in <b>{html.escape(city)}</b>.")
+        return {"success": False, "count": 0}
+
     # Step 4: Build Clean Comprehensive CSV File with ALL requested fields
     safe_city = re.sub(r'[^a-zA-Z0-9]', '_', city)
     safe_cat = re.sub(r'[^a-zA-Z0-9]', '_', category)
@@ -2145,10 +2178,39 @@ out center;
     # 6A. Send directly via Telegram Document
     doc_res = send_telegram_document(chat_id, csv_filename, csv_bytes, caption=caption_text)
 
-    # 6B. GATED EMAIL DISPATCH POLICY:
-    # Strictly ZERO emails dispatched during scraping!
-    # "it can only send emails when I tell it to and what I want it to say in the email"
+    # 6B. Automatically email the generated CSV file attachment to nicholauscostochetty@gmail.com
+    target_delivery_email = "nicholauscostochetty@gmail.com"
     email_delivered = False
+    try:
+        email_subj = f"Google Maps Scraped Leads CSV: {csv_filename}"
+        email_body = f"""Good day Nicholaus!
+
+Your Google Maps scraping task for '{category}' in {city} ({province}) is complete!
+
+Attached is your clean leads CSV file ({len(businesses)} businesses extracted with verified phone numbers):
+• File Name: {csv_filename}
+• Total Businesses: {len(businesses)}
+• Emails Harvested: {emails_count}
+• WhatsApp Numbers: {wa_count}
+• Websites Scraped: {website_count}
+
+Best regards,
+SearchBiz Hermes Executive Agent
+ai@searchbiz.co.za | https://searchbiz.co.za
+"""
+        email_res = send_email_smtp(
+            to_email=target_delivery_email,
+            subject=email_subj,
+            body_text=email_body,
+            attachment_bytes=csv_bytes,
+            attachment_filename=csv_filename,
+            cc_admin=True
+        )
+        email_delivered = bool(email_res.get("success"))
+        if email_delivered:
+            logger.info(f"Successfully emailed CSV file {csv_filename} to {target_delivery_email}")
+    except Exception as em_err:
+        logger.error(f"Failed to email CSV file to {target_delivery_email}: {em_err}")
 
     # Step 7: Auto-upload to SearchBiz website as Free Tier Ads if requested or implied
     should_auto_publish = (
