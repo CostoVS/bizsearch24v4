@@ -1121,8 +1121,8 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
               </div>
             ) : (
               <>
-                {/* Main Visual Image */}
-                {ad.image && (
+                {/* Main Visual Image (Premium Only - Zero Images for Free Listings) */}
+                {ad.image && (ad.isPremium || ad.plan === 'PREMIUM' || isAdmin) && (
                   <div className="relative w-full h-56 md:h-80 rounded-2xl overflow-hidden shadow-md">
                     <Image
                       src={ad.image}

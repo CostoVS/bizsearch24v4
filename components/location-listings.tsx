@@ -165,7 +165,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
                   </div>
                 )}
 
-                {item.image && (
+                {item.image && (item.isPremium || item.plan === 'PREMIUM') && (
                   <div className="w-full h-48 mb-4 relative rounded-2xl overflow-hidden shadow-inner bg-slate-100">
                     <Image 
                     src={item.image} 

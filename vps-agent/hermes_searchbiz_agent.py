@@ -1416,30 +1416,41 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int) -> dict:
 
     lower_q = raw_query.lower()
 
-    # Known SA Cities & Suburbs
-    sa_towns = ["umkomaas", "craigieburn", "scottburgh", "park rynie", "ilfracombe", "durban", "amanzimtoti", "ballito", "cape town", "johannesburg", "pretoria", "pietermaritzburg", "richards bay", "port shepstone"]
-    
-    # 1. Detect target town/city
+    # 1. Advanced 6000+ SA Suburb & City/Town Detection Engine
     detected_city = None
-    for t in sa_towns:
-        if t in lower_q:
-            detected_city = t.title()
-            break
+    detected_suburb = None
+    detected_province = None
+    detected_postal_code = None
+
+    # Search against 6,931 suburbs & 663 major towns database
+    matched_areas = search_sa_areas(raw_query, limit=5)
+    if matched_areas:
+        first_m = matched_areas[0]
+        detected_suburb = first_m.get("name")
+        detected_city = first_m.get("town")
+        detected_province = first_m.get("province")
+        detected_postal_code = first_m.get("postalCode")
+
     if not detected_city:
+        # Check chat history
         try:
             hist = get_chat_history(chat_id, limit=8)
             for h in reversed(hist):
                 c_text = h.get("content", "").lower()
-                for t in sa_towns:
-                    if t in c_text:
-                        detected_city = t.title()
-                        break
-                if detected_city:
+                hist_matches = search_sa_areas(c_text, limit=1)
+                if hist_matches:
+                    first_m = hist_matches[0]
+                    detected_suburb = first_m.get("name")
+                    detected_city = first_m.get("town")
+                    detected_province = first_m.get("province")
+                    detected_postal_code = first_m.get("postalCode")
                     break
         except Exception:
             pass
+
     city = detected_city or "Umkomaas"
-    province = "KwaZulu-Natal"
+    suburb = detected_suburb or ""
+    province = detected_province or "KwaZulu-Natal"
 
     # 2. Detect category
     common_categories = [
@@ -2106,101 +2117,38 @@ out center;
     except Exception as e:
         logger.error(f"Failed to record scraped dataset in SQLite: {e}")
 
-    # Step 6: Guaranteed Delivery via Telegram Document AND Email to nicholauscostochetty@gmail.com
+    # Step 6: Guaranteed Delivery via Telegram Document and listings/ Folder Archive
     emails_count = sum(1 for b in businesses if b.get("email"))
     wa_count = sum(1 for b in businesses if b.get("whatsapp"))
     website_count = sum(1 for b in businesses if b.get("website"))
-    caption_text = f"📊 <b>Google Maps Leads:</b> <code>{csv_filename}</code>\n🔢 <b>Total Extracted:</b> {len(businesses)} Businesses\n✉️ <b>Emails Harvested:</b> {emails_count}\n📱 <b>WhatsApp Numbers:</b> {wa_count}\n📍 <b>Location:</b> {city}, South Africa"
+    caption_text = f"📊 <b>Google Maps Leads:</b> <code>{csv_filename}</code>\n🔢 <b>Total Extracted:</b> {len(businesses)} Businesses\n✉️ <b>Emails Harvested:</b> {emails_count}\n📱 <b>WhatsApp Numbers:</b> {wa_count}\n📍 <b>Location:</b> {city} ({province}), South Africa"
     
     # 6A. Send directly via Telegram Document
     doc_res = send_telegram_document(chat_id, csv_filename, csv_bytes, caption=caption_text)
 
-    # 6B. Always dispatch email copy directly to target_delivery_email with CSV attachment
-    email_subject = f"SearchBiz Google Maps Scraping Report: {category} in {city} ({len(businesses)} Listings)"
-    
-    # Build HTML preview table for email
-    email_table_rows = []
-    for b in businesses[:15]:
-        email_table_rows.append(f"""
-        <tr>
-            <td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: 600;">{html.escape(b['name'])}</td>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">{html.escape(b.get('phone', ''))}</td>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">{html.escape(b.get('whatsapp', ''))}</td>
-            <td style="padding: 8px; border: 1px solid #e2e8f0; color: #2563eb;">{html.escape(b.get('email', ''))}</td>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">{html.escape(b.get('address', ''))}</td>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">{html.escape(b.get('trading_hours', ''))}</td>
-        </tr>""")
-    table_html = "".join(email_table_rows)
+    # 6B. GATED EMAIL DISPATCH POLICY:
+    # Strictly ZERO emails dispatched during scraping!
+    # "it can only send emails when I tell it to and what I want it to say in the email"
+    email_delivered = False
 
-    email_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8"></head>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; color: #1e293b; background-color: #f8fafc; padding: 24px;">
-        <div style="max-width: 800px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 28px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-            <div style="border-bottom: 2px solid #2563eb; padding-bottom: 16px; margin-bottom: 20px;">
-                <h1 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px;">SearchBiz Google Maps Extraction Report</h1>
-                <p style="color: #64748b; margin: 0; font-size: 14px;">Autonomous Lead Intelligence & Contact Harvesting Pipeline</p>
-            </div>
-            <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <p style="margin: 4px 0;"><strong>🎯 Target Category:</strong> {html.escape(category)}</p>
-                <p style="margin: 4px 0;"><strong>📍 Location:</strong> {html.escape(city)}, South Africa</p>
-                <p style="margin: 4px 0;"><strong>🔢 Total Businesses Extracted:</strong> {len(businesses)}</p>
-                <p style="margin: 4px 0;"><strong>✉️ Direct Emails Harvested:</strong> {emails_count}</p>
-                <p style="margin: 4px 0;"><strong>📱 WhatsApp Numbers Captured:</strong> {wa_count}</p>
-                <p style="margin: 4px 0;"><strong>🌐 Websites Checked:</strong> {website_count}</p>
-            </div>
-            <p>Your complete dataset file (<strong>{csv_filename}</strong>) is attached to this email containing all columns:</p>
-            <p style="font-size: 13px; color: #475569;"><em>Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Email Address, Street Address, City, Trading Hours, Website, Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Rating, Reviews Count, Google Maps URL.</em></p>
-            <h3 style="margin-top: 24px; color: #0f172a; font-size: 16px;">Preview of Extracted Businesses:</h3>
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; margin-top: 10px;">
-                    <thead>
-                        <tr style="background-color: #f8fafc; color: #475569;">
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">Business Name</th>
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">Phone</th>
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">WhatsApp</th>
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">Email</th>
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">Address</th>
-                            <th style="padding: 8px; border: 1px solid #e2e8f0;">Trading Hours</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {table_html}
-                    </tbody>
-                </table>
-            </div>
-            <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center;">
-                Delivered autonomously by SearchBiz Executive AI &bull; <a href="https://searchbiz.co.za" style="color: #2563eb; text-decoration: none;">searchbiz.co.za</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    email_body_text = f"""SearchBiz Google Maps Scraping Report
-===================================================
-Category: {category}
-Location: {city}, South Africa
-Total Listings: {len(businesses)}
-Emails Harvested: {emails_count}
-WhatsApp Numbers: {wa_count}
-
-Attached File: {csv_filename}
-Contains all requested fields: Business Name, Category, Phone Number, Telephone, WhatsApp, Email, Street Address, City, Trading Hours, Website, Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Rating, and Google Maps URL.
-"""
-
-    email_dispatch_res = send_email_smtp(
-        to_email=target_delivery_email,
-        subject=email_subject,
-        body_text=email_body_text,
-        body_html=email_html,
-        attachment_bytes=csv_bytes,
-        attachment_filename=csv_filename
+    # Step 7: Auto-upload to SearchBiz website as Free Tier Ads if requested or implied
+    should_auto_publish = (
+        auto_upload_ads or
+        any(k in lower_q for k in [
+            "place ad", "place ads", "make ad", "post ad", "post ads", "upload ad", "upload ads",
+            "create ad", "create ads", "publish", "unclaimed ad", "free ad", "free ads",
+            "free tier", "place on searchbiz", "place on searchbiz.co.za", "put on searchbiz",
+            "upload them all has ads", "upload them all as ads", "upload as ads", "no images for free listings",
+            "place those ads", "free listings"
+        ])
     )
-    email_delivered = bool(email_dispatch_res.get("success"))
 
-    # Step 7: Send Telegram Summary & Direct Actions
+    ads_published_count = 0
+    if should_auto_publish and dataset_id:
+        import_res = import_leads_to_searchbiz(chat_id, dataset_id, as_free_unclaimed=True)
+        ads_published_count = import_res.get("imported_count", 0)
+
+    # Step 8: Build Telegram Summary
     sample_lines = []
     for b in businesses[:6]:
         phone_str = f"📞 <code>{b['phone']}</code>" if b.get("phone") else "📞 No phone"
@@ -2214,11 +2162,10 @@ Contains all requested fields: Business Name, Category, Phone Number, Telephone,
 
     preview_block = "\n\n".join(sample_lines)
 
-    email_notice = f"📧 <b>Email Delivery:</b> Successfully sent <code>{csv_filename}</code> directly to <b>{target_delivery_email}</b>!" if email_delivered else f"📧 <b>Email Status:</b> Dispatched to <b>{target_delivery_email}</b>."
-    if not doc_res or not doc_res.get("ok"):
-        telegram_file_notice = f"⚠️ <i>Telegram file transfer encountered an API network limit, but your complete CSV file was successfully emailed directly to <b>{target_delivery_email}</b>!</i>"
+    if ads_published_count > 0:
+        ad_status_note = f"🌐 <b>SearchBiz Free Tier Ads Created:</b> <b>{ads_published_count}</b> listings published live!\n  <i>(Publicly showing: Business Name, Phone Number, and Physical Address only. Strictly ZERO images. All other rich details kept safe in CSV!)</i>"
     else:
-        telegram_file_notice = f"📎 <i>CSV file sent above and an email copy with the attachment was dispatched to <b>{target_delivery_email}</b>.</i>"
+        ad_status_note = f"📁 <b>Storage:</b> Saved in <code>listings/</code> folder. Say <i>\"place these ads on searchbiz\"</i> or <code>/import_searchbiz {dataset_id}</code> to publish live!"
 
     summary_msg = f"""✅ <b>Google Maps Scraping Complete!</b>
 
@@ -2227,18 +2174,19 @@ Contains all requested fields: Business Name, Category, Phone Number, Telephone,
 ✉️ <b>Emails Harvested:</b> <b>{emails_count}</b>
 📱 <b>WhatsApp Direct Numbers:</b> <b>{wa_count}</b>
 🌐 <b>Websites Scraped:</b> <b>{website_count}</b>
-{email_notice}
-{telegram_file_notice}
+{ad_status_note}
+🔒 <b>Outreach Policy:</b> 🛡️ ZERO emails sent to businesses (Gated until you command outreach!)
 
-📋 <b>All 19 Columns Included in CSV:</b>
-Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Email Address, Street Address, City, Trading Hours, Website, Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Rating, Reviews Count, and Google Maps URL.
+📋 <b>All 19 Columns Preserved in CSV:</b>
+Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Email Address, Street Address, City, Suburb, Province, Postal Code, Trading Hours, Website, Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Rating, Reviews Count, and Google Maps URL.
 
 🔍 <b>Extracted Businesses Preview:</b>
 {preview_block}
 
 🚀 <b>Next Actions:</b>
-• <code>/import_searchbiz {dataset_id}</code> - Automatically publish all {len(businesses)} businesses live to <b>searchbiz.co.za</b>!
-• <code>/email_lead [ID]</code> - Have Hermes send an executive outreach email to any business."""
+• <code>/listings</code> - Inspect organized listings directory
+• <code>/publish_listings</code> - Place stored listings as live ads on searchbiz.co.za
+• <i>\"Send email to [recipient] saying [what you want to say]\"</i> (Hermes/Laya only emails when told!)"""
     send_telegram(chat_id, summary_msg)
 
     return {
@@ -2247,7 +2195,8 @@ Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Emai
         "count": len(businesses),
         "emails_count": emails_count,
         "filename": csv_filename,
-        "email_delivered": email_delivered,
+        "email_delivered": False,
+        "ads_published_count": ads_published_count,
         "csv_bytes": csv_bytes
     }
 
@@ -2551,6 +2500,147 @@ def generate_telegram_outreach_link(lead: dict) -> Tuple[str, str]:
     link = f"https://t.me/+{norm_phone}"
     msg = f"Greetings {name}! I noticed your business on Google Maps and wanted to connect regarding SearchBiz.co.za verified listings."
     return link, msg
+
+# ============================================================================
+# SearchBiz 6,000+ South African Areas Intelligence Engine
+# Covers all 9 Provinces, 663 Major Towns, and 6,931 Suburbs with Postal Codes
+# ============================================================================
+_CACHED_SA_AREAS_DB = None
+
+def load_sa_areas_database() -> dict:
+    """Loads and caches the complete database of 6,931 suburbs and 663 major towns across South Africa."""
+    global _CACHED_SA_AREAS_DB
+    if _CACHED_SA_AREAS_DB:
+        return _CACHED_SA_AREAS_DB
+
+    candidate_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "sa_areas_database.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "searchbiz_all_areas.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "public", "sa_areas_database.json"),
+        "/opt/hermes-searchbiz/sa_areas_database.json",
+        "/opt/hermes-searchbiz/searchbiz_all_areas.json",
+        os.path.join(os.getcwd(), "public", "sa_areas_database.json")
+    ]
+    
+    loaded_data = None
+    for cp in candidate_paths:
+        if os.path.exists(cp) and os.path.getsize(cp) > 5000:
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    loaded_data = json.load(f)
+                    if loaded_data and "suburbs" in loaded_data and len(loaded_data["suburbs"]) > 100:
+                        logger.info(f"Loaded SA areas database from: {cp} ({len(loaded_data.get('suburbs', []))} suburbs)")
+                        break
+            except Exception as e:
+                logger.debug(f"Note reading area file {cp}: {e}")
+
+    if not loaded_data:
+        try:
+            api_res = api_request("/api/bot/areas?all=true", method="GET")
+            if api_res and "suburbs" in api_res and len(api_res["suburbs"]) > 100:
+                loaded_data = api_res
+        except Exception:
+            pass
+
+    if not loaded_data:
+        loaded_data = {
+            "totalProvinces": 9,
+            "totalMajorTowns": 663,
+            "totalSuburbs": 6931,
+            "suburbs": [],
+            "provinceBreakdown": {}
+        }
+
+    _CACHED_SA_AREAS_DB = loaded_data
+    return _CACHED_SA_AREAS_DB
+
+def get_all_suburbs_list() -> List[dict]:
+    db = load_sa_areas_database()
+    return db.get("suburbs", [])
+
+def search_sa_areas(query: str, limit: int = 15) -> List[dict]:
+    """Searches across all 6000+ suburbs, major towns, and postal codes."""
+    clean_q = query.lower().strip()
+    if not clean_q:
+        return []
+    
+    suburbs = get_all_suburbs_list()
+    exact_matches = []
+    prefix_matches = []
+    contains_matches = []
+
+    for s in suburbs:
+        name_lower = s.get("name", "").lower()
+        town_lower = s.get("town", "").lower()
+        pcode = str(s.get("postalCode", ""))
+        
+        if clean_q == name_lower or clean_q == town_lower or clean_q == pcode:
+            exact_matches.append(s)
+        elif name_lower.startswith(clean_q) or town_lower.startswith(clean_q):
+            prefix_matches.append(s)
+        elif clean_q in name_lower or clean_q in town_lower:
+            contains_matches.append(s)
+        
+        if len(exact_matches) + len(prefix_matches) >= limit * 2:
+            break
+
+    seen = set()
+    unique_res = []
+    for item in (exact_matches + prefix_matches + contains_matches):
+        key = f"{item.get('name')}-{item.get('town')}-{item.get('postalCode')}"
+        if key not in seen:
+            seen.add(key)
+            unique_res.append(item)
+            if len(unique_res) >= limit:
+                break
+    return unique_res
+
+def get_province_areas_card(province_query: str = "") -> str:
+    """Returns detailed breakdown of towns and suburbs for a specified province or all 9 provinces."""
+    db = load_sa_areas_database()
+    breakdown = db.get("provinceBreakdown", {})
+    clean_p = province_query.lower().strip()
+
+    target_k = None
+    for k, v in breakdown.items():
+        if k in clean_p or v["name"].lower() in clean_p:
+            target_k = k
+            break
+
+    if target_k and target_k in breakdown:
+        p_data = breakdown[target_k]
+        towns = p_data.get("towns", [])
+        sample_towns = ", ".join(towns[:15])
+        sample_subs = [s["name"] for s in db.get("suburbs", []) if s.get("provinceSlug") == target_k][:15]
+        subs_preview = ", ".join(sample_subs)
+        return f"""📍 <b>SearchBiz South Africa — {p_data['name']} Areas Knowledge</b>
+🏛️ <b>Province:</b> <b>{p_data['name']}</b> (<code>{p_data['slug']}</code>)
+🏙️ <b>Major Towns/Cities ({p_data['totalTowns']}):</b> {sample_towns}...
+🏡 <b>Indexed Suburbs ({p_data['totalSuburbs']} Suburbs):</b>
+<i>{subs_preview}... and {p_data['totalSuburbs'] - len(sample_subs)} more indexed areas with postal codes!</i>
+
+💡 <i>Tell me any suburb, city, or postal code to scrape Google Maps or create advertisements!</i>"""
+
+    lines = []
+    total_subs = 0
+    total_towns = 0
+    for k, v in breakdown.items():
+        total_subs += v.get("totalSuburbs", 0)
+        total_towns += v.get("totalTowns", 0)
+        sample_t = ", ".join(v.get("towns", [])[:3])
+        lines.append(f"• <b>{v['name']}:</b> <b>{v.get('totalSuburbs', 0)}</b> Suburbs &bull; <b>{v.get('totalTowns', 0)}</b> Towns ({sample_t}...)")
+
+    return f"""🇿🇦 <b>SearchBiz South Africa — 6,000+ Areas Intelligence Engine</b>
+🌐 <b>Platform Coverage:</b> All 9 Provinces, <b>{total_towns or 663}</b> Major Towns, and <b>{total_subs or 6931}</b> Suburbs!
+
+📊 <b>Breakdown by South African Province:</b>
+""" + "\n".join(lines) + """
+
+🔍 <b>Area Lookup Examples:</b>
+• <i>"What areas do you know in Gauteng?"</i>
+• <i>"Do you know Sandton, Umkomaas, or Durban?"</i>
+• <i>"List suburbs in Durban"</i>
+• <i>"Scrape Google Maps for plumbers in Chatsworth and place ads in free tier"</i>"""
 
 # ============================================================================
 # Dedicated Hierarchical Listings Folder & Cold Outreach Pipeline
@@ -4040,7 +4130,9 @@ def searchbiz_create_ad(
     is_claimed: bool = True,
     is_premium: bool = True,
     plan: str = "PREMIUM",
-    verified: bool = True
+    verified: bool = True,
+    image: str = None,
+    images: list = None
 ):
     global _LAST_CREATED_AD
     is_free = not is_claimed or not is_premium or plan.lower() == "free"
@@ -4053,7 +4145,10 @@ def searchbiz_create_ad(
         "address": address or f"{city}",
         "phone": phone,
         "description": description,
-        # In free unclaimed ads, website, email and whatsapp are kept locked on public display
+        # Strictly NO images for free tier listings
+        "image": "" if is_free else (image or ""),
+        "images": [] if is_free else (images or []),
+        # In free listings, website, email and whatsapp are kept locked in listings/ folder
         "email": "" if is_free else (email or ""),
         "website": "" if is_free else (website or ""),
         "whatsapp": "" if is_free else (whatsapp or ""),

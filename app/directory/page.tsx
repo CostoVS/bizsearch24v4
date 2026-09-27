@@ -523,7 +523,7 @@ function DirectoryContent() {
                   </div>
                 )}
 
-                {ad.image && (
+                {ad.image && (ad.isPremium || ad.plan === 'PREMIUM') && (
                   <div className="w-full h-48 mb-4 relative rounded-2xl overflow-hidden shadow-inner bg-slate-100">
                     <Image src={ad.image} alt={ad.title} fill referrerPolicy="no-referrer" className="object-cover object-center transform hover:scale-[1.04] transition duration-500" />
                   </div>

@@ -65,6 +65,19 @@ echo "Updating /opt/hermes-searchbiz scripts and tools..."
 cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
 chmod +x "${APP_DIR}/hermes_searchbiz_agent.py"
 
+# Deploy 6000+ South African Areas Database
+if [ -f "sa_areas_database.json" ]; then
+    cp sa_areas_database.json "${APP_DIR}/sa_areas_database.json"
+    cp sa_areas_database.json "${APP_DIR}/searchbiz_all_areas.json"
+elif [ -f "searchbiz_all_areas.json" ]; then
+    cp searchbiz_all_areas.json "${APP_DIR}/searchbiz_all_areas.json"
+    cp searchbiz_all_areas.json "${APP_DIR}/sa_areas_database.json"
+else
+    echo "Downloading 6000+ SA areas database from SearchBiz..."
+    curl -sSL https://searchbiz.co.za/sa_areas_database.json -o "${APP_DIR}/sa_areas_database.json" || true
+    cp "${APP_DIR}/sa_areas_database.json" "${APP_DIR}/searchbiz_all_areas.json" 2>/dev/null || true
+fi
+
 # Deploy Open-Source Monitor & Security CLI tools
 if [ -f "monitor_vps.sh" ]; then
     cp monitor_vps.sh "${APP_DIR}/monitor_vps.sh"
