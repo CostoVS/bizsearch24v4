@@ -3324,10 +3324,15 @@ def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
     # Always default to auto-publishing ads unless explicitly told --no-ads or --no-publish
     should_place_ads = not any(k in lower for k in ["no ads", "no publish", "do not publish", "file only", "only save file"])
 
+    # Determine if deep suburb-level crawling across all 6,931 suburbs is requested
+    suburb_level_mode = any(k in lower for k in ["6931", "6,931", "suburb", "suburbs", "each suburb", "every suburb", "all suburbs"])
+    all_suburbs = get_all_suburbs_list() if suburb_level_mode else []
+
     init_msg = f"""🗺️ <b>Multi-Province Autonomous Scraper Activated</b>
 
 🎯 <b>Categories:</b> <b>{len(target_categories)} Categories</b> ({', '.join(target_categories[:4])}{'...' if len(target_categories) > 4 else ''})
 🇿🇦 <b>Provinces:</b> <b>{len(provinces_to_scrape)} Provinces</b> ({', '.join([p['name'] for p in provinces_to_scrape])})
+🏡 <b>Target Resolution:</b> <b>{'Deep Suburb Crawl across 6,931 Suburbs' if suburb_level_mode else 'Major Province Hub Cities & Towns'}</b>
 📁 <b>Storage Destination:</b> <code>listings/[province]/[category]/</code>
 🌐 <b>SearchBiz Directory Placement:</b> {'✅ Auto-publish Free Unclaimed Ads (No Images, Name/Phone/Address Only)' if should_place_ads else '📁 Stored in listings/ only'}
 🔒 <b>Outreach Policy:</b> 🛡️ ZERO emails sent to businesses during scrape (Gated until you command outreach)
@@ -3353,37 +3358,45 @@ def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
                 break
             prov_name = prov_info["name"]
             prov_slug = prov_info["slug"]
-            hub_city = prov_info["hubs"][0]
-
-            # Scrape for this category and province hub
-            scrape_query = f"{cat_name} in {hub_city} {prov_name} South Africa"
-            subfolder = get_listings_subfolder(prov_slug, cat_name)
-
-            send_telegram(chat_id, f"📍 <b>Crawling category '{cat_name}' in {prov_name} ({hub_city})...</b>")
-            scrape_res = scrape_stealth_google_maps(scrape_query, chat_id)
-            c = scrape_res.get("count", 0)
-            total_scraped += c
-
-            # Move/sync newly saved files to hierarchical subfolder
-            for fn in os.listdir(LISTINGS_DIR):
-                if fn.endswith(".json") or fn.endswith(".csv"):
-                    src = os.path.join(LISTINGS_DIR, fn)
-                    if os.path.isfile(src) and (prov_slug in fn.lower() or hub_city.lower() in fn.lower()):
-                        dest = os.path.join(subfolder, fn)
-                        try:
-                            shutil.copy2(src, dest)
-                        except Exception:
-                            pass
-
-            # Publish ads if requested
-            if should_place_ads and scrape_res.get("dataset_id"):
-                ds_id = scrape_res["dataset_id"]
-                import_res = import_leads_to_searchbiz(chat_id, ds_id, as_free_unclaimed=True)
-                ads_count = import_res.get("imported_count", 0)
-                total_ads_placed += ads_count
-                province_summaries.append(f"• <b>{cat_name} — {prov_name}:</b> {c} businesses extracted & <b>{ads_count}</b> Free Ads placed ({hub_city})")
+            
+            # Suburb-level vs Hub-level targets
+            if suburb_level_mode and all_suburbs:
+                prov_suburbs = [s for s in all_suburbs if s.get("provinceSlug") == prov_slug]
+                target_locations = [f"{s.get('name')}, {s.get('town')}" for s in prov_suburbs[:100]] or prov_info["hubs"]
             else:
-                province_summaries.append(f"• <b>{cat_name} — {prov_name}:</b> {c} businesses extracted & stored in <code>listings/{prov_slug}/</code>")
+                target_locations = prov_info["hubs"]
+
+            for loc in target_locations:
+                if check_stop_requested():
+                    break
+                
+                scrape_query = f"{cat_name} in {loc} {prov_name} South Africa"
+                subfolder = get_listings_subfolder(prov_slug, cat_name)
+
+                send_telegram(chat_id, f"📍 <b>Crawling '{cat_name}' in {loc} ({prov_name})...</b>")
+                scrape_res = scrape_stealth_google_maps(scrape_query, chat_id, auto_upload_ads=should_place_ads)
+                c = scrape_res.get("count", 0)
+                total_scraped += c
+
+                # Move/sync newly saved files to hierarchical subfolder
+                for fn in os.listdir(LISTINGS_DIR):
+                    if fn.endswith(".json") or fn.endswith(".csv"):
+                        src = os.path.join(LISTINGS_DIR, fn)
+                        if os.path.isfile(src) and (prov_slug in fn.lower() or loc.split(',')[0].lower() in fn.lower()):
+                            dest = os.path.join(subfolder, fn)
+                            try:
+                                shutil.copy2(src, dest)
+                            except Exception:
+                                pass
+
+                if should_place_ads and scrape_res.get("dataset_id"):
+                    ds_id = scrape_res["dataset_id"]
+                    import_res = import_leads_to_searchbiz(chat_id, ds_id, as_free_unclaimed=True)
+                    ads_count = import_res.get("imported_count", 0)
+                    total_ads_placed += ads_count
+                    province_summaries.append(f"• <b>{cat_name} — {prov_name} ({loc}):</b> {c} extracted & <b>{ads_count}</b> Free Ads placed")
+                else:
+                    province_summaries.append(f"• <b>{cat_name} — {prov_name} ({loc}):</b> {c} extracted & stored")
 
     summary_msg = f"""🏁 <b>Multi-Province Extraction Mission Complete!</b>
 
@@ -4138,87 +4151,88 @@ def send_telegram_dual(chat_id: int, text: str, voice_override: Optional[str] = 
 
 
 # ============================================================================
-# SearchBiz 20 Parent Groups & 145 Official Subcategories Architecture
+# SearchBiz 20 Parent Sector Groups & 149 Numbered Subcategories Index (1.1 - 20.6)
+# Permanent Memory Matrix for Hermes, Laya, and Local AI Engine
 # ============================================================================
 CATEGORIES_145_TREE = [
-  {"group": "AUTOMOTIVE & VEHICLES", "code": "1", "subcategories": [
-    "Auto Body & Repair Shops", "Car Wash & Detailing", "Car Rental Agencies", "Dealerships (New & Used)",
-    "Motorcycle & Powersports", "Oil & Lube Stations", "Parts & Accessories", "Tire Shops", "Towing & Roadside Assistance"
+  {"group": "1. AUTOMOTIVE & VEHICLES", "code": "1", "cleanGroup": "AUTOMOTIVE & VEHICLES", "subcategories": [
+    "1.1 Auto Body & Repair Shops", "1.2 Car Wash & Detailing", "1.3 Car Rental Agencies", "1.4 Dealerships (New & Used)",
+    "1.5 Motorcycle & Powersports", "1.6 Oil & Lube Stations", "1.7 Parts & Accessories", "1.8 Tire Shops", "1.9 Towing & Roadside Assistance"
   ]},
-  {"group": "BEAUTY & PERSONAL CARE", "code": "2", "subcategories": [
-    "Barbershops & Hair Salons", "Cosmetics & Skincare", "Day Spas & Wellness Centres", "Hair Removal & Waxing",
-    "Makeup Artists", "Massage Therapy", "Nail Salons", "Tanning & Estheticians", "Tattoo & Piercing Studios"
+  {"group": "2. BEAUTY & PERSONAL CARE", "code": "2", "cleanGroup": "BEAUTY & PERSONAL CARE", "subcategories": [
+    "2.1 Barbershops & Hair Salons", "2.2 Cosmetics & Skincare", "2.3 Day Spas & Wellness Centres", "2.4 Hair Removal & Waxing",
+    "2.5 Makeup Artists", "2.6 Massage Therapy", "2.7 Nail Salons", "2.8 Tanning & Estheticians", "2.9 Tattoo & Piercing Studios"
   ]},
-  {"group": "BUSINESS SERVICES", "code": "3", "subcategories": [
-    "Accounting & Bookkeeping", "Advertising, Marketing & PR", "Consultants (Management & Strategy)", "Co-Working Spaces",
-    "Employment & HR Agencies", "IT Support & Tech Services", "Legal Services & Law Firms", "Office Supply & Equipment",
-    "Printing & Graphic Design", "Tax Preparation"
+  {"group": "3. BUSINESS SERVICES", "code": "3", "cleanGroup": "BUSINESS SERVICES", "subcategories": [
+    "3.1 Accounting & Bookkeeping", "3.2 Advertising, Marketing & PR", "3.3 Consultants (Management & Strategy)", "3.4 Co-Working Spaces",
+    "3.5 Employment & HR Agencies", "3.6 IT Support & Tech Services", "3.7 Legal Services & Law Firms", "3.8 Office Supply & Equipment",
+    "3.9 Printing & Graphic Design", "3.10 Tax Preparation"
   ]},
-  {"group": "CLEANING & JANITORIAL", "code": "4", "subcategories": [
-    "Carpet & Upholstery Cleaning", "Commercial & Office Cleaning", "Disaster Restoration", "Dry Cleaning & Laundry",
-    "Residential House Cleaning", "Window Cleaning"
+  {"group": "4. CLEANING & JANITORIAL", "code": "4", "cleanGroup": "CLEANING & JANITORIAL", "subcategories": [
+    "4.1 Carpet & Upholstery Cleaning", "4.2 Commercial & Office Cleaning", "4.3 Disaster Restoration", "4.4 Dry Cleaning & Laundry",
+    "4.5 Residential House Cleaning", "4.6 Window Cleaning"
   ]},
-  {"group": "COMMUNITY & PUBLIC", "code": "5", "subcategories": [
-    "Fire & Police Stations", "Libraries & Community Centres", "Non-Profit Organisations", "Post Offices & Shipping Centres",
-    "Public Utilities", "Religious & Places of Worship"
+  {"group": "5. COMMUNITY & PUBLIC", "code": "5", "cleanGroup": "COMMUNITY & PUBLIC", "subcategories": [
+    "5.1 Fire & Police Stations", "5.2 Libraries & Community Centres", "5.3 Non-Profit Organisations", "5.4 Post Offices & Shipping Centres",
+    "5.5 Public Utilities", "5.6 Religious & Places of Worship"
   ]},
-  {"group": "CONSTRUCTION & TRADES", "code": "6", "subcategories": [
-    "Carpentry & Woodworking", "Concrete & Masonry", "Demolition Services", "Electrical Contractors",
-    "General Contractors", "HVAC (Heating & Cooling)", "Painting & Wallpapering", "Plumbing Services", "Roofing & Siding"
+  {"group": "6. CONSTRUCTION & TRADES", "code": "6", "cleanGroup": "CONSTRUCTION & TRADES", "subcategories": [
+    "6.1 Carpentry & Woodworking", "6.2 Concrete & Masonry", "6.3 Demolition Services", "6.4 Electrical Contractors",
+    "6.5 General Contractors", "6.6 HVAC (Heating & Cooling)", "6.7 Painting & Wallpapering", "6.8 Plumbing Services", "6.9 Roofing & Siding"
   ]},
-  {"group": "EDUCATION & TRAINING", "code": "7", "subcategories": [
-    "Art & Music Schools", "Colleges & Universities", "Daycare & Preschools", "Driving Schools",
-    "Language & Tutoring Schools", "Primary & Secondary Schools", "Vocational & Trade Schools"
+  {"group": "7. EDUCATION & TRAINING", "code": "7", "cleanGroup": "EDUCATION & TRAINING", "subcategories": [
+    "7.1 Art & Music Schools", "7.2 Colleges & Universities", "7.3 Daycare & Preschools", "7.4 Driving Schools",
+    "7.5 Language & Tutoring Schools", "7.6 Primary & Secondary Schools", "7.7 Vocational & Trade Schools"
   ]},
-  {"group": "ENTERTAINMENT & RECREATION", "code": "8", "subcategories": [
-    "Amusement Parks & Arcades", "Bowling Alleys & Skating Rinks", "Casinos & Gambling", "Concert Halls & Venues",
-    "Festivals & Fairs", "Movie Theatres", "Museums & Art Galleries", "Nightclubs & Dance Halls"
+  {"group": "8. ENTERTAINMENT & RECREATION", "code": "8", "cleanGroup": "ENTERTAINMENT & RECREATION", "subcategories": [
+    "8.1 Amusement Parks & Arcades", "8.2 Bowling Alleys & Skating Rinks", "8.3 Casinos & Gambling", "8.4 Concert Halls & Venues",
+    "8.5 Festivals & Fairs", "8.6 Movie Theatres", "8.7 Museums & Art Galleries", "8.8 Nightclubs & Dance Halls"
   ]},
-  {"group": "EVENTS & WEDDINGS", "code": "9", "subcategories": [
-    "Bridal Shops", "Catering Services", "DJs & Live Entertainment", "Event Planners",
-    "Party Supply Rentals", "Photography & Videography", "Venues & Banquet Halls"
+  {"group": "9. EVENTS & WEDDINGS", "code": "9", "cleanGroup": "EVENTS & WEDDINGS", "subcategories": [
+    "9.1 Bridal Shops", "9.2 Catering Services", "9.3 DJs & Live Entertainment", "9.4 Event Planners",
+    "9.5 Party Supply Rentals", "9.6 Photography & Videography", "9.7 Venues & Banquet Halls"
   ]},
-  {"group": "FINANCIAL SERVICES", "code": "10", "subcategories": [
-    "Banks & Credit Unions", "Insurance Agents & Brokers", "Loans & Financing", "Mortgage Brokers", "Wealth Management & Advisors"
+  {"group": "10. FINANCIAL SERVICES", "code": "10", "cleanGroup": "FINANCIAL SERVICES", "subcategories": [
+    "10.1 Banks & Credit Unions", "10.2 Insurance Agents & Brokers", "10.3 Loans & Financing", "10.4 Mortgage Brokers", "10.5 Wealth Management & Advisors"
   ]},
-  {"group": "FOOD & DINING", "code": "11", "subcategories": [
-    "Bakeries & Dessert Shops", "Bars, Pubs & Taverns", "Breweries, Distilleries & Wineries", "Cafes & Coffee Shops",
-    "Fast Food & Drive-Thrus", "Food Trucks", "Full-Service Restaurants", "Juice Bars & Smoothies"
+  {"group": "11. FOOD & DINING", "code": "11", "cleanGroup": "FOOD & DINING", "subcategories": [
+    "11.1 Bakeries & Dessert Shops", "11.2 Bars, Pubs & Taverns", "11.3 Breweries, Distilleries & Wineries", "11.4 Cafes & Coffee Shops",
+    "11.5 Fast Food & Drive-Thrus", "11.6 Food Trucks", "11.7 Full-Service Restaurants", "11.8 Juice Bars & Smoothies"
   ]},
-  {"group": "GROCERIES & MARKETS", "code": "12", "subcategories": [
-    "Convenience Stores", "Farmers Markets", "Gas Station Markets", "Health & Organic Food Stores",
-    "Liquor, Wine & Beer Stores", "Supermarkets & Grocery Stores"
+  {"group": "12. GROCERIES & MARKETS", "code": "12", "cleanGroup": "GROCERIES & MARKETS", "subcategories": [
+    "12.1 Convenience Stores", "12.2 Farmers Markets", "12.3 Gas Station Markets", "12.4 Health & Organic Food Stores",
+    "12.5 Liquor, Wine & Beer Stores", "12.6 Supermarkets & Grocery Stores"
   ]},
-  {"group": "HEALTH & MEDICAL", "code": "13", "subcategories": [
-    "Chiropractors", "Dental Clinics", "Hospitals & Emergency Rooms", "Medical Labs & Imaging",
-    "Mental Health & Counselling", "Optometrists & Eye Care", "Pharmacies", "Physical Therapy & Rehab", "Primary Care & Family Doctors"
+  {"group": "13. HEALTH & MEDICAL", "code": "13", "cleanGroup": "HEALTH & MEDICAL", "subcategories": [
+    "13.1 Chiropractors", "13.2 Dental Clinics", "13.3 Hospitals & Emergency Rooms", "13.4 Medical Labs & Imaging",
+    "13.5 Mental Health & Counselling", "13.6 Optometrists & Eye Care", "13.7 Pharmacies", "13.8 Physical Therapy & Rehab", "13.9 Primary Care & Family Doctors"
   ]},
-  {"group": "HOME & GARDEN", "code": "14", "subcategories": [
-    "Appliance Repair", "Handyman Services", "Hardware & Tool Rental", "Interior Design & Decor",
-    "Landscaping & Lawn Care", "Locksmiths", "Pest Control", "Pool Maintenance & Construction", "Tree Services"
+  {"group": "14. HOME & GARDEN", "code": "14", "cleanGroup": "HOME & GARDEN", "subcategories": [
+    "14.1 Appliance Repair", "14.2 Handyman Services", "14.3 Hardware & Tool Rental", "14.4 Interior Design & Decor",
+    "14.5 Landscaping & Lawn Care", "14.6 Locksmiths", "14.7 Pest Control", "14.8 Pool Maintenance & Construction", "14.9 Tree Services"
   ]},
-  {"group": "HOTELS & TRAVEL", "code": "15", "subcategories": [
-    "Bed & Breakfasts", "Campgrounds & RV Parks", "Hostels", "Hotels & Motels", "Resorts & Luxury Lodges", "Travel Agencies & Tour Guides"
+  {"group": "15. HOTELS & TRAVEL", "code": "15", "cleanGroup": "HOTELS & TRAVEL", "subcategories": [
+    "15.1 Bed & Breakfasts", "15.2 Campgrounds & RV Parks", "15.3 Hostels", "15.4 Hotels & Motels", "15.5 Resorts & Luxury Lodges", "15.6 Travel Agencies & Tour Guides"
   ]},
-  {"group": "MANUFACTURING & INDUSTRIAL", "code": "16", "subcategories": [
-    "Chemical & Plastics Industry", "Electronics Manufacturing", "Food & Beverage Production", "Heavy Equipment & Machinery",
-    "Metal Fabrication", "Textile & Apparel Mills", "Wholesale Distributors"
+  {"group": "16. MANUFACTURING & INDUSTRIAL", "code": "16", "cleanGroup": "MANUFACTURING & INDUSTRIAL", "subcategories": [
+    "16.1 Chemical & Plastics Industry", "16.2 Electronics Manufacturing", "16.3 Food & Beverage Production", "16.4 Heavy Equipment & Machinery",
+    "16.5 Metal Fabrication", "16.6 Textile & Apparel Mills", "16.7 Wholesale Distributors"
   ]},
-  {"group": "REAL ESTATE & HOUSING", "code": "17", "subcategories": [
-    "Apartments & Flat Rentals", "Commercial Real Estate Brokers", "Property Management", "Real Estate Agencies",
-    "Residential Moving Companies", "Storage Facilities"
+  {"group": "17. REAL ESTATE & HOUSING", "code": "17", "cleanGroup": "REAL ESTATE & HOUSING", "subcategories": [
+    "17.1 Apartments & Flat Rentals", "17.2 Commercial Real Estate Brokers", "17.3 Property Management", "17.4 Real Estate Agencies",
+    "17.5 Residential Moving Companies", "17.6 Storage Facilities"
   ]},
-  {"group": "RETAIL SHOPPING", "code": "18", "subcategories": [
-    "Bookstores", "Clothing, Shoes & Apparel", "Electronics & Computer Shops", "Florists & Flower Shops",
-    "Furniture & Home Goods", "Jewellery & Watches", "Pet Shops & Supplies", "Sporting Goods Stores", "Toy & Hobby Shops"
+  {"group": "18. RETAIL SHOPPING", "code": "18", "cleanGroup": "RETAIL SHOPPING", "subcategories": [
+    "18.1 Bookstores", "18.2 Clothing, Shoes & Apparel", "18.3 Electronics & Computer Shops", "18.4 Florists & Flower Shops",
+    "18.5 Furniture & Home Goods", "18.6 Jewellery & Watches", "18.7 Pet Shops & Supplies", "18.8 Sporting Goods Stores", "18.9 Toy & Hobby Shops"
   ]},
-  {"group": "SPORTS & FITNESS", "code": "19", "subcategories": [
-    "Bicycle Shops & Repair", "Golf Courses & Country Clubs", "Gyms & Fitness Centres", "Martial Arts & Boxing Studios",
-    "Personal Training", "Swimming Pools & Centres", "Yoga & Pilates Studios"
+  {"group": "19. SPORTS & FITNESS", "code": "19", "cleanGroup": "SPORTS & FITNESS", "subcategories": [
+    "19.1 Bicycle Shops & Repair", "19.2 Golf Courses & Country Clubs", "19.3 Gyms & Fitness Centres", "19.4 Martial Arts & Boxing Studios",
+    "19.5 Personal Training", "19.6 Swimming Pools & Centres", "19.7 Yoga & Pilates Studios"
   ]},
-  {"group": "TRANSPORTATION & LOGISTICS", "code": "20", "subcategories": [
-    "Airport Shuttles & Limos", "Courier & Delivery Services", "Freight & Cargo Shipping", "Public Transit & Buses",
-    "Taxi & Ride-Share Services", "Warehousing"
+  {"group": "20. TRANSPORTATION & LOGISTICS", "code": "20", "cleanGroup": "TRANSPORTATION & LOGISTICS", "subcategories": [
+    "20.1 Airport Shuttles & Limos", "20.2 Courier & Delivery Services", "20.3 Freight & Cargo Shipping", "20.4 Public Transit & Buses",
+    "20.5 Taxi & Ride-Share Services", "20.6 Warehousing"
   ]}
 ]
 
@@ -4226,19 +4240,42 @@ ALL_145_SUBCATEGORIES = [
     sub for group in CATEGORIES_145_TREE for sub in group["subcategories"]
 ]
 
+ALL_CLEAN_SUBCATEGORIES = [
+    re.sub(r'^\d+(\.\d+)?\s*', '', sub).strip() for sub in ALL_145_SUBCATEGORIES
+]
+
 def match_searchbiz_category(raw_category: str) -> str:
-    """Maps any input or scraped category to one of SearchBiz's 145 official subcategories."""
+    """Maps any input or scraped category or numeric index (e.g. 1.1, 6.8, 14.2) to one of SearchBiz's official subcategories."""
     if not raw_category:
         return "Parts & Accessories"
     clean_cat = raw_category.strip().lower()
+
+    # 1. Match numeric index like "1.1", "6.8", "14.2", "20.6"
+    num_match = re.search(r'\b(\d+\.\d+)\b', clean_cat)
+    if num_match:
+        target_code = num_match.group(1)
+        for group in CATEGORIES_145_TREE:
+            for sub in group["subcategories"]:
+                if sub.startswith(f"{target_code} "):
+                    return re.sub(r'^\d+(\.\d+)?\s*', '', sub).strip()
     
-    # Direct substring matches
+    # 2. Match parent sector number (1 to 20)
+    sector_num_match = re.search(r'^(?:sector|category|parent)?\s*(\d{1,2})$', clean_cat)
+    if sector_num_match:
+        s_code = sector_num_match.group(1)
+        for group in CATEGORIES_145_TREE:
+            if group.get("code") == s_code:
+                first_sub = group["subcategories"][0]
+                return re.sub(r'^\d+(\.\d+)?\s*', '', first_sub).strip()
+
+    # 3. Direct substring match against numbered subcategories & clean names
     for group in CATEGORIES_145_TREE:
         for sub in group["subcategories"]:
-            if sub.lower() in clean_cat or clean_cat in sub.lower():
-                return sub
+            clean_sub = re.sub(r'^\d+(\.\d+)?\s*', '', sub).strip()
+            if clean_sub.lower() in clean_cat or clean_cat in clean_sub.lower() or sub.lower() in clean_cat:
+                return clean_sub
 
-    # Domain keyword heuristics
+    # 4. Domain keyword heuristics
     if any(k in clean_cat for k in ["spare", "part", "auto part", "car part", "motor spares"]):
         return "Parts & Accessories"
     if any(k in clean_cat for k in ["wash", "detail"]):
