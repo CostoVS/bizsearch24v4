@@ -1402,7 +1402,7 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
         logger.warning(f"Playwright stealth run encountered note: {e}")
         return []
 
-def scrape_stealth_google_maps(raw_query: str, chat_id: int) -> dict:
+def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bool = True) -> dict:
     """
     Autonomous Stealth Google Maps & Local Business Scraper Engine.
     Emulates human pacing with randomized jitter (2.0s - 4.2s), realistic headers,
