@@ -7633,32 +7633,21 @@ def fetch_live_searchbiz_knowledge(force_refresh: bool = False) -> dict:
     return _CACHED_SEARCHBIZ_KNOWLEDGE or {}
 
 def get_searchbiz_categories_card() -> str:
-    """Returns a focused, comprehensive breakdown of all 20 SearchBiz categories and 145 subcategories."""
-    return """📂 <b>SearchBiz South Africa — All 20 Official Directory Categories & Subcategories</b>
-🌐 <b>Directory:</b> <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>
-
-• <b>1. AUTOMOTIVE & VEHICLES:</b> Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics
-• <b>2. BEAUTY & PERSONAL CARE:</b> Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare
-• <b>3. BUSINESS SERVICES:</b> Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage
-• <b>4. CLEANING & JANITORIAL:</b> Carpet & Upholstery Cleaning, Commercial & Office, Domestic Maid Services, Window Cleaning, High Pressure Washing
-• <b>5. COMMUNITY & PUBLIC:</b> Charities & NGOs, Churches & Worship, Community Centres, Emergency Services, Libraries, Police & Fire Stations
-• <b>6. CONSTRUCTION & TRADES:</b> Carpentry, Building Contractors, Electrical Contractors, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding & Metal
-• <b>7. EDUCATION & TRAINING:</b> Colleges & Tertiary, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools
-• <b>8. ENTERTAINMENT & RECREATION:</b> Amusement Parks, Bowling & Arcades, Cinemas & Theatres, Nightclubs, Sports Clubs & Stadiums
-• <b>9. EVENTS & WEDDINGS:</b> Catering Services, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues
-• <b>10. FINANCIAL SERVICES:</b> Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners
-• <b>11. FOOD & DINING:</b> Bakeries & Patisseries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Halal/Kosher, Restaurants & Fine Dining
-• <b>12. GROCERIES & MARKETS:</b> Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets
-• <b>13. HEALTH & MEDICAL:</b> Chiropractors, Dentists, General Practitioners (Doctors), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Veterinarians
-• <b>14. HOME & GARDEN:</b> Appliance Repairs, Blinds & Curtains, Furniture & Decor, Interior Design, Landscaping, Nurseries, Tree Felling
-• <b>15. INDUSTRIAL & MANUFACTURING:</b> Chemical & Plastic, Heavy Equipment Hire, Metal & Steel Fabrication, Packaging, Warehousing
-• <b>16. PETS & ANIMALS:</b> Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops
-• <b>17. PROFESSIONAL SERVICES:</b> Architecture & Town Planning, Audit & Assurance, Engineering Consultants, Notaries & Conveyancers, Quantity Surveyors
-• <b>18. REAL ESTATE:</b> Commercial Brokers, Estate Agents & Sales, Property Management, Rental Agencies, Valuation Surveyors
-• <b>19. RETAIL & SHOPPING:</b> Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery & Watches, Shopping Centres & Malls
-• <b>20. TRAVEL & TOURISM:</b> Bed & Breakfasts (B&Bs), Car Rental, Game Reserves & Safari Lodges, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators
-
-💡 <i>Ask me to find businesses in any category or say <code>/sweep_provinces [category]</code> to scrape leads nationwide!</i>"""
+    """Returns a focused, comprehensive breakdown of all 20 SearchBiz categories and 305 Google Business Profile aligned subcategories."""
+    lines = [
+        "📂 <b>SearchBiz South Africa — All 20 Official Directory Categories & 305 Specialized Subcategories</b>",
+        "🌐 <b>Directory:</b> <a href=\"https://searchbiz.co.za/directory\">searchbiz.co.za/directory</a>",
+        ""
+    ]
+    for group in CATEGORIES_145_TREE:
+        subs_sample = ", ".join(re.sub(r'^\d+(\.\d+)?\s*', '', s) for s in group["subcategories"][:10])
+        total_in_grp = len(group["subcategories"])
+        more_tag = f" (+{total_in_grp - 10} more)" if total_in_grp > 10 else ""
+        lines.append(f"• <b>{group['group']}:</b> {subs_sample}{more_tag}")
+    
+    lines.append("")
+    lines.append("💡 <i>Ask me to find businesses in any category or say <code>/sweep_provinces [category]</code> to scrape leads nationwide!</i>")
+    return "\n".join(lines)
 
 def get_searchbiz_provinces_card() -> str:
     """Returns a focused breakdown of all 9 South African provinces, major hubs, and postal code ranges."""
@@ -7682,49 +7671,41 @@ def get_searchbiz_provinces_and_categories_card() -> str:
     base_url = get_active_api_base()
     live_data = fetch_live_searchbiz_knowledge()
     active_ads_count = live_data.get("stats", {}).get("totalActiveAds", "Live")
+    total_subs = sum(len(g["subcategories"]) for g in CATEGORIES_145_TREE)
     
-    card = f"""🏛️ <b>SearchBiz South Africa — Official Directory Structure & Knowledge Tree</b>
-🌐 <b>Live Platform Link:</b> <a href="https://searchbiz.co.za">searchbiz.co.za</a> (API: <code>{base_url}</code>)
-📊 <b>Active Directory Listings:</b> <b>{active_ads_count}</b> Verified Businesses
-
-🇿🇦 <b>ALL 9 SOUTH AFRICAN PROVINCES & MAJOR HUBS:</b>
-1. <b>Eastern Cape:</b> Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega (Uitenhage), Jeffreys Bay, Queenstown (5000–6499)
-2. <b>Free State:</b> Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)
-3. <b>Gauteng:</b> Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto, Benoni, Boksburg, Kempton Park, Krugersdorp (0001–2199)
-4. <b>KwaZulu-Natal:</b> Durban (4001), Umkomaas (4170), Craigieburn, Ilfracombe, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg, Richards Bay, Port Shepstone, Margate, Umhlanga, Pinetown (2900–4499)
-5. <b>Limpopo:</b> Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina, Phalaborwa (0500–0999)
-6. <b>Mpumalanga:</b> Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton, Barberton, White River (1000–1399)
-7. <b>North West:</b> Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)
-8. <b>Northern Cape:</b> Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)
-9. <b>Western Cape:</b> Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville (6500–8099)
-
-📂 <b>ALL 20 NUMBERED CATEGORIES & 145 CHILD SUBCATEGORIES:</b>
-• <b>1. AUTOMOTIVE & VEHICLES:</b> Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics
-• <b>2. BEAUTY & PERSONAL CARE:</b> Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare
-• <b>3. BUSINESS SERVICES:</b> Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage
-• <b>4. CLEANING & JANITORIAL:</b> Carpet & Upholstery Cleaning, Commercial & Office, Domestic Maid Services, Window Cleaning, High Pressure Washing
-• <b>5. COMMUNITY & PUBLIC:</b> Charities & NGOs, Churches & Worship, Community Centres, Emergency Services, Libraries, Police & Fire Stations
-• <b>6. CONSTRUCTION & TRADES:</b> Carpentry, Building Contractors, Electrical Contractors, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding & Metal
-• <b>7. EDUCATION & TRAINING:</b> Colleges & Tertiary, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools
-• <b>8. ENTERTAINMENT & RECREATION:</b> Amusement Parks, Bowling & Arcades, Cinemas & Theatres, Nightclubs, Sports Clubs & Stadiums
-• <b>9. EVENTS & WEDDINGS:</b> Catering Services, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues
-• <b>10. FINANCIAL SERVICES:</b> Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners
-• <b>11. FOOD & DINING:</b> Bakeries & Patisseries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Halal/Kosher, Restaurants & Fine Dining
-• <b>12. GROCERIES & MARKETS:</b> Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets
-• <b>13. HEALTH & MEDICAL:</b> Chiropractors, Dentists, General Practitioners (Doctors), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Veterinarians
-• <b>14. HOME & GARDEN:</b> Appliance Repairs, Blinds & Curtains, Furniture & Decor, Interior Design, Landscaping, Nurseries, Tree Felling
-• <b>15. INDUSTRIAL & MANUFACTURING:</b> Chemical & Plastic, Heavy Equipment Hire, Metal & Steel Fabrication, Packaging, Warehousing
-• <b>16. PETS & ANIMALS:</b> Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops
-• <b>17. PROFESSIONAL SERVICES:</b> Architecture & Town Planning, Audit & Assurance, Engineering Consultants, Notaries & Conveyancers, Quantity Surveyors
-• <b>18. REAL ESTATE:</b> Commercial Brokers, Estate Agents & Sales, Property Management, Rental Agencies, Valuation Surveyors
-• <b>19. RETAIL & SHOPPING:</b> Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery & Watches, Shopping Centres & Malls
-• <b>20. TRAVEL & TOURISM:</b> Bed & Breakfasts (B&Bs), Car Rental, Game Reserves & Safari Lodges, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators
-
-💎 <b>VERIFIED MEMBERSHIP TIERS & PRICING PLANS:</b>
-• <b>Free Unclaimed Listing (R0.00):</b> Discovered profile with Name, Phone, Address, Category (Website, Email & WhatsApp locked until upgraded).
-• <b>Base Premium Plan (R199.00 / month):</b> Unlimited static hosting, unlimited @yourbusiness.co.za emails, smart design assistance, verified badge, and 1 custom listing with ALL fields unlocked.
-• <b>Extras & Add-Ons:</b> <b>+R199.00 / mo</b> per extra listed ad | <b>.co.za Domain:</b> <b>R99.00 / year</b>."""
-    return card
+    lines = [
+        f"🏛️ <b>SearchBiz South Africa — Official Directory Structure & Knowledge Tree</b>",
+        f"🌐 <b>Live Platform Link:</b> <a href=\"https://searchbiz.co.za\">searchbiz.co.za</a> (API: <code>{base_url}</code>)",
+        f"📊 <b>Active Directory Listings:</b> <b>{active_ads_count}</b> Verified Businesses",
+        "",
+        "🇿🇦 <b>ALL 9 SOUTH AFRICAN PROVINCES & MAJOR HUBS:</b>",
+        "1. <b>Eastern Cape:</b> Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega (Uitenhage), Jeffreys Bay, Queenstown (5000–6499)",
+        "2. <b>Free State:</b> Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)",
+        "3. <b>Gauteng:</b> Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto, Benoni, Boksburg, Kempton Park, Krugersdorp (0001–2199)",
+        "4. <b>KwaZulu-Natal:</b> Durban (4001), Umkomaas (4170), Craigieburn, Ilfracombe, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg, Richards Bay, Port Shepstone, Margate, Umhlanga, Pinetown (2900–4499)",
+        "5. <b>Limpopo:</b> Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina, Phalaborwa (0500–0999)",
+        "6. <b>Mpumalanga:</b> Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton, Barberton, White River (1000–1399)",
+        "7. <b>North West:</b> Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)",
+        "8. <b>Northern Cape:</b> Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)",
+        "9. <b>Western Cape:</b> Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville (6500–8099)",
+        "",
+        f"📂 <b>ALL 20 NUMBERED CATEGORIES & {total_subs} SPECIALIZED SUBCATEGORIES:</b>"
+    ]
+    
+    for group in CATEGORIES_145_TREE:
+        subs_sample = ", ".join(re.sub(r'^\d+(\.\d+)?\s*', '', s) for s in group["subcategories"][:8])
+        total_in_grp = len(group["subcategories"])
+        more_tag = f" (+{total_in_grp - 8} more)" if total_in_grp > 8 else ""
+        lines.append(f"• <b>{group['group']}:</b> {subs_sample}{more_tag}")
+        
+    lines.extend([
+        "",
+        "💎 <b>VERIFIED MEMBERSHIP TIERS & PRICING PLANS:</b>",
+        "• <b>Free Unclaimed Listing (R0.00):</b> Discovered profile with Name, Phone, Address, Category (Website, Email & WhatsApp locked until upgraded).",
+        "• <b>Base Premium Plan (R199.00 / month):</b> Unlimited static hosting, unlimited @yourbusiness.co.za emails, smart design assistance, verified badge, and 1 custom listing with ALL fields unlocked.",
+        "• <b>Extras & Add-Ons:</b> <b>+R199.00 / mo</b> per extra listed ad | <b>.co.za Domain:</b> <b>R99.00 / year</b>."
+    ])
+    return "\n".join(lines)
 
 def get_searchbiz_pricing_card() -> str:
     """Returns official SearchBiz South Africa pricing & membership plan breakdown."""
@@ -9369,27 +9350,27 @@ You run 24/7 on the founder's Contabo Linux VPS.
    - **Northern Cape**: Kimberley (8301), Upington (8801), Springbok (8240), De Aar (7000), Kuruman (8460), Kathu (8446). Postal range: 8300-8999.
    - **Western Cape**: Cape Town (8001), Stellenbosch (7600), Paarl (7646), George (6529), Mossel Bay (6500), Hermanus (7200), Knysna (6571), Worcester (6850), Somerset West (7130), Bellville (7530). Postal range: 6500-8099.
 
-5. ALL 20 SEARCHBIZ NUMBERED CATEGORIES & 145 CHILD CATEGORIES:
-   - 1. AUTOMOTIVE & VEHICLES (1.1 Auto Body & Repair Shops, 1.2 Auto Detailing & Car Wash, 1.3 Auto Electricians, 1.4 Auto Parts & Spares, 1.5 Car Dealerships & Sales, 1.6 Driving Schools, 1.7 Mechanics & Service Centres, 1.8 Panel Beaters, 1.9 Towing & Breakdown Services, 1.10 Tyre & Fitment Centres, 1.11 Vehicle Audio & Accessories)
-   - 2. BEAUTY & PERSONAL CARE (2.1 Barbershops, 2.2 Day Spas & Wellness, 2.3 Hair Salons, 2.4 Makeup Artists, 2.5 Massage Therapy, 2.6 Nail Salons, 2.7 Skincare & Esthetics, 2.8 Tattoos & Piercings)
-   - 3. BUSINESS SERVICES (3.1 Accounting & Bookkeeping, 3.2 Advertising & Marketing, 3.3 Business Consulting, 3.4 Graphic & Web Design, 3.5 Human Resources & Recruitment, 3.6 IT & Software Support, 3.7 Legal Services & Attorneys, 3.8 Logistics & Freight, 3.9 Printing & Signage, 3.10 Security & Armed Response, 3.11 Translation & Copywriting)
-   - 4. CLEANING & JANITORIAL (4.1 Carpet & Upholstery Cleaning, 4.2 Commercial & Office Cleaning, 4.3 Domestic & Maid Services, 4.4 High Pressure & Exterior Cleaning, 4.5 Pool Cleaning & Maintenance, 4.6 Window Cleaning)
-   - 5. COMMUNITY & PUBLIC (5.1 Charities & NGOs, 5.2 Churches & Places of Worship, 5.3 Community Centres, 5.4 Emergency Services, 5.5 Libraries & Information, 5.6 Police & Fire Stations, 5.7 Post Offices & Depots, 5.8 Public Parks & Gardens)
-   - 6. CONSTRUCTION & TRADES (6.1 Architects & Draughting, 6.2 Bricklaying & Masonry, 6.3 Building Contractors, 6.4 Carpentry & Joinery, 6.5 Electrical Contractors, 6.6 Fencing & Gates, 6.7 Flooring & Tiling, 6.8 Handyman Services, 6.9 Painting & Waterproofing, 6.10 Paving & Tarring, 6.11 Plumbing Contractors, 6.12 Roofing & Gutters, 6.13 Solar & Inverter Installations, 6.14 Welding & Metal Fabrication)
-   - 7. EDUCATION & TRAINING (7.1 Colleges & Tertiary Institutes, 7.2 Daycare & Crèches, 7.3 High Schools, 7.4 Music & Art Schools, 7.5 Primary Schools, 7.6 Special Needs Education, 7.7 Training & Short Courses, 7.8 Tutoring & Extra Lessons)
-   - 8. ENTERTAINMENT & RECREATION (8.1 Amusement & Theme Parks, 8.2 Bowling & Arcades, 8.3 Cinemas & Theatres, 8.4 Nightclubs & Lounges, 8.5 Sports Clubs & Stadiums)
-   - 9. EVENTS & WEDDINGS (9.1 Catering Services, 9.2 DJs & Sound Equipment Hire, 9.3 Event Planners & Coordinators, 9.4 Party Hire & Decor, 9.5 Photographers & Videographers, 9.6 Wedding Venues & Chapels)
-   - 10. FINANCIAL SERVICES (10.1 Asset Management & Wealth, 10.2 Debt Review & Counselling, 10.3 Financial Advisory & Planning, 10.4 Foreign Exchange Services, 10.5 Insurance Brokers, 10.6 Micro Loans & Personal Lending, 10.7 Tax Practitioners)
-   - 11. FOOD & DINING (11.1 Bakeries & Patisseries, 11.2 Bars & Pubs, 11.3 Cafes & Coffee Shops, 11.4 Fast Food & Takeaways, 11.5 Food Trucks & Mobile Bars, 11.6 Halal & Kosher Eateries, 11.7 Restaurants & Fine Dining)
-   - 12. GROCERIES & MARKETS (12.1 Butcheries & Meat Markets, 12.2 Farmers Markets, 12.3 Fishmongers & Seafood, 12.4 Fruit & Vegetable Markets, 12.5 Liquor Outlets & Bottle Stores, 12.6 Supermarkets & Convenience Stores)
-   - 13. HEALTH & MEDICAL (13.1 Chiropractors & Physios, 13.2 Dentists & Orthodontists, 13.3 General Practitioners (Doctors), 13.4 Hearing & Audiology, 13.5 Hospitals & Clinics, 13.6 Mental Health & Psychologists, 13.7 Optometrists & Eye Care, 13.8 Pharmacies & Chemists, 13.9 Specialist Physicians, 13.10 Veterinarians & Animal Hospitals)
-   - 14. HOME & GARDEN (14.1 Appliance Repairs, 14.2 Blinds & Curtains, 14.3 Furniture & Decor, 14.4 Interior Design & Staging, 14.5 Landscaping & Garden Care, 14.6 Nurseries & Garden Centres, 14.7 Tree Felling & Pruning)
-   - 15. INDUSTRIAL & MANUFACTURING (15.1 Chemical & Plastic Processing, 15.2 Heavy Equipment Hire, 15.3 Metal & Steel Fabrication, 15.4 Packaging Supplies, 15.5 Textile & Garment Manufacturing, 15.6 Warehousing & Storage Facilities)
-   - 16. PETS & ANIMALS (16.1 Animal Shelters & Adoption, 16.2 Dog Training & Behaviour, 16.3 Pet Grooming Parlours, 16.4 Pet Kennels & Boarding, 16.5 Pet Shops & Supplies)
-   - 17. PROFESSIONAL SERVICES (17.1 Architecture & Town Planning, 17.2 Audit & Assurance, 17.3 Engineering Consultants, 17.4 Notaries & Conveyancers, 17.5 Patent & Trademark Attorneys, 17.6 Quantity Surveyors)
-   - 18. REAL ESTATE (18.1 Commercial Property Brokers, 18.2 Estate Agents & Sales, 18.3 Property Management, 18.4 Rental Agencies, 18.5 Valuation Surveyors)
-   - 19. RETAIL & SHOPPING (19.1 Bookshops & Stationers, 19.2 Clothing & Fashion Boutiques, 19.3 Electronics & Cellular, 19.4 Jewellery & Watches, 19.5 Music & Musical Instruments, 19.6 Shopping Centres & Malls, 19.7 Sporting Goods & Outdoor)
-   - 20. TRAVEL & TOURISM (20.1 Backpackers & Hostels, 20.2 Bed & Breakfasts (B&Bs), 20.3 Car Rental Agencies, 20.4 Game Reserves & Safari Lodges, 20.5 Guest Houses & Lodges, 20.6 Hotels & Resorts, 20.7 Shuttle & Transfer Services, 20.8 Tour Operators & Guides, 20.9 Travel Agencies)
+5. ALL 20 SEARCHBIZ NUMBERED CATEGORIES & 305 SPECIALIZED GOOGLE BUSINESS PROFILE CATEGORIES:
+   - 1. AUTOMOTIVE & VEHICLES (Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Auto Electrical, Windscreen Replacement, Brakes & Clutch, Gearbox & Transmission, Commercial Truck/Bus Repair, Used Cars & Auctions, Petrol Stations, Roadworthy Testing, Car Audio Fitment, Marine & Boat Dealers, Trailers & Caravans)
+   - 2. BEAUTY & PERSONAL CARE (Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare & Estheticians, Tattoos & Piercings, Hair Extensions & Braiding, Medical Spas & Aesthetic Clinics, Microblading, Laser Hair Removal, Holistic Wellness, Weight Loss & Slimming)
+   - 3. BUSINESS SERVICES (Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Co-Working, Employment & Staffing, IT Support & Telecoms, Legal & Law Firms, Office Equipment, Printing & Graphic Design, Tax Preparation, Security Guard & Armed Response, Web Design & Digital Agencies, Architects, Engineering Consultants, Signage, Notaries, Private Detectives, Debt Collection, Waste Management & Recycling, Call Centres & BPO)
+   - 4. CLEANING & JANITORIAL (Carpet & Upholstery Cleaning, Commercial & Office Cleaning, Disaster Restoration, Dry Cleaning & Laundry, Residential House Cleaning, Window Cleaning, Pressure Washing & Jetting, Roof & Gutter Cleaning, Air Vent & Chimney Cleaning, Septic Tank & Sanitation, Industrial Degreasing, Deep Cleaning & Move-In/Move-Out)
+   - 5. COMMUNITY & PUBLIC (Fire & Police Stations, Libraries & Community Centres, Non-Profit Organisations, Post Offices & Shipping, Public Utilities, Churches & Places of Worship, Funeral Homes & Cremations, Animal Shelters & Pet Rescue, Government & Municipal Offices, Embassies & Consulates, Botanical Gardens & Nature Reserves, Youth & Civic Centres)
+   - 6. CONSTRUCTION & TRADES (Carpentry & Woodworking, Concrete & Masonry, Demolition, Electrical Contractors, General Contractors, HVAC Cooling & Heating, Painting & Wallpapering, Plumbing Services, Roofing & Siding, Solar Energy & Backup Power, Boreholes & Irrigation, Fencing & Automated Gates, Flooring & Tiling, Waterproofing & Damp Proofing, Glazing, Ceilings & Drywall, Steel Construction & Welding, Scaffolding Hire, Kitchen & Bathroom Renovations)
+   - 7. EDUCATION & TRAINING (Art & Music Schools, Colleges & Universities, Daycare & Preschools, Driving Schools, Language & Tutoring, Primary & High Schools, Vocational & Trade Schools, Flight Schools & Aviation, Cosmetology Academies, Special Needs Schools, IT & Coding Bootcamps, Culinary & Hospitality Academies, Distance Learning, Sports Academies)
+   - 8. ENTERTAINMENT & RECREATION (Amusement Parks & Arcades, Bowling & Skating, Casinos, Concert Halls, Festivals, Cinemas, Museums & Art Galleries, Nightclubs, Game Lodges & Safaris, Zoos & Reptile Parks, Escape Rooms & Paintball, Go-Kart Tracks, Theatres & Performing Arts, Water Parks & Adventure Centres)
+   - 9. EVENTS & WEDDINGS (Bridal Shops, Catering Services, DJs & Live Entertainment, Event Planners, Party Supply Rentals, Photography & Videography, Venues & Banquet Halls, AV Stage & Lighting Hire, Florists & Wedding Floral Design, Photo Booth Hire, Wedding Invitations, Event Security, Mobile Bars)
+   - 10. FINANCIAL SERVICES (Banks & Credit Unions, Insurance Agents & Brokers, Loans & Financing, Mortgage Brokers, Wealth Management & Advisors, Forex & Currency Exchange, Pawn Shops & Collateral Loans, Financial Planning & Retirement, Debt Counselling & Debt Review, Stockbrokers & Venture Capital, Micro-Finance)
+   - 11. FOOD & DINING (Bakeries & Desserts, Bars & Pubs, Breweries & Wineries, Cafes & Coffee Shops, Fast Food & Drive-Thrus, Food Trucks, Full-Service Restaurants, Juice Bars, Steakhouses & Braai / BBQ, Pizzerias & Italian, Seafood, Asian & Sushi, Ice Cream Parlours, Halal & Kosher Dining, Delis, Buffets)
+   - 12. GROCERIES & MARKETS (Convenience Stores, Farmers Markets, Gas Station Markets, Health & Organic Food, Liquor & Bottle Stores, Supermarkets, Butcheries & Biltong Shops, Fishmongers & Seafood Markets, Fresh Produce & Farm Stalls, Spice & Specialty Food Stores, Wholesale Cash & Carry, Asian & International Supermarkets)
+   - 13. HEALTH & MEDICAL (Chiropractors, Dental Clinics, Hospitals & Emergency Rooms, Medical Labs, Mental Health & Counselling, Optometrists, Pharmacies, Physical Therapy, General Practitioners (GPs), Veterinary Clinics & Animal Hospitals, Physiotherapists & Biokineticists, Pediatricians, Gynaecologists & Maternity, Dermatologists, Orthodontists, Audiologists, Homeopathy & Alternative Medicine, Occupational Therapy, Ambulance & Paramedics, Podiatrists, Dietitians)
+   - 14. HOME & GARDEN (Appliance Repair, Handyman Services, Hardware & Tool Rental, Interior Design, Landscaping & Lawn Care, Locksmiths, Pest Control, Pool Maintenance & Construction, Tree Felling & Pruning, Home Security & CCTV, Solar & Inverter Backup, Water Tanks & Rainwater Harvesting, Blinds & Shutters, Kitchen Cupboards, Plant Nurseries, Upholstery Restoration, Garage Doors & Gate Automation, Flooring Stores)
+   - 15. HOTELS & TRAVEL (Bed & Breakfasts (B&Bs), Campgrounds & Caravan Parks, Hostels & Backpackers, Hotels & Motels, Resorts & Luxury Lodges, Travel Agencies & Tour Guides, Guest Houses & Country Inns, Safari Lodges & Bush Camps, Self-Catering Cottages & Apartments, Airport Transfers & Chauffeurs, Visa & Passport Consultancies, Boat Cruises & Charters)
+   - 16. MANUFACTURING & INDUSTRIAL (Chemical & Plastics, Electronics Manufacturing, Food & Beverage Production, Heavy Machinery & Earthmoving, Metal Fabrication, Textile Mills, Wholesale Distributors, Agricultural Machinery, Packaging & Boxes, Mining & Drilling Equipment, Timber & Sawmills, CNC Machining & Toolmaking, Plastic Moulding, Steel Foundries & Scrap Metal, Equipment Maintenance)
+   - 17. REAL ESTATE & HOUSING (Apartments & Flat Rentals, Commercial Real Estate Brokers, Property Management, Real Estate Agencies, Moving & Removal Companies, Storage Facilities, Student Accommodation, Body Corporate Management, Property Valuers & Appraisers, Holiday Rentals, Land Surveyors, Conveyancers & Property Lawyers)
+   - 18. RETAIL SHOPPING (Bookstores, Clothing & Apparel, Electronics & Computers, Flower Shops, Furniture & Home Goods, Jewellery & Watches, Pet Shops, Sporting Goods, Toy & Hobby Shops, Cellular & Phone Repairs, Antique Stores, Pawn & Thrift Shops, Vape & Tobacconists, Fabric & Sewing, Hardware & Building Materials, Musical Instruments, Baby & Maternity, Cosmetics, Art Supplies, Outdoor & Camping Gear)
+   - 19. SPORTS & FITNESS (Bicycle Shops & Workshop, Golf Courses & Country Clubs, Gyms & Fitness Centres, Martial Arts & Boxing, Personal Training, Swimming Pools, Yoga & Pilates, Tennis & Padel Clubs, Dance Studios, Scuba & Surfing Clubs, Rock Climbing Gyms, Sports Academies, Horse Riding Schools, Crossfit Boxes)
+   - 20. TRANSPORTATION & LOGISTICS (Airport Shuttles, Courier & Express Delivery, Freight & Cargo Shipping, Public Transit & Buses, Taxi & Ride-Share, Warehousing, Breakdown & Towing Services, Long-Distance Freight Haulage, Vehicle Tracking & Fleet Telematics, Marine Shipping, Moving Services, Cold Chain & Refrigerated Transport)
 
 6. GOOGLE MAPS SCRAPING & DEDICATED VAULT PIPELINE:
    - When told to scrape Google Maps for categories and provinces and place as free unclaimed ads:
