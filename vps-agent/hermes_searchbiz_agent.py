@@ -1410,8 +1410,21 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
                     const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="Website"], a.lcr4fd, a[href^="http"]:not([href*="google.com"])');
                     const website = webEl ? webEl.href : '';
 
-                    const textNodes = Array.from(card.querySelectorAll('div.W4Efsd, div[class*="fontBodyMedium"], span')).map(d => d.textContent.trim()).filter(Boolean);
+                    // Extract Category Subtitle / Place Classification from Google Maps card DOM
+                    let google_category = '';
+                    const w4efsd_divs = card.querySelectorAll('div.W4Efsd');
+                    if (w4efsd_divs.length > 0) {
+                        const firstLineSpans = Array.from(w4efsd_divs[0].querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
+                        for (const sp of firstLineSpans) {
+                            if (sp !== '·' && !/^\d(\.\d)?$/.test(sp) && !/^\([0-9,]+\)$/.test(sp) && sp.length > 2 && !sp.startsWith('R') && !sp.includes('Closed') && !sp.includes('Open') && !sp.includes('years in business')) {
+                                google_category = sp;
+                                break;
+                            }
+                        }
+                    }
+                    const allCardText = (card.innerText || card.textContent || '').slice(0, 500);
 
+                    const textNodes = Array.from(card.querySelectorAll('div.W4Efsd, div[class*="fontBodyMedium"], span')).map(d => d.textContent.trim()).filter(Boolean);
                     let phone = '';
                     let hours = '';
                     let addr = '';
@@ -1429,6 +1442,8 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
 
                     out.push({
                         name: name,
+                        google_category: google_category,
+                        card_text: allCardText,
                         rating: rating,
                         reviews_count: revs || '15',
                         website: website,
@@ -1442,8 +1457,26 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
             }""")
 
             browser.close()
+            # Strict Category Validation: Immediately discard any card that does not match category
+            clean_cards = []
+            for it in (cards_data or []):
+                bname = it.get("name", "").strip()
+                g_cat = it.get("google_category", "").strip()
+                c_text = it.get("card_text", "").strip()
+                is_match, reason = is_business_category_match(
+                    name=bname,
+                    raw_tags={},
+                    place_type=g_cat,
+                    target_category=category,
+                    card_text=c_text
+                )
+                if not is_match:
+                    logger.info(f"Playwright discarding unrelated Google Maps card '{bname}' (type: '{g_cat}'): {reason}")
+                    continue
+                clean_cards.append(it)
+            cards_data = clean_cards
             if cards_data:
-                logger.info(f"Playwright successfully extracted {len(cards_data)} listings from Google Maps!")
+                logger.info(f"Playwright successfully extracted {len(cards_data)} strictly verified listings from Google Maps!")
             return cards_data or []
     except Exception as e:
         logger.warning(f"Playwright stealth run encountered note: {e}")
@@ -1574,14 +1607,31 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
         send_telegram(chat_id, "🎭 <b>Playwright Stealth Chromium Activated:</b> Launching headless browser, navigating to Google Maps, and scrolling the results feed pane...")
         send_chat_action(chat_id, "typing")
         pw_items = scrape_google_maps_with_playwright(category, city, max_results=35)
+        clean_target_cat = match_searchbiz_category(category)
         for it in pw_items:
             bname = it.get("name", "").strip()
+            g_cat = it.get("google_category", "").strip()
+            c_text = it.get("card_text", "").strip()
+            # Double-check against target category: DISCARD ANY UNRELATED SCRAPES
+            is_match, reason = is_business_category_match(
+                name=bname,
+                raw_tags={},
+                place_type=g_cat,
+                target_category=category,
+                card_text=c_text
+            )
+            if not is_match:
+                logger.info(f"Stealth scraper discarding Google Maps result '{bname}' (type: '{g_cat}'): {reason}")
+                continue
+
             norm = re.sub(r'[^a-z0-9]', '', bname.lower())
             if norm and norm not in seen_names:
                 seen_names.add(norm)
                 businesses.append({
                     "name": bname,
-                    "category": category.title(),
+                    "category": clean_target_cat,
+                    "google_category": g_cat,
+                    "card_text": c_text,
                     "phone": it.get("phone", ""),
                     "telephone": it.get("phone", ""),
                     "email": "",
@@ -1622,25 +1672,15 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
         lat, lon = "-30.206", "30.796"
 
     # Category matching helpers
-    is_spares_query = any(w in category.lower() for w in ["spare", "part", "auto", "car", "motor", "tyre", "tire", "battery", "mechanic"])
-    spares_keywords = ["spare", "part", "auto", "motor", "car", "mechanic", "tyre", "tire", "wheel", "battery", "clutch", "brake", "panel", "exhaust", "radiator", "workshop", "midas", "autozone"]
+    clean_target_cat = match_searchbiz_category(category)
 
-    # 2. Query OpenStreetMap Overpass with Bounding Box
+    # 2. Query OpenStreetMap Overpass with Targeted Category Query
     if bbox:
         try:
-            overpass_q = f"""
-[out:json][timeout:15];
-(
-  node["shop"]({bbox});
-  way["shop"]({bbox});
-  node["craft"]({bbox});
-  way["craft"]({bbox});
-);
-out center;
-"""
+            overpass_q = get_overpass_query_for_category(category, bbox)
             op_url = "https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(overpass_q)
             op_req = urllib.request.Request(op_url, headers={
-                "User-Agent": "SearchBizHermes/1.0",
+                "User-Agent": "SearchBizHermes/2.0",
                 "Accept": "application/json"
             })
             with urllib.request.urlopen(op_req, timeout=12) as resp:
@@ -1655,14 +1695,13 @@ out center;
                     if not norm_k or norm_k in seen_names:
                         continue
 
-                    raw_cat = tags.get("shop") or tags.get("craft") or tags.get("amenity") or tags.get("office") or category
-                    cat_display = raw_cat.replace("_", " ").title()
+                    raw_cat = tags.get("shop") or tags.get("craft") or tags.get("amenity") or tags.get("office") or ""
 
-                    # Strict category filtering for spares to avoid irrelevant supermarkets/fuel stations
-                    if is_spares_query:
-                        matches_spares = any(k in clean_bname.lower() or k in raw_cat.lower() for k in spares_keywords)
-                        if not matches_spares:
-                            continue
+                    # Strict category filtering: Discard any business not matching requested category!
+                    is_match, reason = is_business_category_match(clean_bname, tags, raw_cat, category)
+                    if not is_match:
+                        logger.info(f"Overpass discarding unrelated business '{clean_bname}' for category '{category}': {reason}")
+                        continue
 
                     phone = tags.get("phone") or tags.get("contact:phone") or tags.get("contact:mobile") or ""
                     hours = tags.get("opening_hours") or "Mon-Fri 08:00 - 17:00, Sat 08:00 - 13:00"
@@ -2085,7 +2124,13 @@ out center;
     # If only one is available, use that for contact. If NONE is available, DO NOT capture it - ignore that business!
     valid_businesses = []
     for b in businesses:
-        is_match, reason = is_business_category_match(b.get("name", ""), {}, "", category)
+        is_match, reason = is_business_category_match(
+            name=b.get("name", ""),
+            raw_tags=b.get("tags") or {},
+            place_type=b.get("google_category") or b.get("place_type") or "",
+            target_category=category,
+            card_text=b.get("card_text") or ""
+        )
         if not is_match:
             logger.info(f"Google Maps discarding unrelated business '{b.get('name')}' for '{category}': {reason}")
             continue
@@ -4681,7 +4726,7 @@ def execute_single_todo(todo_id: int, chat_id: int = 0) -> dict:
                 res = scrape_province_suburbs_pipeline(effective_chat_id, directive)
                 exec_result = f"Province Scrape Mission Executed. Generated CSV: {res.get('csv_filename', 'Consolidated.csv')}, Dispatched to email."
             else:
-                res = scrape_stealth_google_maps(effective_chat_id, directive)
+                res = scrape_stealth_google_maps(raw_query=directive, chat_id=effective_chat_id)
                 exec_result = f"Google Maps Scrape Completed. Total leads captured: {res.get('count', 0)}. Saved in listings/ folder."
 
         elif any(k in lower for k in ["dedup", "remove duplicate", "clean duplicate", "purge duplicate", "deduplicate"]):
@@ -4804,9 +4849,51 @@ def get_overpass_query_for_category(category: str, bbox: str) -> str:
     (hair salons, supermarkets, gas stations) from being harvested for automotive queries.
     """
     c_lower = category.lower()
-    
-    # 1. Automotive & Vehicles (Group 1: 1.1 to 1.9)
-    if any(k in c_lower for k in ["auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts", "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"]):
+
+    # 1. Spares & Auto Parts (Group 1.7)
+    if any(k in c_lower for k in ["spares", "spare", "auto part", "car part", "motor spares", "1.7"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="car_parts"]({bbox});
+  way["shop"="car_parts"]({bbox});
+  node["shop"="tyres"]({bbox});
+  way["shop"="tyres"]({bbox});
+);
+out center 35;
+"""
+
+    # 2. Tire Shops (Group 1.8)
+    if any(k in c_lower for k in ["tire", "tyre", "wheel", "fitment", "1.8"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="tyres"]({bbox});
+  way["shop"="tyres"]({bbox});
+);
+out center 35;
+"""
+
+    # 3. Car Wash (Group 1.2)
+    if any(k in c_lower for k in ["car wash", "auto wash", "detailing", "valet", "1.2"]):
+        return f"""[out:json][timeout:10];
+(
+  node["amenity"="car_wash"]({bbox});
+  way["amenity"="car_wash"]({bbox});
+);
+out center 35;
+"""
+
+    # 4. Auto Dealerships (Group 1.4)
+    if any(k in c_lower for k in ["dealership", "dealers", "car sales", "used cars", "1.4"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="car"]({bbox});
+  way["shop"="car"]({bbox});
+);
+out center 35;
+"""
+
+    # 5. Auto Body, Panel Beaters & Repair Shops (Group 1.1)
+    if any(k in c_lower for k in ["auto", "car", "vehicle", "motor", "repair", "panel", "mechanic", "smash", "workshop", "1.1", "1.3", "1.5", "1.6", "1.9"]):
         return f"""[out:json][timeout:10];
 (
   node["shop"="car_repair"]({bbox});
@@ -4817,36 +4904,62 @@ def get_overpass_query_for_category(category: str, bbox: str) -> str:
   way["craft"="panelbeater"]({bbox});
   node["craft"="mechanic"]({bbox});
   way["craft"="mechanic"]({bbox});
-  node["shop"="car_parts"]({bbox});
-  way["shop"="car_parts"]({bbox});
-  node["shop"="tyres"]({bbox});
-  way["shop"="tyres"]({bbox});
   node["craft"="auto_body"]({bbox});
   way["craft"="auto_body"]({bbox});
   node["craft"="auto_electrical"]({bbox});
   way["craft"="auto_electrical"]({bbox});
-  node["shop"="car"]({bbox});
-  way["shop"="car"]({bbox});
-  node["amenity"="car_wash"]({bbox});
-  way["amenity"="car_wash"]({bbox});
 );
 out center 35;
 """
 
-    # 2. Building, Construction & Trades (Group 6)
-    if any(k in c_lower for k in ["plumb", "electr", "build", "construct", "carpent", "paint", "roof", "hardware", "contract", "6.1", "6.2", "6.3", "6.4", "6.5", "6.6"]):
+    # 6. Plumbing Services (Group 6.8)
+    if any(k in c_lower for k in ["plumb", "drain", "geyser", "6.8"]):
         return f"""[out:json][timeout:10];
 (
   node["craft"="plumber"]({bbox});
   way["craft"="plumber"]({bbox});
+);
+out center 35;
+"""
+
+    # 7. Electrical Contractors (Group 6.4)
+    if any(k in c_lower for k in ["electr", "electrician", "solar", "6.4"]):
+        return f"""[out:json][timeout:10];
+(
   node["craft"="electrician"]({bbox});
   way["craft"="electrician"]({bbox});
+);
+out center 35;
+"""
+
+    # 8. Roofing (Group 6.9)
+    if any(k in c_lower for k in ["roof", "waterproofing", "6.9"]):
+        return f"""[out:json][timeout:10];
+(
+  node["craft"="roofer"]({bbox});
+  way["craft"="roofer"]({bbox});
+);
+out center 35;
+"""
+
+    # 9. Other Building & Construction Trades (Group 6)
+    if any(k in c_lower for k in ["build", "construct", "carpent", "paint", "contract", "6.1", "6.2", "6.3", "6.5", "6.6", "6.7"]):
+        return f"""[out:json][timeout:10];
+(
   node["craft"="carpenter"]({bbox});
   way["craft"="carpenter"]({bbox});
   node["craft"="painter"]({bbox});
   way["craft"="painter"]({bbox});
   node["craft"="builder"]({bbox});
   way["craft"="builder"]({bbox});
+);
+out center 35;
+"""
+
+    # 10. Hardware Stores (Group 14.3)
+    if any(k in c_lower for k in ["hardware", "tools", "14.3"]):
+        return f"""[out:json][timeout:10];
+(
   node["shop"="hardware"]({bbox});
   way["shop"="hardware"]({bbox});
   node["shop"="trade"]({bbox});
@@ -4855,8 +4968,24 @@ out center 35;
 out center 35;
 """
 
-    # 3. Medical, Doctors, Health & Dental (Group 10)
-    if any(k in c_lower for k in ["doc", "dent", "medic", "health", "clinic", "pharm", "optom", "10.1", "10.2", "10.3", "10.4"]):
+    # 11. Beauty, Hair & Wellness (Group 2)
+    if any(k in c_lower for k in ["hair", "salon", "spa", "beauty", "nail", "barber", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="hairdresser"]({bbox});
+  way["shop"="hairdresser"]({bbox});
+  node["shop"="beauty"]({bbox});
+  way["shop"="beauty"]({bbox});
+  node["shop"="massage"]({bbox});
+  way["shop"="massage"]({bbox});
+  node["amenity"="spa"]({bbox});
+  way["amenity"="spa"]({bbox});
+);
+out center 35;
+"""
+
+    # 12. Medical, Doctors, Health & Dental (Group 13)
+    if any(k in c_lower for k in ["doc", "dent", "medic", "health", "clinic", "pharm", "optom", "13.1", "13.2", "13.3", "13.6", "13.7", "13.9"]):
         return f"""[out:json][timeout:10];
 (
   node["amenity"="doctors"]({bbox});
@@ -4873,8 +5002,8 @@ out center 35;
 out center 35;
 """
 
-    # 4. Food, Dining & Restaurants (Group 7)
-    if any(k in c_lower for k in ["restaur", "food", "dining", "cafe", "baker", "butch", "fast food", "7.1", "7.2", "7.3", "7.4"]):
+    # 13. Food, Dining & Restaurants (Group 11)
+    if any(k in c_lower for k in ["restaur", "food", "dining", "cafe", "baker", "butch", "fast food", "11.1", "11.2", "11.4", "11.5", "11.7"]):
         return f"""[out:json][timeout:10];
 (
   node["amenity"="restaurant"]({bbox});
@@ -4891,24 +5020,8 @@ out center 35;
 out center 35;
 """
 
-    # 5. Beauty, Hair & Wellness (Group 3)
-    if any(k in c_lower for k in ["hair", "salon", "spa", "beauty", "nail", "barber", "3.1", "3.2", "3.3"]):
-        return f"""[out:json][timeout:10];
-(
-  node["shop"="hairdresser"]({bbox});
-  way["shop"="hairdresser"]({bbox});
-  node["shop"="beauty"]({bbox});
-  way["shop"="beauty"]({bbox});
-  node["shop"="massage"]({bbox});
-  way["shop"="massage"]({bbox});
-  node["amenity"="spa"]({bbox});
-  way["amenity"="spa"]({bbox});
-);
-out center 35;
-"""
-
-    # 6. Accommodation & Lodging (Group 17)
-    if any(k in c_lower for k in ["hotel", "lodge", "motel", "b&b", "guest house", "resort", "17.1", "17.2"]):
+    # 14. Accommodation & Lodging (Group 15)
+    if any(k in c_lower for k in ["hotel", "lodge", "motel", "b&b", "guest house", "resort", "15.1", "15.4", "15.5"]):
         return f"""[out:json][timeout:10];
 (
   node["tourism"="hotel"]({bbox});
@@ -4921,14 +5034,22 @@ out center 35;
 out center 35;
 """
 
-    # 7. Professional Services (Group 8 & 9)
-    if any(k in c_lower for k in ["law", "attorney", "legal", "account", "tax", "audit", "8.1", "8.2", "9.1", "9.2"]):
+    # 15. Professional Services (Group 3)
+    if any(k in c_lower for k in ["law", "attorney", "legal", "account", "tax", "audit", "3.1", "3.7", "3.10"]):
         return f"""[out:json][timeout:10];
 (
   node["office"="lawyer"]({bbox});
   way["office"="lawyer"]({bbox});
   node["office"="accountant"]({bbox});
   way["office"="accountant"]({bbox});
+);
+out center 35;
+"""
+
+    # 16. Real Estate (Group 17)
+    if any(k in c_lower for k in ["estate", "property", "properties", "real estate", "realtor", "17.4"]):
+        return f"""[out:json][timeout:10];
+(
   node["office"="estate_agent"]({bbox});
   way["office"="estate_agent"]({bbox});
 );
@@ -4951,116 +5072,252 @@ def is_business_category_match(
     name: str,
     raw_tags: dict = None,
     place_type: str = "",
-    target_category: str = ""
+    target_category: str = "",
+    card_text: str = ""
 ) -> Tuple[bool, str]:
     """
-    Strict Category Validation Engine:
-    Ensures that when scraping Google Maps or OpenStreetMap, the business genuinely
-    belongs to the requested category. If it's unrelated (e.g. Hair Salon, Supermarket,
-    Fuel Station, School when looking for Auto Body & Repair Shops), it is DISCARDED.
+    Strict Multi-Layer Category Validation Engine:
+    Ensures that when scraping Google Maps, Playwright DOM, or OpenStreetMap,
+    the business genuinely belongs to the requested category.
+    Completely DISCARDS non-matching businesses, unrelated places, and generic unverified names!
     """
     if not name:
         return False, "empty_name"
 
     clean_name = name.strip().lower()
-    target_cat = (target_category or "").strip().lower()
     raw_tags = raw_tags or {}
-    
-    # 1. Automotive & Vehicles Category Check (Group 1: 1.1 to 1.9)
-    is_auto_target = any(k in target_cat for k in [
-        "auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts",
-        "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4",
-        "1.5", "1.6", "1.7", "1.8", "1.9"
-    ])
-    
+    p_type = (place_type or "").strip().lower()
+    c_text = (card_text or "").strip().lower()
+    combined_desc = f"{clean_name} {p_type} {c_text}"
+    target_cat = (target_category or "").strip().lower()
+
+    tag_vals = [str(v).lower() for v in raw_tags.values()]
+    all_tag_str = " ".join(tag_vals)
+
+    # Detect high-level target intent using regex word boundaries to prevent substring collisions (e.g. 'car' in 'care')
+    is_school_target = bool(re.search(r'\b(school|schools|college|colleges|academy|academies|education|tutoring|daycare|preschool)\b', target_cat) or "7." in target_cat)
+    is_fuel_target = bool(re.search(r'\b(gas station|petrol|fuel|service station)\b', target_cat) or "12.3" in target_cat)
+    is_worship_target = bool(re.search(r'\b(church|churches|worship|mosque|mosques|temple|temples|religious)\b', target_cat) or "5.6" in target_cat)
+    is_grocery_target = bool(re.search(r'\b(supermarket|supermarkets|grocery|groceries|convenience|market|markets)\b', target_cat) or "12." in target_cat)
+    is_beauty_target = bool(re.search(r'\b(hair|salon|salons|barber|barbers|spa|spas|beauty|nail|nails)\b', target_cat) or "2." in target_cat)
+    is_food_target = bool(re.search(r'\b(restaur|restaurant|restaurants|cafe|cafes|food|dining|bakery|bakeries|pub|pubs|bar|bars)\b', target_cat) or "11." in target_cat)
+    is_auto_target = bool(re.search(r'\b(auto|car|cars|vehicle|vehicles|motor|motors|repair|repairs|panel|beater|beaters|spares|spare|parts|tire|tires|tyre|tyres|towing|tow|dealership|dealerships|mechanic|mechanics|workshop|workshops)\b', target_cat) or any(k in target_cat for k in ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"]))
+    is_trade_target = bool(re.search(r'\b(plumb|plumber|plumbers|plumbing|electr|electric|electrician|electricians|build|builder|builders|building|construct|construction|carpent|carpenter|carpenters|paint|painter|painters|roof|roofer|roofers|roofing|contractor|contractors)\b', target_cat) or "6." in target_cat)
+    is_medical_target = bool(re.search(r'\b(doc|docs|doctor|doctors|dent|dental|dentist|dentists|medic|medical|clinic|clinics|pharm|pharmacy|pharmacies|optom|optometrist|health|hospital|hospitals)\b', target_cat) or "13." in target_cat)
+
+    # 1. School / Education Disqualifier
+    if not is_school_target:
+        if any(w in p_type for w in ["school", "primary school", "high school", "college", "university", "kindergarten"]):
+            return False, "disallowed_school_type"
+        if any(w in all_tag_str for w in ["school", "college", "university", "kindergarten"]):
+            return False, "disallowed_school_tag"
+        if re.search(r'\b(primary school|high school|secondary school|college|university|academy of learning|crèche|kindergarten)\b', clean_name):
+            return False, "disallowed_school_name"
+
+    # 2. Place of Worship Disqualifier
+    if not is_worship_target:
+        if any(w in p_type for w in ["church", "place of worship", "mosque", "temple", "synagogue"]):
+            return False, "disallowed_worship_type"
+        if any(w in all_tag_str for w in ["place_of_worship", "church", "mosque"]):
+            return False, "disallowed_worship_tag"
+        if re.search(r'\b(church|ministries|ministry|cathedral|mosque|temple|synagogue|parish)\b', clean_name):
+            return False, "disallowed_worship_name"
+
+    # 3. Fuel / Petrol Station Disqualifier
+    if not is_fuel_target:
+        if any(w in p_type for w in ["gas station", "petrol station", "fuel supplier", "gas_station"]):
+            return False, "disallowed_fuel_type"
+        if raw_tags.get("amenity") == "fuel":
+            return False, "disallowed_fuel_tag"
+        if re.search(r'\b(filling station|service station|caltex|engen|totalenergies|sasol|astron energy|shell garage|bp express)\b', clean_name):
+            return False, "disallowed_fuel_name"
+        if clean_name in ["shell", "bp", "engen", "sasol", "caltex", "astron energy", "total", "astron"]:
+            return False, "disallowed_fuel_brand"
+
+    # 4. Supermarket / Grocery Disqualifier
+    if not is_grocery_target:
+        if any(w in p_type for w in ["supermarket", "grocery store", "hypermarket", "convenience store"]):
+            return False, "disallowed_supermarket_type"
+        if raw_tags.get("shop") in ["supermarket", "convenience"]:
+            return False, "disallowed_supermarket_tag"
+        if re.search(r'\b(supermarket|hypermarket|pick n pay|shoprite|checkers|boxer superstores|usave|food lover\'s|woolworths food|spar express)\b', clean_name):
+            return False, "disallowed_supermarket_name"
+
+    # 5. Food & Restaurant Disqualifier
+    if not is_food_target:
+        if any(w in p_type for w in ["restaurant", "cafe", "fast food restaurant", "bar", "pub", "bistro"]):
+            return False, "disallowed_restaurant_type"
+        if raw_tags.get("amenity") in ["restaurant", "cafe", "fast_food", "pub", "bar"]:
+            return False, "disallowed_restaurant_tag"
+        if re.search(r'\b(restaurant|pizzeria|takeaway|kfc|mcdonald\'s|steers|wimpy|debonairs|fish & chips|bistro|tavern|bar & grill)\b', clean_name):
+            return False, "disallowed_restaurant_name"
+
+    # 6. Hair & Beauty Disqualifier
+    if not is_beauty_target:
+        if any(w in p_type for w in ["hair salon", "barber shop", "beauty salon", "nail salon", "day spa"]):
+            return False, "disallowed_beauty_type"
+        if raw_tags.get("shop") in ["hairdresser", "beauty", "massage"] or raw_tags.get("amenity") == "spa":
+            return False, "disallowed_beauty_tag"
+        if re.search(r'\b(hair salon|barbershop|nail studio|beauty spa|hair studio|lashes & nails)\b', clean_name):
+            return False, "disallowed_beauty_name"
+
+    # 7. Health & Medical Disqualifier
+    if not is_medical_target:
+        if any(w in p_type for w in ["pharmacy", "dentist", "doctor", "hospital", "medical clinic"]):
+            return False, "disallowed_medical_type"
+        if raw_tags.get("amenity") in ["pharmacy", "dentist", "doctors", "clinic", "hospital"]:
+            return False, "disallowed_medical_tag"
+        if re.search(r'\b(pharmacy|chemist|dispensary|dental practice|dr\.\s+[a-z]+|medical centre)\b', clean_name):
+            return False, "disallowed_medical_name"
+
+    # POSITIVE VALIDATION PER TARGET CATEGORY
+    # A. Automotive Target
     if is_auto_target:
-        # A. Disallowed OSM tags
-        disallowed_tags = {
-            "hairdresser", "beauty", "massage", "spa", "supermarket", "convenience",
-            "fuel", "clothes", "fashion", "shoes", "chemist", "pharmacy", "computer",
-            "electronics", "outdoor", "hunting", "furniture", "restaurant", "fast_food",
-            "cafe", "bar", "pub", "school", "college", "place_of_worship", "bank", "atm",
-            "florist", "bakery", "butcher", "doctor", "dentist", "optician", "jewelry",
-            "laundry", "dry_cleaning", "hotel", "guest_house", "motel"
-        }
-        for tag_k in ["shop", "craft", "amenity", "office", "tourism"]:
-            tag_val = (raw_tags.get(tag_k) or "").lower().strip()
-            if tag_val in disallowed_tags:
-                return False, f"disallowed_tag_{tag_val}"
+        is_spares_only = any(k in target_cat for k in ["spares", "parts", "accessories", "1.7"])
+        is_tyres_only = any(k in target_cat for k in ["tire", "tyre", "wheel", "1.8"])
+        is_wash_only = any(k in target_cat for k in ["wash", "detail", "valet", "1.2"])
+        is_dealer_only = any(k in target_cat for k in ["dealer", "dealership", "sales", "1.4"])
+        is_body_repair = any(k in target_cat for k in ["body", "repair", "panel", "mechanic", "smash", "workshop", "1.1"])
 
-        # B. Disallowed Google place types
-        disallowed_place_types = [
-            "hair_care", "beauty_salon", "spa", "supermarket", "grocery_or_supermarket",
-            "convenience_store", "gas_station", "clothing_store", "shoe_store", "pharmacy",
-            "restaurant", "meal_takeaway", "cafe", "bar", "school", "bank", "atm", "lodging"
-        ]
-        if any(pt in place_type.lower() for pt in disallowed_place_types):
-            return False, f"disallowed_place_type_{place_type}"
+        has_auto_tag = any(t in ["car_repair", "car_parts", "tyres", "car", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash"] for t in tag_vals)
+        has_auto_ptype = any(pt in p_type for pt in ["auto", "car", "motor", "mechanic", "repair", "parts", "tire", "tyre", "wheel", "body shop", "towing", "wash", "dealership"])
 
-        # C. Strict Name Negative Keyword Filter (Word boundaries)
-        auto_negative_patterns = [
-            r'\bhair\b', r'\bspa\b', r'\bspas\b', r'\bsalon\b', r'\bsalons\b', r'\bbeauty\b',
-            r'\bnails?\b', r'\blashes\b', r'\bsupermarket\b', r'\bhyper\b', r'\bpick n pay\b',
-            r'\bshoprite\b', r'\bcheckers\b', r'\bspar\b', r'\bboxer\b', r'\busave\b',
-            r'\bfood lovers\b', r'\bmakro\b', r'\bwoolworths\b', r'\bwoollies\b',
-            r'\bfilling station\b', r'\bservice station\b', r'\bengen\b', r'\bshell\b',
-            r'\bbp\b', r'\btotalenergies\b', r'\bsasol\b', r'\bcaltex\b', r'\bastron\b',
-            r'\bcomputers?\b', r'\bpc\b', r'\blaptops?\b', r'\bcellular\b', r'\bcell phone\b',
-            r'\boutdoor centre\b', r'\bcamping\b', r'\bpharmacy\b', r'\bdispensary\b',
-            r'\bchemist\b', r'\bclinic\b', r'\bhospital\b', r'\bdentist\b', r'\bdental\b',
-            r'\bdoctors?\b', r'\bdr\.\b', r'\bschool\b', r'\bcollege\b', r'\bacademy\b',
-            r'\bchurch\b', r'\bministry\b', r'\btemple\b', r'\bmosque\b', r'\bhotels?\b',
-            r'\blodge\b', r'\binn\b', r'\bb&b\b', r'\bliquor\b', r'\bbottle store\b',
-            r'\btops\b', r'\btavern\b', r'\bpubs?\b', r'\bbars?\b', r'\brestaurant\b',
-            r'\bcafe\b', r'\bkfc\b', r'\bmcdonalds\b', r'\bsteers\b', r'\bwimpy\b',
-            r'\bdebonairs\b', r'\bpizza\b', r'\bclothing\b', r'\bfashion\b', r'\bboutique\b',
-            r'\bshoes?\b', r'\bfurniture\b', r'\bflorist\b', r'\boptometrist\b', r'\bfuneral\b'
+        auto_pos_kw = [
+            "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
+            "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
+            "brake", "suspension", "radiator", "gearbox", "diff", "dent", "chassis",
+            "bakkie", "tyre", "tire", "spares", "parts", "glasfit", "pg glass",
+            "midas", "autozone", "supa quick", "hi-q", "tiger wheel", "towing"
         ]
-        
-        # Check override keywords (e.g. if name explicitly contains workshop, panelbeater, spares)
-        auto_override_patterns = [
-            r'\bpanel\s*beaters?\b', r'\bauto\s*body\b', r'\bsmash\s*repair\b',
-            r'\bspray\s*paint\w*\b', r'\bcar\s*repairs?\b', r'\bauto\s*repairs?\b',
-            r'\bmotor\s*repairs?\b', r'\bmechanics?\b', r'\bworkshop\b',
-            r'\bfitment\s*centre\b', r'\bauto\s*electrical\b', r'\bmotor\s*spares\b',
-            r'\bauto\s*spares\b', r'\bcar\s*parts\b', r'\btyres?\b', r'\btires?\b',
-            r'\bglasfit\b', r'\bpg\s*glass\b', r'\bexhaust\b', r'\bclutch\b', r'\bbrake\b'
-        ]
-        has_override = any(re.search(pat, clean_name) for pat in auto_override_patterns)
-        
-        if not has_override:
-            for pat in auto_negative_patterns:
-                if re.search(pat, clean_name):
-                    return False, f"negative_keyword_{pat}"
+        has_auto_kw = any(re.search(rf'\b{re.escape(kw)}\b', combined_desc) for kw in auto_pos_kw)
 
-        # D. For strict 1.1 Auto Body & Repair Shops, ensure positive automotive indicator
-        if "1.1" in target_cat or "body" in target_cat or "repair" in target_cat:
-            tag_vals = [raw_tags.get(k, "").lower() for k in ["shop", "craft", "amenity"]]
-            is_auto_tag = any(t in ["car_repair", "car_parts", "car", "tyres", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash"] for t in tag_vals)
-            has_auto_name = any(k in clean_name for k in [
-                "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
-                "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
-                "brake", "suspension", "glasfit", "glass", "tyre", "tire", "spares",
-                "radiator", "gearbox", "diff", "dent", "chassis", "bakkie", "speed",
-                "garage", "service", "motors", "repairs", "performance", "diesel", "sound"
-            ])
-            if not (is_auto_tag or has_auto_name or has_override):
-                return False, "lacks_automotive_indicator"
+        if not (has_auto_tag or has_auto_ptype or has_auto_kw):
+            return False, "lacks_automotive_indicator"
+
+        # If strict 1.1 Auto Body & Repair Shops
+        if is_body_repair and not (is_spares_only or is_tyres_only or is_wash_only or is_dealer_only):
+            body_pos = [
+                "panel", "beater", "body", "smash", "collision", "spray", "paint", "dent",
+                "mechanic", "repair", "workshop", "auto electrical", "auto clinic", "engine",
+                "gearbox", "clutch", "brake", "suspension", "radiator", "exhaust", "chassis",
+                "fitment centre", "service centre", "motor clinic"
+            ]
+            has_body_ptype = any(pt in p_type for pt in ["repair", "body shop", "mechanic", "maintenance"])
+            has_body_tag = any(t in ["car_repair", "panelbeater", "mechanic", "auto_body", "auto_electrical"] for t in tag_vals)
+            has_body_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in body_pos)
+            if not (has_body_ptype or has_body_tag or has_body_kw):
+                return False, "lacks_auto_body_repair_indicator"
+
+        # If strict 1.7 Parts & Accessories
+        if is_spares_only:
+            spares_pos = ["spares", "parts", "replacement", "accessories", "batteries", "autozone", "midas", "scrap yard", "salvage"]
+            has_spares_ptype = "parts" in p_type or "battery" in p_type or "accessories" in p_type
+            has_spares_tag = "car_parts" in all_tag_str
+            has_spares_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in spares_pos)
+            if not (has_spares_ptype or has_spares_tag or has_spares_kw):
+                return False, "lacks_spares_indicator"
+
+        # If strict 1.8 Tire Shops
+        if is_tyres_only:
+            tyre_pos = ["tyre", "tire", "wheel", "fitment", "tread", "supa quick", "hi-q", "tiger wheel", "tyre mart", "dunlop", "bridgestone"]
+            has_tyre_ptype = "tire" in p_type or "tyre" in p_type or "wheel" in p_type
+            has_tyre_tag = "tyres" in all_tag_str
+            has_tyre_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in tyre_pos)
+            if not (has_tyre_ptype or has_tyre_tag or has_tyre_kw):
+                return False, "lacks_tire_indicator"
 
         return True, "valid_automotive_match"
 
-    # 2. General Non-Automotive Category Safety
-    if any(k in target_cat for k in ["hair", "salon", "spa", "beauty"]):
-        if any(k in clean_name for k in ["panel", "beater", "mechanic", "spares", "tyre", "scrap"]):
-            return False, "automotive_in_beauty_query"
+    # B. Construction & Trades (Plumbing, Electrical, etc.)
+    if is_trade_target:
+        if "plumb" in target_cat:
+            plumb_pos = ["plumber", "plumbing", "drain", "geyser", "leak detection", "pipe"]
+            if not (("plumber" in p_type) or ("plumber" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in plumb_pos)):
+                return False, "lacks_plumbing_indicator"
+            return True, "valid_plumbing_match"
+
+        if "electr" in target_cat:
+            elec_pos = ["electrician", "electrical", "wiring", "coc", "solar", "inverter"]
+            if not (("electrician" in p_type) or ("electrician" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in elec_pos)):
+                return False, "lacks_electrical_indicator"
+            return True, "valid_electrical_match"
+
+        if "roof" in target_cat:
+            roof_pos = ["roof", "roofing", "waterproofing", "gutters"]
+            if not (("roof" in p_type) or ("roofer" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in roof_pos)):
+                return False, "lacks_roofing_indicator"
+            return True, "valid_roofing_match"
+
+    # C. Beauty & Hair
+    if is_beauty_target:
+        beauty_pos = ["hair", "salon", "barber", "hairstylist", "braids", "beauty", "spa", "cosmetics", "nails", "massage", "lashes", "waxing"]
+        if not (any(pt in p_type for pt in ["hair", "salon", "barber", "beauty", "nail", "spa", "massage"]) or
+                any(t in all_tag_str for t in ["hairdresser", "beauty", "massage", "spa"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in beauty_pos)):
+            return False, "lacks_beauty_indicator"
         return True, "valid_beauty_match"
 
-    if any(k in target_cat for k in ["plumb", "electr", "carpenter", "roof"]):
-        if any(k in clean_name for k in ["hair", "spa", "supermarket", "petrol"]):
-            return False, "irrelevant_trade_query"
-        return True, "valid_trade_match"
+    # D. Food & Dining
+    if is_food_target:
+        food_pos = ["restaurant", "cafe", "coffee", "bistro", "bakery", "fast food", "takeaway", "grill", "pub", "bar", "tavern", "pizzeria", "burger", "kitchen"]
+        if not (any(pt in p_type for pt in ["restaurant", "cafe", "bar", "pub", "fast food", "bakery"]) or
+                any(t in all_tag_str for t in ["restaurant", "cafe", "fast_food", "bakery", "pub", "bar"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in food_pos)):
+            return False, "lacks_food_indicator"
+        return True, "valid_food_match"
 
-    return True, "default_match"
+    # E. Medical
+    if is_medical_target:
+        is_pharm_target = any(k in target_cat for k in ["pharm", "chemist", "dispensary", "13.7"])
+        is_dent_target = any(k in target_cat for k in ["dent", "dental", "dentist", "13.2"])
+        is_optom_target = any(k in target_cat for k in ["optom", "eye care", "13.6"])
+        is_doc_target = any(k in target_cat for k in ["doctor", "primary care", "gp", "family doctor", "13.9"])
+
+        if is_pharm_target:
+            pharm_pos = ["pharmacy", "chemist", "dispensary", "clicks", "dis-chem"]
+            has_pharm = ("pharmacy" in p_type) or ("pharmacy" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in pharm_pos)
+            if not has_pharm:
+                return False, "lacks_pharmacy_indicator"
+            return True, "valid_pharmacy_match"
+
+        if is_dent_target:
+            dent_pos = ["dentist", "dental", "orthodont", "teeth"]
+            has_dent = ("dentist" in p_type) or ("dentist" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in dent_pos)
+            if not has_dent:
+                return False, "lacks_dental_indicator"
+            return True, "valid_dental_match"
+
+        if is_optom_target:
+            optom_pos = ["optometrist", "optical", "eye care", "spectacles", "glasses"]
+            has_optom = ("optician" in p_type) or ("optician" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in optom_pos)
+            if not has_optom:
+                return False, "lacks_optometrist_indicator"
+            return True, "valid_optometrist_match"
+
+        if is_doc_target:
+            if any(pt in p_type for pt in ["pharmacy", "dentist"]) or any(t in all_tag_str for t in ["pharmacy", "dentist"]):
+                return False, "pharmacy_or_dental_in_doctor_query"
+            doc_pos = ["doctor", "dr", "dr.", "medical", "clinic", "gp", "general practitioner", "physician", "health centre"]
+            has_doc = any(pt in p_type for pt in ["doctor", "medical clinic", "general practitioner"]) or any(t in all_tag_str for t in ["doctors", "clinic"]) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in doc_pos)
+            if not has_doc:
+                return False, "lacks_doctor_indicator"
+            return True, "valid_doctor_match"
+
+        med_pos = ["doctor", "dr", "medical", "clinic", "dental", "dentist", "pharmacy", "chemist", "dispensary", "optometrist", "physio", "hospital", "healthcare"]
+        if not (any(pt in p_type for pt in ["doctor", "dentist", "pharmacy", "clinic", "hospital"]) or
+                any(t in all_tag_str for t in ["doctors", "dentist", "pharmacy", "clinic", "hospital", "optician"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in med_pos)):
+            return False, "lacks_medical_indicator"
+        return True, "valid_medical_match"
+
+    # General Fallback: requires at least one token from target category
+    clean_cat_tokens = [tok for tok in re.findall(r'[a-zA-Z]{4,}', target_cat) if tok not in ["services", "shops", "stores", "group", "category", "general"]]
+    if clean_cat_tokens:
+        has_generic_match = any(tok in combined_desc or tok in all_tag_str for tok in clean_cat_tokens)
+        if not has_generic_match:
+            return False, "lacks_category_indicator"
+
+    return True, "valid_category_match"
 
 def get_or_create_province_category_folder(province: str = "kwazulu-natal", category: str = "services") -> str:
     """
@@ -5301,19 +5558,30 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
 
 def purge_category_mismatches_vps(chat_id: int = 0) -> dict:
     """
-    Scans all stored business leads in SQLite and removes any leads that DO NOT MATCH
-    their assigned category (e.g. hair salons, supermarkets, gas stations assigned to auto repair).
+    Scans all stored business leads in SQLite and files in listings/ and scraped_leads_vault/.
+    Purges any leads, files, or folders that DO NOT MATCH their assigned category
+    or contain invalid non-category tags (e.g. 'Yes', 'Fuel', 'Amenity', 'Shop', schools/salons in auto).
     """
     init_memory_db()
     purged_ids = []
     purged_names = []
+    purged_files_count = 0
+    purged_folders_count = 0
+
     with get_db() as conn:
         conn.row_factory = sqlite3.Row
         leads = conn.execute("SELECT id, name, category FROM business_leads").fetchall()
         for r in leads:
             lid = r["id"]
             name = r["name"] or ""
-            cat = r["category"] or ""
+            cat = (r["category"] or "").strip()
+            
+            # Immediately purge invalid non-categories like Yes, Fuel, Amenity
+            if cat.lower() in ["yes", "fuel", "no", "amenity", "shop", "craft", "office"]:
+                purged_ids.append(lid)
+                purged_names.append(f"{name} (invalid_tag_{cat})")
+                continue
+
             is_match, reason = is_business_category_match(name, {}, "", cat)
             if not is_match:
                 purged_ids.append(lid)
@@ -5325,20 +5593,89 @@ def purge_category_mismatches_vps(chat_id: int = 0) -> dict:
             conn.execute(f"DELETE FROM scraped_vault_leads WHERE id IN ({placeholders})", purged_ids)
             conn.commit()
 
+    # Clean disk files and folders in listings/
+    if os.path.exists(LISTINGS_DIR):
+        for root, dirs, files in list(os.walk(LISTINGS_DIR, topdown=False)):
+            folder_name = os.path.basename(root).lower()
+            # If folder is an invalid tag like 'yes' or 'fuel', delete the entire folder
+            if folder_name in ["yes", "fuel", "amenity", "shop", "craft"]:
+                try:
+                    shutil.rmtree(root)
+                    purged_folders_count += 1
+                    purged_files_count += len(files)
+                    continue
+                except Exception:
+                    pass
+
+            for fn in files:
+                if fn.endswith(".json"):
+                    fp = os.path.join(root, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as jf:
+                            data = json.load(jf)
+                        bname = data.get("name") or data.get("business_name") or ""
+                        bcat = (data.get("category") or folder_name).strip()
+                        if bcat.lower() in ["yes", "fuel", "amenity", "shop", "craft"]:
+                            os.remove(fp)
+                            purged_files_count += 1
+                        elif bname:
+                            m, r = is_business_category_match(bname, {}, "", bcat)
+                            if not m:
+                                os.remove(fp)
+                                purged_files_count += 1
+                    except Exception:
+                        pass
+            # Remove empty directories
+            try:
+                if os.path.exists(root) and root != LISTINGS_DIR and not os.listdir(root):
+                    os.rmdir(root)
+            except Exception:
+                pass
+
+    # Clean disk files in scraped_leads_vault/
+    if os.path.exists(VAULT_LEADS_DIR):
+        for fn in os.listdir(VAULT_LEADS_DIR):
+            if fn.endswith(".json"):
+                fp = os.path.join(VAULT_LEADS_DIR, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8") as jf:
+                        data = json.load(jf)
+                    bname = data.get("name") or data.get("business_name") or ""
+                    bcat = (data.get("category") or "").strip()
+                    if bcat.lower() in ["yes", "fuel", "amenity", "shop", "craft"]:
+                        os.remove(fp)
+                        purged_files_count += 1
+                    elif bname and bcat:
+                        m, r = is_business_category_match(bname, {}, "", bcat)
+                        if not m:
+                            os.remove(fp)
+                            purged_files_count += 1
+                except Exception:
+                    pass
+
     report = f"""🧹 <b>[Category Mismatch Purge Complete]</b>
 
-🚫 <b>Irrelevant / Mismatched Leads Purged:</b> <b>{len(purged_ids)}</b>
-✅ <b>Strict Rule Enforced:</b> Only businesses strictly matching their requested category remain!
+🚫 <b>Database Leads Purged:</b> <b>{len(purged_ids)}</b>
+🗑️ <b>Invalid Dossiers/Files Deleted:</b> <b>{purged_files_count}</b>
+📂 <b>Mismatched Category Folders Purged:</b> <b>{purged_folders_count}</b>
+✅ <b>Strict Zero-Tolerance Rule:</b> Only businesses strictly matching their requested category remain!
 
 📋 <b>Purged Examples:</b>
 """ + "\n".join([f"• <s>{html.escape(n)}</s>" for n in purged_names[:10]]) + (f"\n• <i>...and {len(purged_ids) - 10} more</i>" if len(purged_ids) > 10 else "") + f"""
 
-👉 View clean inventory: <code>/listings</code>"""
+👉 View clean inventory: <code>/listings</code>
+👉 View organized folder hierarchy: <code>/folders</code>"""
 
     if chat_id:
         send_telegram(chat_id, report)
 
-    return {"success": True, "purged_count": len(purged_ids), "purged_names": purged_names}
+    return {
+        "success": True,
+        "purged_count": len(purged_ids),
+        "purged_names": purged_names,
+        "purged_files": purged_files_count,
+        "purged_folders": purged_folders_count
+    }
 
 def publish_listings_target(chat_id: int, target: str = "all", plan: str = "free") -> dict:
     """
@@ -6798,6 +7135,10 @@ def match_searchbiz_category(raw_category: str) -> str:
     if not raw_category:
         return "Parts & Accessories"
     clean_cat = raw_category.strip().lower()
+
+    # Reject non-category noise tags from OpenStreetMap / scrapers
+    if clean_cat in ["yes", "no", "true", "false", "fuel", "shop", "craft", "amenity", "office", "tourism"]:
+        return "General Services"
 
     # 1. Match numeric index like "1.1", "6.8", "14.2", "20.6"
     num_match = re.search(r'\b(\d+\.\d+)\b', clean_cat)
