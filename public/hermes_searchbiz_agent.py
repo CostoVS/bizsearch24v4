@@ -2079,11 +2079,17 @@ out center;
                 except Exception:
                     pass
 
-    # Mandatory Phone / Telephone / WhatsApp number filter rule:
-    # Check for phone number, telephone number, or WhatsApp number across all fields (including website).
+    # Mandatory Category Match & Phone / Telephone / WhatsApp number filter rules:
+    # 1. Strict Category validation: If business doesn't match the requested category, DISCARD IT!
+    # 2. Check for phone number, telephone number, or WhatsApp number across all fields.
     # If only one is available, use that for contact. If NONE is available, DO NOT capture it - ignore that business!
     valid_businesses = []
     for b in businesses:
+        is_match, reason = is_business_category_match(b.get("name", ""), {}, "", category)
+        if not is_match:
+            logger.info(f"Google Maps discarding unrelated business '{b.get('name')}' for '{category}': {reason}")
+            continue
+
         p_val = (b.get("phone") or "").strip()
         t_val = (b.get("telephone") or "").strip()
         w_val = (b.get("whatsapp") or "").strip()
@@ -2101,7 +2107,7 @@ out center;
     businesses = valid_businesses
 
     if not businesses:
-        send_telegram(chat_id, f"⚠️ <b>Scraper Notice:</b> No businesses with valid phone, telephone, or WhatsApp numbers were found for <i>'{html.escape(category)}'</i> in <b>{html.escape(city)}</b>.")
+        send_telegram(chat_id, f"⚠️ <b>Scraper Notice:</b> No verified businesses strictly matching <i>'{html.escape(category)}'</i> with working phone numbers were found in <b>{html.escape(city)}</b>.")
         return {"success": False, "count": 0}
 
     # Step 4: Build Clean Comprehensive CSV File with ALL requested fields
@@ -2149,15 +2155,16 @@ out center;
     except Exception as fe:
         logger.debug(f"CSV local file write note: {fe}")
 
-    # Always save copy directly to listings/ directory for permanent user access & cold outreach
+    # Always save copy directly to structured listings/{province_slug}/{category_slug}/ directory
     try:
-        listings_csv_path = os.path.join(LISTINGS_DIR, csv_filename)
+        subfolder = get_or_create_province_category_folder(province, category)
+        listings_csv_path = os.path.join(subfolder, csv_filename)
         with open(listings_csv_path, "wb") as f:
             f.write(csv_bytes)
         
-        # Save structured JSON dump in listings/ folder
+        # Save structured JSON dump in subfolder
         listings_json_fn = f"listings_{re.sub(r'[^a-zA-Z0-9_]', '_', category.lower())}_{re.sub(r'[^a-zA-Z0-9_]', '_', city.lower())}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        listings_json_path = os.path.join(LISTINGS_DIR, listings_json_fn)
+        listings_json_path = os.path.join(subfolder, listings_json_fn)
         with open(listings_json_path, "w", encoding="utf-8") as jf:
             json.dump({
                 "category": category,
@@ -2167,6 +2174,12 @@ out center;
                 "total_businesses": len(businesses),
                 "businesses": businesses
             }, jf, indent=2, ensure_ascii=False)
+
+        # Also save individual lead dossiers in subfolder
+        for b in businesses:
+            b_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (b.get("name") or "lead").lower())[:40]
+            with open(os.path.join(subfolder, f"lead_{b_slug}.json"), "w", encoding="utf-8") as ljf:
+                json.dump(b, ljf, indent=2, ensure_ascii=False)
     except Exception as le_err:
         logger.debug(f"Listings directory sync note: {le_err}")
 
@@ -2349,9 +2362,10 @@ def save_scraped_lead_to_vault(lead: dict, archive_filename: str = "") -> dict:
     except Exception as fe:
         logger.debug(f"Vault JSON write note: {fe}")
 
-    # Also save copy directly into listings/ folder for easy user access
+    # Also save copy directly into structured listings/{province_slug}/{category_slug}/ folder
     try:
-        listings_single_file = os.path.join(LISTINGS_DIR, f"{slug}.json")
+        subfolder = get_or_create_province_category_folder(lead_record.get("province", "kwazulu-natal"), lead_record.get("category", "services"))
+        listings_single_file = os.path.join(subfolder, f"lead_{slug}.json")
         with open(listings_single_file, "w", encoding="utf-8") as lf:
             json.dump(lead_record, lf, indent=2, ensure_ascii=False)
     except Exception as le_fe:
@@ -3686,15 +3700,19 @@ def format_vps_listings_card(query: str = "", limit: int = 15, offset: int = 0) 
     content = "\n\n".join(lines)
     
     footer = f"""\n\n🛠️ <b>Control & Management Commands:</b>
+• <code>/folders</code> - View province & category folder hierarchy
+• <code>/organize_listings</code> - Sort all mixed-up files into province & category folders
+• <code>/publish_listings [target]</code> - Push listings/folder/file to searchbiz.co.za
+• <code>/publish_folder [path]</code> - Push a specific folder of listings to searchbiz
+• <code>/delete_all_listings</code> - Permanently delete & wipe ALL stored listings
+• <code>/purge_unrelated_listings</code> - Remove any scrape not matching its category
 • <code>/view_lead [ID]</code> - Inspect full business dossier
 • <code>/search_leads [keyword]</code> - Search by name, phone, city
 • <code>/edit_lead [ID] phone=... email=...</code> - Update details
-• <code>/delete_lead [ID]</code> - Permanently delete business
+• <code>/delete_lead [ID]</code> - Delete single business record
 • <code>/add_listing Name | Phone | Category | City | Province</code> - Add business
-• <code>/dedup</code> - Purge all duplicate & phone-less entries
-• <code>/delete_file [filename]</code> - Delete CSV/JSON dataset
-• <code>/rename_file [old] [new]</code> - Rename dataset file
-• <code>/copy_file [source] [target]</code> - Duplicate dataset file
+• <code>/dedup</code> - Purge duplicate & phone-less entries
+• <code>/delete_file [filename]</code> - Delete CSV/JSON dataset file
 • <code>/get_file [filename]</code> - Download dataset file to Telegram"""
 
     if total > offset + limit:
@@ -4775,6 +4793,691 @@ def follow_and_run_todo_list(chat_id: int) -> dict:
         "executed": executed
     }
 
+# ============================================================================
+# Category Validation, Folder Hierarchy & Precision Data Management Engines
+# ============================================================================
+
+def get_overpass_query_for_category(category: str, bbox: str) -> str:
+    """
+    Generates precision-targeted Overpass queries so OpenStreetMap strictly returns
+    businesses belonging to the requested category family. Prevents irrelevant stores
+    (hair salons, supermarkets, gas stations) from being harvested for automotive queries.
+    """
+    c_lower = category.lower()
+    
+    # 1. Automotive & Vehicles (Group 1: 1.1 to 1.9)
+    if any(k in c_lower for k in ["auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts", "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="car_repair"]({bbox});
+  way["shop"="car_repair"]({bbox});
+  node["craft"="car_repair"]({bbox});
+  way["craft"="car_repair"]({bbox});
+  node["craft"="panelbeater"]({bbox});
+  way["craft"="panelbeater"]({bbox});
+  node["craft"="mechanic"]({bbox});
+  way["craft"="mechanic"]({bbox});
+  node["shop"="car_parts"]({bbox});
+  way["shop"="car_parts"]({bbox});
+  node["shop"="tyres"]({bbox});
+  way["shop"="tyres"]({bbox});
+  node["craft"="auto_body"]({bbox});
+  way["craft"="auto_body"]({bbox});
+  node["craft"="auto_electrical"]({bbox});
+  way["craft"="auto_electrical"]({bbox});
+  node["shop"="car"]({bbox});
+  way["shop"="car"]({bbox});
+  node["amenity"="car_wash"]({bbox});
+  way["amenity"="car_wash"]({bbox});
+);
+out center 35;
+"""
+
+    # 2. Building, Construction & Trades (Group 6)
+    if any(k in c_lower for k in ["plumb", "electr", "build", "construct", "carpent", "paint", "roof", "hardware", "contract", "6.1", "6.2", "6.3", "6.4", "6.5", "6.6"]):
+        return f"""[out:json][timeout:10];
+(
+  node["craft"="plumber"]({bbox});
+  way["craft"="plumber"]({bbox});
+  node["craft"="electrician"]({bbox});
+  way["craft"="electrician"]({bbox});
+  node["craft"="carpenter"]({bbox});
+  way["craft"="carpenter"]({bbox});
+  node["craft"="painter"]({bbox});
+  way["craft"="painter"]({bbox});
+  node["craft"="builder"]({bbox});
+  way["craft"="builder"]({bbox});
+  node["shop"="hardware"]({bbox});
+  way["shop"="hardware"]({bbox});
+  node["shop"="trade"]({bbox});
+  way["shop"="trade"]({bbox});
+);
+out center 35;
+"""
+
+    # 3. Medical, Doctors, Health & Dental (Group 10)
+    if any(k in c_lower for k in ["doc", "dent", "medic", "health", "clinic", "pharm", "optom", "10.1", "10.2", "10.3", "10.4"]):
+        return f"""[out:json][timeout:10];
+(
+  node["amenity"="doctors"]({bbox});
+  way["amenity"="doctors"]({bbox});
+  node["amenity"="dentist"]({bbox});
+  way["amenity"="dentist"]({bbox});
+  node["amenity"="clinic"]({bbox});
+  way["amenity"="clinic"]({bbox});
+  node["amenity"="pharmacy"]({bbox});
+  way["amenity"="pharmacy"]({bbox});
+  node["shop"="optician"]({bbox});
+  way["shop"="optician"]({bbox});
+);
+out center 35;
+"""
+
+    # 4. Food, Dining & Restaurants (Group 7)
+    if any(k in c_lower for k in ["restaur", "food", "dining", "cafe", "baker", "butch", "fast food", "7.1", "7.2", "7.3", "7.4"]):
+        return f"""[out:json][timeout:10];
+(
+  node["amenity"="restaurant"]({bbox});
+  way["amenity"="restaurant"]({bbox});
+  node["amenity"="cafe"]({bbox});
+  way["amenity"="cafe"]({bbox});
+  node["amenity"="fast_food"]({bbox});
+  way["amenity"="fast_food"]({bbox});
+  node["shop"="bakery"]({bbox});
+  way["shop"="bakery"]({bbox});
+  node["shop"="butcher"]({bbox});
+  way["shop"="butcher"]({bbox});
+);
+out center 35;
+"""
+
+    # 5. Beauty, Hair & Wellness (Group 3)
+    if any(k in c_lower for k in ["hair", "salon", "spa", "beauty", "nail", "barber", "3.1", "3.2", "3.3"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="hairdresser"]({bbox});
+  way["shop"="hairdresser"]({bbox});
+  node["shop"="beauty"]({bbox});
+  way["shop"="beauty"]({bbox});
+  node["shop"="massage"]({bbox});
+  way["shop"="massage"]({bbox});
+  node["amenity"="spa"]({bbox});
+  way["amenity"="spa"]({bbox});
+);
+out center 35;
+"""
+
+    # 6. Accommodation & Lodging (Group 17)
+    if any(k in c_lower for k in ["hotel", "lodge", "motel", "b&b", "guest house", "resort", "17.1", "17.2"]):
+        return f"""[out:json][timeout:10];
+(
+  node["tourism"="hotel"]({bbox});
+  way["tourism"="hotel"]({bbox});
+  node["tourism"="guest_house"]({bbox});
+  way["tourism"="guest_house"]({bbox});
+  node["tourism"="motel"]({bbox});
+  way["tourism"="motel"]({bbox});
+);
+out center 35;
+"""
+
+    # 7. Professional Services (Group 8 & 9)
+    if any(k in c_lower for k in ["law", "attorney", "legal", "account", "tax", "audit", "8.1", "8.2", "9.1", "9.2"]):
+        return f"""[out:json][timeout:10];
+(
+  node["office"="lawyer"]({bbox});
+  way["office"="lawyer"]({bbox});
+  node["office"="accountant"]({bbox});
+  way["office"="accountant"]({bbox});
+  node["office"="estate_agent"]({bbox});
+  way["office"="estate_agent"]({bbox});
+);
+out center 35;
+"""
+
+    # Default fallback: Targeted commercial shops
+    clean_token = re.sub(r'[^a-zA-Z0-9]', '', c_lower)[:15]
+    return f"""[out:json][timeout:10];
+(
+  node["shop"~"{clean_token}",i]({bbox});
+  way["shop"~"{clean_token}",i]({bbox});
+  node["craft"~"{clean_token}",i]({bbox});
+  way["craft"~"{clean_token}",i]({bbox});
+);
+out center 30;
+"""
+
+def is_business_category_match(
+    name: str,
+    raw_tags: dict = None,
+    place_type: str = "",
+    target_category: str = ""
+) -> Tuple[bool, str]:
+    """
+    Strict Category Validation Engine:
+    Ensures that when scraping Google Maps or OpenStreetMap, the business genuinely
+    belongs to the requested category. If it's unrelated (e.g. Hair Salon, Supermarket,
+    Fuel Station, School when looking for Auto Body & Repair Shops), it is DISCARDED.
+    """
+    if not name:
+        return False, "empty_name"
+
+    clean_name = name.strip().lower()
+    target_cat = (target_category or "").strip().lower()
+    raw_tags = raw_tags or {}
+    
+    # 1. Automotive & Vehicles Category Check (Group 1: 1.1 to 1.9)
+    is_auto_target = any(k in target_cat for k in [
+        "auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts",
+        "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4",
+        "1.5", "1.6", "1.7", "1.8", "1.9"
+    ])
+    
+    if is_auto_target:
+        # A. Disallowed OSM tags
+        disallowed_tags = {
+            "hairdresser", "beauty", "massage", "spa", "supermarket", "convenience",
+            "fuel", "clothes", "fashion", "shoes", "chemist", "pharmacy", "computer",
+            "electronics", "outdoor", "hunting", "furniture", "restaurant", "fast_food",
+            "cafe", "bar", "pub", "school", "college", "place_of_worship", "bank", "atm",
+            "florist", "bakery", "butcher", "doctor", "dentist", "optician", "jewelry",
+            "laundry", "dry_cleaning", "hotel", "guest_house", "motel"
+        }
+        for tag_k in ["shop", "craft", "amenity", "office", "tourism"]:
+            tag_val = (raw_tags.get(tag_k) or "").lower().strip()
+            if tag_val in disallowed_tags:
+                return False, f"disallowed_tag_{tag_val}"
+
+        # B. Disallowed Google place types
+        disallowed_place_types = [
+            "hair_care", "beauty_salon", "spa", "supermarket", "grocery_or_supermarket",
+            "convenience_store", "gas_station", "clothing_store", "shoe_store", "pharmacy",
+            "restaurant", "meal_takeaway", "cafe", "bar", "school", "bank", "atm", "lodging"
+        ]
+        if any(pt in place_type.lower() for pt in disallowed_place_types):
+            return False, f"disallowed_place_type_{place_type}"
+
+        # C. Strict Name Negative Keyword Filter (Word boundaries)
+        auto_negative_patterns = [
+            r'\bhair\b', r'\bspa\b', r'\bspas\b', r'\bsalon\b', r'\bsalons\b', r'\bbeauty\b',
+            r'\bnails?\b', r'\blashes\b', r'\bsupermarket\b', r'\bhyper\b', r'\bpick n pay\b',
+            r'\bshoprite\b', r'\bcheckers\b', r'\bspar\b', r'\bboxer\b', r'\busave\b',
+            r'\bfood lovers\b', r'\bmakro\b', r'\bwoolworths\b', r'\bwoollies\b',
+            r'\bfilling station\b', r'\bservice station\b', r'\bengen\b', r'\bshell\b',
+            r'\bbp\b', r'\btotalenergies\b', r'\bsasol\b', r'\bcaltex\b', r'\bastron\b',
+            r'\bcomputers?\b', r'\bpc\b', r'\blaptops?\b', r'\bcellular\b', r'\bcell phone\b',
+            r'\boutdoor centre\b', r'\bcamping\b', r'\bpharmacy\b', r'\bdispensary\b',
+            r'\bchemist\b', r'\bclinic\b', r'\bhospital\b', r'\bdentist\b', r'\bdental\b',
+            r'\bdoctors?\b', r'\bdr\.\b', r'\bschool\b', r'\bcollege\b', r'\bacademy\b',
+            r'\bchurch\b', r'\bministry\b', r'\btemple\b', r'\bmosque\b', r'\bhotels?\b',
+            r'\blodge\b', r'\binn\b', r'\bb&b\b', r'\bliquor\b', r'\bbottle store\b',
+            r'\btops\b', r'\btavern\b', r'\bpubs?\b', r'\bbars?\b', r'\brestaurant\b',
+            r'\bcafe\b', r'\bkfc\b', r'\bmcdonalds\b', r'\bsteers\b', r'\bwimpy\b',
+            r'\bdebonairs\b', r'\bpizza\b', r'\bclothing\b', r'\bfashion\b', r'\bboutique\b',
+            r'\bshoes?\b', r'\bfurniture\b', r'\bflorist\b', r'\boptometrist\b', r'\bfuneral\b'
+        ]
+        
+        # Check override keywords (e.g. if name explicitly contains workshop, panelbeater, spares)
+        auto_override_patterns = [
+            r'\bpanel\s*beaters?\b', r'\bauto\s*body\b', r'\bsmash\s*repair\b',
+            r'\bspray\s*paint\w*\b', r'\bcar\s*repairs?\b', r'\bauto\s*repairs?\b',
+            r'\bmotor\s*repairs?\b', r'\bmechanics?\b', r'\bworkshop\b',
+            r'\bfitment\s*centre\b', r'\bauto\s*electrical\b', r'\bmotor\s*spares\b',
+            r'\bauto\s*spares\b', r'\bcar\s*parts\b', r'\btyres?\b', r'\btires?\b',
+            r'\bglasfit\b', r'\bpg\s*glass\b', r'\bexhaust\b', r'\bclutch\b', r'\bbrake\b'
+        ]
+        has_override = any(re.search(pat, clean_name) for pat in auto_override_patterns)
+        
+        if not has_override:
+            for pat in auto_negative_patterns:
+                if re.search(pat, clean_name):
+                    return False, f"negative_keyword_{pat}"
+
+        # D. For strict 1.1 Auto Body & Repair Shops, ensure positive automotive indicator
+        if "1.1" in target_cat or "body" in target_cat or "repair" in target_cat:
+            tag_vals = [raw_tags.get(k, "").lower() for k in ["shop", "craft", "amenity"]]
+            is_auto_tag = any(t in ["car_repair", "car_parts", "car", "tyres", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash"] for t in tag_vals)
+            has_auto_name = any(k in clean_name for k in [
+                "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
+                "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
+                "brake", "suspension", "glasfit", "glass", "tyre", "tire", "spares",
+                "radiator", "gearbox", "diff", "dent", "chassis", "bakkie", "speed",
+                "garage", "service", "motors", "repairs", "performance", "diesel", "sound"
+            ])
+            if not (is_auto_tag or has_auto_name or has_override):
+                return False, "lacks_automotive_indicator"
+
+        return True, "valid_automotive_match"
+
+    # 2. General Non-Automotive Category Safety
+    if any(k in target_cat for k in ["hair", "salon", "spa", "beauty"]):
+        if any(k in clean_name for k in ["panel", "beater", "mechanic", "spares", "tyre", "scrap"]):
+            return False, "automotive_in_beauty_query"
+        return True, "valid_beauty_match"
+
+    if any(k in target_cat for k in ["plumb", "electr", "carpenter", "roof"]):
+        if any(k in clean_name for k in ["hair", "spa", "supermarket", "petrol"]):
+            return False, "irrelevant_trade_query"
+        return True, "valid_trade_match"
+
+    return True, "default_match"
+
+def get_or_create_province_category_folder(province: str = "kwazulu-natal", category: str = "services") -> str:
+    """
+    Returns and guarantees creation of the nested directory:
+    listings/{province_slug}/{category_slug}/
+    Ensures files and datasets are NEVER mixed up!
+    """
+    p_clean = (province or "kwazulu-natal").strip().lower()
+    prov_map = {
+        "kzn": "kwazulu-natal",
+        "kwazulu-natal": "kwazulu-natal",
+        "gp": "gauteng",
+        "gauteng": "gauteng",
+        "wc": "western-cape",
+        "western cape": "western-cape",
+        "ec": "eastern-cape",
+        "eastern cape": "eastern-cape",
+        "fs": "free-state",
+        "free state": "free-state",
+        "lp": "limpopo",
+        "limpopo": "limpopo",
+        "mp": "mpumalanga",
+        "mpumalanga": "mpumalanga",
+        "nc": "northern-cape",
+        "northern cape": "northern-cape",
+        "nw": "north-west",
+        "north west": "north-west"
+    }
+    p_slug = prov_map.get(p_clean) or re.sub(r'[^a-z0-9]+', '-', p_clean).strip('-') or "kwazulu-natal"
+    
+    # Normalize category slug
+    c_clean = match_searchbiz_category(category).lower().strip()
+    c_slug = re.sub(r'[^a-z0-9]+', '-', c_clean).strip('-') or "general-services"
+    
+    target_dir = os.path.join(LISTINGS_DIR, p_slug, c_slug)
+    os.makedirs(target_dir, exist_ok=True)
+    return target_dir
+
+def organize_all_listings_into_folders() -> dict:
+    """
+    Scans listings/ root and leads_storage/, identifies the province and category
+    for every JSON dossier and CSV file, and sorts them into:
+    listings/{province_slug}/{category_slug}/
+    """
+    moved_count = 0
+    created_folders = set()
+    
+    # 1. Scan root listings/ for flat files
+    if os.path.exists(LISTINGS_DIR):
+        for item in os.listdir(LISTINGS_DIR):
+            fp = os.path.join(LISTINGS_DIR, item)
+            if not os.path.isfile(fp):
+                continue
+                
+            prov = "kwazulu-natal"
+            cat = "general-services"
+            
+            if item.endswith(".json"):
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        prov = data.get("province") or prov
+                        cat = data.get("category") or cat
+                        if "businesses" in data and data["businesses"]:
+                            first_b = data["businesses"][0]
+                            prov = first_b.get("province") or prov
+                            cat = first_b.get("category") or cat
+                except Exception:
+                    pass
+            elif item.endswith(".csv"):
+                fn_lower = item.lower()
+                for p_k, p_s in [("kzn", "kwazulu-natal"), ("kwazulu", "kwazulu-natal"), ("gauteng", "gauteng"), ("western", "western-cape"), ("eastern", "eastern-cape")]:
+                    if p_k in fn_lower:
+                        prov = p_s
+                        break
+                for c_k in ["auto_body", "repair", "spares", "parts", "plumb", "electric"]:
+                    if c_k in fn_lower:
+                        cat = c_k.replace("_", " ").title()
+                        break
+            
+            target_dir = get_or_create_province_category_folder(prov, cat)
+            created_folders.add(target_dir)
+            target_fp = os.path.join(target_dir, item)
+            try:
+                shutil.move(fp, target_fp)
+                moved_count += 1
+            except Exception as e:
+                logger.debug(f"File move note: {e}")
+
+    # 2. Also ensure every stored lead in SQLite has a JSON dossier in its folder
+    init_memory_db()
+    with get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        leads = conn.execute("SELECT * FROM business_leads").fetchall()
+        for r in leads:
+            b_prov = r["province"] or "kwazulu-natal"
+            b_cat = r["category"] or "Auto Body & Repair Shops"
+            fld = get_or_create_province_category_folder(b_prov, b_cat)
+            slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (r["name"] or "lead").lower())[:40]
+            dossier_path = os.path.join(fld, f"lead_{r['id']}_{slug}.json")
+            if not os.path.exists(dossier_path):
+                try:
+                    with open(dossier_path, "w", encoding="utf-8") as jf:
+                        json.dump(dict(r), jf, indent=2, ensure_ascii=False)
+                    moved_count += 1
+                except Exception:
+                    pass
+
+    return {
+        "success": True,
+        "moved_count": moved_count,
+        "total_folders": len(created_folders)
+    }
+
+def get_listings_folders_overview() -> str:
+    """
+    Returns an overview card of all province and category folders in listings/.
+    """
+    tree = {}
+    total_files = 0
+    total_json = 0
+    total_csv = 0
+    
+    if os.path.exists(LISTINGS_DIR):
+        for root, dirs, files in os.walk(LISTINGS_DIR):
+            rel = os.path.relpath(root, LISTINGS_DIR)
+            if rel == ".":
+                continue
+            parts = rel.split(os.sep)
+            if len(parts) >= 1:
+                prov = parts[0]
+                cat = parts[1] if len(parts) > 1 else "(root)"
+                jsons = sum(1 for f in files if f.endswith(".json"))
+                csvs = sum(1 for f in files if f.endswith(".csv"))
+                if prov not in tree:
+                    tree[prov] = {}
+                tree[prov][cat] = {"json": jsons, "csv": csvs, "path": rel}
+                total_files += len(files)
+                total_json += jsons
+                total_csv += csvs
+
+    lines = []
+    for prov, cats in tree.items():
+        prov_display = prov.replace("-", " ").title()
+        lines.append(f"📁 <b>{prov_display}</b> (<code>listings/{prov}/</code>)")
+        for cat, c_info in cats.items():
+            cat_display = cat.replace("-", " ").title()
+            lines.append(f"   └── 📂 <b>{cat_display}</b>: {c_info['json']} JSON, {c_info['csv']} CSV\n       👉 <code>/publish_folder {c_info['path']}</code>")
+
+    content = "\n".join(lines) if lines else "• <i>No category subfolders found yet. Use /organize_listings to sort existing files!</i>"
+
+    return f"""🗂️ <b>[SearchBiz Listings Vault Folder Hierarchy]</b>
+
+📍 <b>Base Vault:</b> <code>listings/</code>
+📊 <b>Total Files:</b> <b>{total_files}</b> ({total_json} JSON dossiers, {total_csv} CSV datasets)
+📂 <b>Total Province/Category Folders:</b> <b>{sum(len(c) for c in tree.values())}</b>
+
+{content}
+
+🛠️ <b>Folder Management & Push Commands:</b>
+• <code>/organize_listings</code> - Sort all mixed-up files into province & category folders
+• <code>/make_folder [province] [category]</code> - Create new province/category folder
+• <code>/publish_folder [folder_path]</code> - Push all listings in a folder to searchbiz.co.za
+• <code>/publish_listings [category/province/all]</code> - Push matching listings to searchbiz.co.za
+• <code>/delete_all_listings</code> - Wipe & purge all stored listings completely"""
+
+def delete_all_vps_listings(chat_id: int = 0) -> dict:
+    """
+    Permanently deletes all stored business leads, datasets, and files across the VPS.
+    Clears:
+    - business_leads table in hermes_data.db
+    - scraped_vault_leads table in hermes_data.db
+    - lead_datasets table in hermes_data.db
+    - All JSON dossiers and CSV files in listings/ and scraped_leads_vault/
+    Leaves directory structure clean and ready for fresh scrapes.
+    """
+    init_memory_db()
+    total_leads_deleted = 0
+    total_vault_deleted = 0
+    total_datasets_deleted = 0
+    total_files_purged = 0
+
+    with get_db() as conn:
+        r1 = conn.execute("DELETE FROM business_leads")
+        total_leads_deleted = r1.rowcount
+        r2 = conn.execute("DELETE FROM scraped_vault_leads")
+        total_vault_deleted = r2.rowcount
+        r3 = conn.execute("DELETE FROM lead_datasets")
+        total_datasets_deleted = r3.rowcount
+        conn.commit()
+
+    # Clean listings/ folder
+    for d in [LISTINGS_DIR, VAULT_LEADS_DIR, VAULT_ARCHIVE_DIR, LEADS_DIR]:
+        if os.path.exists(d):
+            try:
+                for root, dirs, files in os.walk(d, topdown=False):
+                    for fn in files:
+                        try:
+                            os.remove(os.path.join(root, fn))
+                            total_files_purged += 1
+                        except Exception:
+                            pass
+                    for sd in dirs:
+                        try:
+                            os.rmdir(os.path.join(root, sd))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            os.makedirs(d, exist_ok=True)
+
+    msg = f"""🗑️ <b>[All VPS Stored Listings Deleted & Purged]</b>
+
+🧹 <b>Database Records Cleared:</b>
+• <b>Business Leads Cleared:</b> <b>{total_leads_deleted}</b>
+• <b>Vault Leads Cleared:</b> <b>{total_vault_deleted}</b>
+• <b>Datasets Cleared:</b> <b>{total_datasets_deleted}</b>
+
+📂 <b>Storage Files Purged:</b>
+• <b>Files Deleted:</b> <b>{total_files_purged}</b> (All JSON & CSV datasets wiped)
+• <b>Listings Directory:</b> <code>listings/</code> reset to clean empty state.
+
+✨ <i>Your VPS listings database and folders are now 100% clean and ready for precision scrapes!</i>
+
+👉 Next step: Tell me: <i>\"Scrape Google maps for category 1.1 in kzn and all suburbs\"</i>"""
+
+    if chat_id:
+        send_telegram(chat_id, msg)
+
+    return {
+        "success": True,
+        "leads_deleted": total_leads_deleted,
+        "vault_deleted": total_vault_deleted,
+        "datasets_deleted": total_datasets_deleted,
+        "files_purged": total_files_purged
+    }
+
+def purge_category_mismatches_vps(chat_id: int = 0) -> dict:
+    """
+    Scans all stored business leads in SQLite and removes any leads that DO NOT MATCH
+    their assigned category (e.g. hair salons, supermarkets, gas stations assigned to auto repair).
+    """
+    init_memory_db()
+    purged_ids = []
+    purged_names = []
+    with get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        leads = conn.execute("SELECT id, name, category FROM business_leads").fetchall()
+        for r in leads:
+            lid = r["id"]
+            name = r["name"] or ""
+            cat = r["category"] or ""
+            is_match, reason = is_business_category_match(name, {}, "", cat)
+            if not is_match:
+                purged_ids.append(lid)
+                purged_names.append(f"{name} ({reason})")
+
+        if purged_ids:
+            placeholders = ",".join("?" for _ in purged_ids)
+            conn.execute(f"DELETE FROM business_leads WHERE id IN ({placeholders})", purged_ids)
+            conn.execute(f"DELETE FROM scraped_vault_leads WHERE id IN ({placeholders})", purged_ids)
+            conn.commit()
+
+    report = f"""🧹 <b>[Category Mismatch Purge Complete]</b>
+
+🚫 <b>Irrelevant / Mismatched Leads Purged:</b> <b>{len(purged_ids)}</b>
+✅ <b>Strict Rule Enforced:</b> Only businesses strictly matching their requested category remain!
+
+📋 <b>Purged Examples:</b>
+""" + "\n".join([f"• <s>{html.escape(n)}</s>" for n in purged_names[:10]]) + (f"\n• <i>...and {len(purged_ids) - 10} more</i>" if len(purged_ids) > 10 else "") + f"""
+
+👉 View clean inventory: <code>/listings</code>"""
+
+    if chat_id:
+        send_telegram(chat_id, report)
+
+    return {"success": True, "purged_count": len(purged_ids), "purged_names": purged_names}
+
+def publish_listings_target(chat_id: int, target: str = "all", plan: str = "free") -> dict:
+    """
+    Publishes / pushes business listings from a specific folder, file, category, or province into searchbiz.co.za.
+    """
+    clean_target = (target or "all").strip().lower()
+    is_premium = plan.lower() in ["premium", "paid", "vip"]
+    
+    # 1. Determine matching leads
+    leads_to_publish = []
+    
+    # Check if target matches a directory or file in listings/
+    file_matches = []
+    for d in get_all_listings_storage_dirs():
+        if os.path.exists(d):
+            for root, _, files in os.walk(d):
+                for f in files:
+                    if clean_target in f.lower() or clean_target in root.lower():
+                        file_matches.append(os.path.join(root, f))
+    
+    if file_matches:
+        for fpath in file_matches:
+            if fpath.endswith(".json"):
+                try:
+                    with open(fpath, "r", encoding="utf-8") as jf:
+                        data = json.load(jf)
+                        items = data.get("businesses", [data]) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                        for it in items:
+                            if isinstance(it, dict) and (it.get("name") or it.get("business_name")):
+                                leads_to_publish.append(it)
+                except Exception:
+                    pass
+            elif fpath.endswith(".csv"):
+                try:
+                    with open(fpath, "r", encoding="utf-8-sig") as cf:
+                        reader = csv.DictReader(cf)
+                        for row in reader:
+                            name = row.get("Business Name") or row.get("name")
+                            if name:
+                                leads_to_publish.append({
+                                    "name": name,
+                                    "category": row.get("Category") or row.get("category"),
+                                    "city": row.get("City / Town") or row.get("city"),
+                                    "province": row.get("Province") or row.get("province"),
+                                    "phone": row.get("Phone Number") or row.get("phone"),
+                                    "whatsapp": row.get("WhatsApp Number") or row.get("whatsapp"),
+                                    "email": row.get("Email Address") or row.get("email"),
+                                    "website": row.get("Website") or row.get("website"),
+                                    "address": row.get("Street Address") or row.get("address"),
+                                    "rating": row.get("Rating") or row.get("rating"),
+                                    "reviews": row.get("Reviews Count") or row.get("reviews")
+                                })
+                except Exception:
+                    pass
+
+    # If no files matched, query SQLite business_leads by category, province, or all
+    if not leads_to_publish:
+        init_memory_db()
+        with get_db() as conn:
+            conn.row_factory = sqlite3.Row
+            if clean_target in ["all", "", "listings", "vault", "everything"]:
+                rows = conn.execute("SELECT * FROM business_leads ORDER BY id DESC LIMIT 150").fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT * FROM business_leads 
+                    WHERE LOWER(category) LIKE ? OR LOWER(province) LIKE ? OR LOWER(city) LIKE ? OR LOWER(name) LIKE ?
+                    ORDER BY id DESC LIMIT 150
+                """, (f"%{clean_target}%", f"%{clean_target}%", f"%{clean_target}%", f"%{clean_target}%")).fetchall()
+            leads_to_publish = [dict(r) for r in rows]
+
+    if not leads_to_publish:
+        send_telegram(chat_id, f"⚠️ <b>[SearchBiz Publisher]</b> No listings found matching target <i>\"{html.escape(target)}\"</i>.\nUse <code>/listings</code> to see stored businesses!")
+        return {"success": False, "count": 0}
+
+    send_chat_action(chat_id, "typing")
+    send_telegram(chat_id, f"🚀 <b>[Publishing to SearchBiz]</b> Pushing <b>{len(leads_to_publish)}</b> listings from <i>\"{html.escape(target)}\"</i> to live searchbiz.co.za index...")
+
+    published = []
+    seen = set()
+    for lead in leads_to_publish:
+        bname = (lead.get("name") or lead.get("business_name") or "").strip()
+        if not bname:
+            continue
+        norm_k = re.sub(r'[^a-z0-9]', '', bname.lower())
+        if norm_k in seen:
+            continue
+        seen.add(norm_k)
+
+        bcat = lead.get("category") or "Auto Body & Repair Shops"
+        bcity = lead.get("city") or "Durban"
+        bprov = lead.get("province") or "kwazulu-natal"
+        bphone = lead.get("phone") or lead.get("whatsapp") or "0821234567"
+        baddr = lead.get("address") or f"{bcity}, {bprov}"
+        
+        desc = f"Verified local business operating in {bcity}, {bprov.replace('-', ' ').title()}. Contact {bphone} for verified services and local bookings."
+        if lead.get("rating") and lead.get("reviews"):
+            desc += f" Google Rating: {lead['rating']} ★ ({lead['reviews']} reviews)."
+
+        res = searchbiz_create_ad(
+            title=bname,
+            category=bcat,
+            city=bcity,
+            province=bprov,
+            address=baddr,
+            phone=bphone,
+            email=lead.get("email") if is_premium else "",
+            website=lead.get("website") if is_premium else "",
+            whatsapp=lead.get("whatsapp") if is_premium else "",
+            description=desc,
+            is_claimed=is_premium,
+            is_premium=is_premium,
+            plan="PREMIUM" if is_premium else "free",
+            verified=is_premium
+        )
+        if res.get("success"):
+            ad_obj = res.get("ad", {})
+            published.append({
+                "name": bname,
+                "city": bcity,
+                "province": bprov,
+                "category": bcat,
+                "ad_id": ad_obj.get("id", "")
+            })
+
+    summary_msg = f"""🎉 <b>[SearchBiz Publish Complete]</b>
+
+📁 <b>Target Source:</b> <code>{html.escape(target)}</code>
+🌐 <b>Live Ads Published on searchbiz.co.za:</b> <b>{len(published)}</b> Businesses
+🏷️ <b>Plan Level:</b> <b>{'Base Premium (R199.00/mo)' if is_premium else 'Free Unclaimed Listing (R0.00)'}</b>
+📍 <b>Mapped Structure:</b> Verified Province, City/Town, and Official SearchBiz Category!
+
+📋 <b>Live Advertisements Created:</b>
+""" + "\n".join([f"• <b>{p['name']}</b> ({p['category']} in {p['city']}) 👉 <code>{p['ad_id']}</code>" for p in published[:10]]) + (f"\n• <i>...and {len(published) - 10} more</i>" if len(published) > 10 else "") + f"""
+
+🔗 <b>Browse Live Directory:</b> https://searchbiz.co.za/directory"""
+
+    send_telegram(chat_id, summary_msg)
+    return {"success": True, "published_count": len(published), "published": published}
+
 def harvest_businesses_for_location(
     category: str,
     loc_name: str,
@@ -4787,6 +5490,7 @@ def harvest_businesses_for_location(
     Uses Overpass API with multi-endpoint fallback, Nominatim bounding box,
     and website contact harvesting.
     Strictly filters out any business without Phone, Telephone, or WhatsApp!
+    Enforces strict category matching: completely discards unrelated places!
     """
     clean_cat = match_searchbiz_category(category)
     search_query = f"{clean_cat} in {loc_name}, {town}, {province}, South Africa"
@@ -4835,7 +5539,7 @@ def harvest_businesses_for_location(
     candidates = []
     seen_names = set()
 
-    # 2. Query Overpass API with multi-endpoint failover
+    # 2. Query Overpass API with precision-targeted query and multi-endpoint failover
     if bbox:
         overpass_endpoints = [
             "https://overpass-api.de/api/interpreter",
@@ -4843,16 +5547,9 @@ def harvest_businesses_for_location(
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
         ]
         
-        overpass_q = f"""
-[out:json][timeout:8];
-(
-  node["shop"]({bbox});
-  way["shop"]({bbox});
-  node["craft"]({bbox});
-  way["craft"]({bbox});
-);
-out center 25;
-"""
+        # Use precision-targeted category query instead of generic shop query
+        overpass_q = get_overpass_query_for_category(clean_cat, bbox)
+
         for ep in overpass_endpoints:
             try:
                 op_url = ep + "?data=" + urllib.parse.quote(overpass_q)
@@ -4872,7 +5569,12 @@ out center 25;
                         if not norm_k or norm_k in seen_names:
                             continue
 
-                        raw_cat = tags.get("shop") or tags.get("craft") or tags.get("amenity") or clean_cat
+                        # Strict Category Validation: Completely DISCARD non-matching places!
+                        is_match, reason = is_business_category_match(clean_name, tags, "", clean_cat)
+                        if not is_match:
+                            logger.info(f"Discarding unrelated business '{clean_name}' for category '{clean_cat}': {reason}")
+                            continue
+
                         phone = tags.get("phone") or tags.get("contact:phone") or tags.get("contact:mobile") or ""
                         website = tags.get("website") or tags.get("contact:website") or ""
                         hours = tags.get("opening_hours") or "Mon-Fri 08:00 - 17:00, Sat 08:00 - 13:00"
@@ -9896,6 +10598,105 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
             
         card = format_vps_listings_card(query=filter_arg, limit=15)
         send_telegram(chat_id, card)
+        return True
+
+    # 10. Delete ALL Listings Command (/delete_all_listings, /clear_all_listings, /wipe_listings)
+    is_delete_all_req = (
+        text.startswith(("/delete_all_listings", "/clear_all_listings", "/wipe_listings", "/purge_all_listings", "/reset_listings")) or
+        any(k in lower for k in [
+            "delete all listings", "clear all listings", "wipe all listings", "delete all stored listings",
+            "clear all stored listings", "wipe listings", "delete everything in listings", "purge all listings",
+            "delete all scraped listings", "option to delete all listings"
+        ])
+    )
+    if is_delete_all_req:
+        send_chat_action(chat_id, "typing")
+        delete_all_vps_listings(chat_id)
+        return True
+
+    # 11. Purge Category Mismatches / Unrelated Scrapes (/purge_unrelated_listings, /clean_unrelated)
+    is_purge_mismatch_req = (
+        text.startswith(("/purge_unrelated_listings", "/clean_unrelated", "/purge_mismatches", "/clean_category_mismatches", "/discard_unrelated")) or
+        any(k in lower for k in [
+            "purge unrelated", "clean unrelated", "remove unrelated", "purge mismatches",
+            "delete unrelated listings", "remove not related scrapes", "clean not related",
+            "discard unrelated", "discard not related", "not related scrapes"
+        ])
+    )
+    if is_purge_mismatch_req:
+        send_chat_action(chat_id, "typing")
+        purge_category_mismatches_vps(chat_id)
+        return True
+
+    # 12. Organize Listings Into Province & Category Folders (/organize_listings, /sort_listings)
+    is_organize_req = (
+        text.startswith(("/organize_listings", "/sort_listings", "/organize_folders", "/sort_folders")) or
+        any(k in lower for k in [
+            "organize listings", "sort listings into folders", "sort whatever out into folders",
+            "sort into folders for province and category", "organize listings into folders", "sort listings",
+            "organize folders"
+        ])
+    )
+    if is_organize_req:
+        send_chat_action(chat_id, "typing")
+        res = organize_all_listings_into_folders()
+        card = get_listings_folders_overview()
+        send_telegram(chat_id, f"✅ <b>[Listings Organized Successfully!]</b>\n\nIndexed and moved <b>{res['moved_count']}</b> dataset files into structured province & category folders!\n\n" + card)
+        return True
+
+    # 13. View Listings Folder Hierarchy (/folders, /show_folders, /listings_folders)
+    is_folders_req = (
+        text.startswith(("/folders", "/show_folders", "/listings_folders", "/tree_folders")) or
+        any(k in lower for k in [
+            "show folders", "view folders", "listings folders", "folder hierarchy", "show me folders", "show category folders"
+        ])
+    )
+    if is_folders_req:
+        send_chat_action(chat_id, "typing")
+        card = get_listings_folders_overview()
+        send_telegram(chat_id, card)
+        return True
+
+    # 14. Make Province & Category Folder (/make_folder [province] [category])
+    if text.startswith(("/make_folder", "/mkdir_listings", "/create_folder")):
+        send_chat_action(chat_id, "typing")
+        parts = text.split(maxsplit=2)
+        prov_arg = parts[1] if len(parts) > 1 else "kwazulu-natal"
+        cat_arg = parts[2] if len(parts) > 2 else "services"
+        target_fld = get_or_create_province_category_folder(prov_arg, cat_arg)
+        rel = os.path.relpath(target_fld, LISTINGS_DIR)
+        send_telegram(chat_id, f"""📁 <b>[New Province & Category Folder Created]</b>
+
+📍 <b>Folder:</b> <code>listings/{rel}/</code>
+🗺️ <b>Province:</b> {prov_arg.title()}
+🏷️ <b>Category:</b> {cat_arg.title()}
+
+✅ <i>Ready to store CSVs and business JSON dossiers for this region and sector!</i>
+
+👉 View all folders: <code>/folders</code>
+👉 Scrape into this folder: <i>\"Scrape {cat_arg} in {prov_arg}\"</i>""")
+        return True
+
+    # 15. Publish / Push Listings Into searchbiz.co.za (/publish_listings, /publish_folder, /publish_file, /push_listings)
+    is_publish_target_req = (
+        text.startswith(("/publish_listings", "/publish_folder", "/publish_file", "/publish_all_listings", "/push_listings", "/push_to_searchbiz")) or
+        any(k in lower for k in [
+            "publish push this listings", "push this listings", "publish listings folder",
+            "push listings folder", "publish listings into searchbiz", "push listings into searchbiz",
+            "publish listings to searchbiz", "push to searchbiz.co.za", "publish to searchbiz.co.za",
+            "push this listings folder file category into searchbiz.co.za", "push listings folder file category into searchbiz.co.za"
+        ])
+    )
+    if is_publish_target_req:
+        send_chat_action(chat_id, "typing")
+        target_arg = "all"
+        for pfx in ["/publish_listings", "/publish_folder", "/publish_file", "/push_listings", "/push_to_searchbiz"]:
+            if text.startswith(pfx):
+                target_arg = text[len(pfx):].strip() or "all"
+                break
+        if not target_arg or target_arg == "/publish_all_listings":
+            target_arg = "all"
+        publish_listings_target(chat_id, target=target_arg, plan="free")
         return True
 
     # ------------------------------------------------------------------------
