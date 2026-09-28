@@ -139,7 +139,10 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
             </h3>
             <div className="space-y-2.5 text-sm">
               <Link href="/directory" className="block hover:text-emerald-400 transition-colors">Home Directory</Link>
-              <Link href="/categories" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">All Categories</Link>
+              <Link href="/categories" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400 flex items-center justify-between">
+                <span>All Categories</span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">280+ Listed</span>
+              </Link>
               <Link href="/posts" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SHOWOFS Feed</Link>
               <Link href="/pricing" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SearchBiz.co.za Pricing</Link>
               <Link href="/tools" className="block hover:text-indigo-400 transition-colors font-bold text-indigo-400">SearchBiz.co.za Tools</Link>
@@ -174,6 +177,47 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
             </div>
           </div>
 
+        </div>
+
+        {/* GOOGLE BUSINESS PROFILE CATEGORIES INDEX BAR */}
+        <div className="py-6 border-b border-slate-800 text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex items-center gap-2 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Popular Google Business Categories:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-slate-400">
+              <Link href="/categories?q=Auto+Body" className="hover:text-emerald-400 transition-colors">Auto Body & Repair</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Plumbing" className="hover:text-emerald-400 transition-colors">Plumbing Services</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Electrical" className="hover:text-emerald-400 transition-colors">Electrical Contractors</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Solar" className="hover:text-emerald-400 transition-colors">Solar & Backup Power</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Security" className="hover:text-emerald-400 transition-colors">Security & Armed Response</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Legal" className="hover:text-emerald-400 transition-colors">Legal & Attorneys</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Accounting" className="hover:text-emerald-400 transition-colors">Accounting & Tax</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Medical" className="hover:text-emerald-400 transition-colors">Medical & Dental</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Veterinary" className="hover:text-emerald-400 transition-colors">Veterinary Clinics</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Borehole" className="hover:text-emerald-400 transition-colors">Borehole & Irrigation</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Cleaning" className="hover:text-emerald-400 transition-colors">Cleaning & Janitorial</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Web+Design" className="hover:text-emerald-400 transition-colors">Web Design & Marketing</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories?q=Guest+Houses" className="hover:text-emerald-400 transition-colors">Guest Houses & Lodges</Link>
+              <span className="text-slate-700">•</span>
+              <Link href="/categories" className="text-emerald-400 font-bold hover:underline">
+                View All 20 Sectors & 280+ Categories &rarr;
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* BOTTOM LEGAL BAR: TERMS, PRIVACY POLICY, DISCLAIMER ALL PLACED NEXT TO EACH OTHER */}

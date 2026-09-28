@@ -3,7 +3,7 @@ import CategoriesClient from './categories-client';
 
 export const metadata: Metadata = {
   title: 'All Business Categories | South Africa Directory | SearchBiz.co.za',
-  description: 'Explore all 18+ business industries and 150+ specialized categories across South Africa. Find verified plumbers, mechanics, lawyers, medical practitioners, accountants, builders, and local professionals.',
+  description: 'Explore all 20 business industries and 280+ specialized Google Business Profile categories across South Africa. Find verified plumbers, mechanics, solar installers, lawyers, medical practitioners, accountants, builders, and local professionals.',
   keywords: 'South Africa business categories, directory categories, tradesmen, professional services, find local business SA',
   openGraph: {
     title: 'All Business Categories | SearchBiz.co.za',

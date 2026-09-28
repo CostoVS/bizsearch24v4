@@ -42,6 +42,16 @@ export default function CategoriesClient() {
     });
     setExpandedGroups(initialExpanded);
 
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const qParam = params.get('q');
+        if (qParam) {
+          setSearchQuery(qParam.trim());
+        }
+      } catch (e) {}
+    }
+
     // Calculate listing counts for categories
     if (typeof window !== 'undefined') {
       try {
@@ -168,7 +178,7 @@ export default function CategoriesClient() {
                 Numbered <span className="text-emerald-400">Business Categories</span>
               </h1>
               <p className="mt-3 text-slate-300 text-sm sm:text-base max-w-2xl font-light leading-relaxed">
-                Explore all {CATEGORIES_STRUCTURED.length} primary industry categories (1 to {CATEGORIES_STRUCTURED.length}) and {totalSubcategoriesCount} numbered subcategories (1.1, 1.2, ..., 20.6) across all 9 South African provinces.
+                Explore all {CATEGORIES_STRUCTURED.length} primary industry categories (1 to {CATEGORIES_STRUCTURED.length}) and {totalSubcategoriesCount} specialized subcategories across all 9 South African provinces, fully aligned with Google Business Profile standards.
               </p>
             </div>
 

@@ -49,7 +49,18 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Oil & Lube Stations",
       "Parts & Accessories",
       "Tire Shops",
-      "Towing & Roadside Assistance"
+      "Towing & Roadside Assistance",
+      "Auto Electrical & Diagnostic Services",
+      "Auto Glass Repair & Windscreen Replacement",
+      "Brake, Clutch & Suspension Services",
+      "Transmission, Gearbox & Differential Repair",
+      "Truck, Bus & Commercial Vehicle Repair",
+      "Used Car Dealerships & Auto Auctions",
+      "Petrol Stations & Service Stations",
+      "Vehicle Inspection & Roadworthy Testing",
+      "Auto Air Conditioning & Car Audio Fitment",
+      "Boat & Marine Vehicle Dealers & Repair",
+      "Trailer & Caravan Sales & Repair"
     ]
   },
   {
@@ -63,7 +74,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Massage Therapy",
       "Nail Salons",
       "Tanning & Estheticians",
-      "Tattoo & Piercing Studios"
+      "Tattoo & Piercing Studios",
+      "Hair Extensions, Weaves & Braiding Salons",
+      "Medical Spas & Aesthetic Skin Clinics",
+      "Eyebrow, Eyelash & Microblading Studios",
+      "Laser Hair Removal & Skin Rejuvenation",
+      "Holistic Wellness & Aromatherapy",
+      "Weight Loss, Slimming & Body Contouring Clinics"
     ]
   },
   {
@@ -78,7 +95,17 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Legal Services & Law Firms",
       "Office Supply & Equipment",
       "Printing & Graphic Design",
-      "Tax Preparation"
+      "Tax Preparation",
+      "Security Guard, Armed Response & Patrol Services",
+      "Web Design & Digital Marketing Agencies",
+      "Architecture & Architectural Drafting Services",
+      "Engineering Consultants (Civil, Mechanical & Structural)",
+      "Sign Shop & Commercial Signage",
+      "Translation, Interpreting & Notary Public Services",
+      "Private Investigation & Detective Services",
+      "Debt Collection & Credit Recovery Agencies",
+      "Waste Management, Recycling & Environmental Services",
+      "Call Centres & BPO Services"
     ]
   },
   {
@@ -89,7 +116,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Disaster Restoration",
       "Dry Cleaning & Laundry",
       "Residential House Cleaning",
-      "Window Cleaning"
+      "Window Cleaning",
+      "Pressure Washing & High-Pressure Jetting",
+      "Roof & Gutter Cleaning Services",
+      "Chimney Sweep, Duct & Air Vent Cleaning",
+      "Septic Tank, Drainage & Sanitation Services",
+      "Industrial Cleaning & Factory Degreasing",
+      "Deep Cleaning & Move-In / Move-Out Services"
     ]
   },
   {
@@ -100,7 +133,14 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Non-Profit Organisations",
       "Post Offices & Shipping Centres",
       "Public Utilities",
-      "Religious & Places of Worship"
+      "Religious & Places of Worship",
+      "Funeral Homes, Cemeteries & Cremation Services",
+      "Animal Shelters & Pet Rescue Organisations",
+      "Government & Municipal Offices",
+      "Embassies, Consulates & High Commissions",
+      "Public Parks, Botanical Gardens & Nature Reserves",
+      "Youth Clubs & Community Welfare Centres",
+      "Civic Centres & Public Halls"
     ]
   },
   {
@@ -114,7 +154,18 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "HVAC (Heating & Cooling)",
       "Painting & Wallpapering",
       "Plumbing Services",
-      "Roofing & Siding"
+      "Roofing & Siding",
+      "Solar Energy & Backup Power Installations",
+      "Borehole Drilling & Irrigation Contractors",
+      "Fencing, Gates & Automated Access Control",
+      "Flooring, Tiling & Paving Contractors",
+      "Waterproofing & Damp Proofing Specialists",
+      "Glazing & Glass Installation",
+      "Plastering, Drywall & Suspended Ceilings",
+      "Steel Construction, Welding & Metal Framing",
+      "Scaffolding & Formwork Equipment Hire",
+      "Insulation & Acoustic Soundproofing",
+      "Kitchen & Bathroom Renovations"
     ]
   },
   {
@@ -126,7 +177,14 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Driving Schools",
       "Language & Tutoring Schools",
       "Primary & Secondary Schools",
-      "Vocational & Trade Schools"
+      "Vocational & Trade Schools",
+      "Flight Schools & Aviation Academies",
+      "Beauty, Barber & Cosmetology Academies",
+      "Special Needs & Inclusive Education Schools",
+      "Computer, IT & Coding Academies",
+      "Culinary & Hospitality Training Academies",
+      "Online & Distance Learning Centres",
+      "Sports Academies & Martial Arts Schools"
     ]
   },
   {
@@ -139,7 +197,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Festivals & Fairs",
       "Movie Theatres",
       "Museums & Art Galleries",
-      "Nightclubs & Dance Halls"
+      "Nightclubs & Dance Halls",
+      "Game Lodges, Safaris & Wildlife Reserves",
+      "Zoos, Aquariums & Reptile Parks",
+      "Escape Rooms, Laser Tag & Paintball Arenas",
+      "Go-Kart Tracks & Motor Racing Circuits",
+      "Live Theatres & Performing Arts Centres",
+      "Water Parks, Trampoline Parks & Adventure Centres"
     ]
   },
   {
@@ -151,7 +215,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Event Planners",
       "Party Supply Rentals",
       "Photography & Videography",
-      "Venues & Banquet Halls"
+      "Venues & Banquet Halls",
+      "Audio Visual, Stage & Lighting Hire",
+      "Florists & Wedding Floral Design",
+      "Photo Booth Hire & Event Media",
+      "Wedding Invitations & Event Stationery",
+      "Event Security & Crowd Management",
+      "Mobile Bars & Cocktail Catering"
     ]
   },
   {
@@ -161,7 +231,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Insurance Agents & Brokers",
       "Loans & Financing",
       "Mortgage Brokers",
-      "Wealth Management & Advisors"
+      "Wealth Management & Advisors",
+      "Currency Exchange & Foreign Forex",
+      "Pawn Shops & Collateral Asset Loans",
+      "Financial Planning & Retirement Advisory",
+      "Debt Counselling & Debt Review",
+      "Stockbrokers, Investment Firms & Venture Capital",
+      "Micro-Finance & Money Lending Services"
     ]
   },
   {
@@ -174,7 +250,15 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Fast Food & Drive-Thrus",
       "Food Trucks",
       "Full-Service Restaurants",
-      "Juice Bars & Smoothies"
+      "Juice Bars & Smoothies",
+      "Steakhouses & Braai / BBQ Restaurants",
+      "Pizzerias & Italian Restaurants",
+      "Seafood & Fish Restaurants",
+      "Asian, Chinese, Indian & Sushi Restaurants",
+      "Ice Cream, Gelato & Frozen Yoghurt Parlours",
+      "Halal & Kosher Dining",
+      "Delicatessens & Gourmet Food Pantries",
+      "Buffet & Carvery Restaurants"
     ]
   },
   {
@@ -185,7 +269,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Gas Station Markets",
       "Health & Organic Food Stores",
       "Liquor, Wine & Beer Stores",
-      "Supermarkets & Grocery Stores"
+      "Supermarkets & Grocery Stores",
+      "Butcheries, Meat Markets & Biltong Shops",
+      "Fishmongers & Seafood Markets",
+      "Fresh Fruit, Vegetable & Farm Stalls",
+      "Spice, Herb & Specialty Food Stores",
+      "Wholesale Cash & Carry Grocers",
+      "Asian & International Food Supermarkets"
     ]
   },
   {
@@ -199,7 +289,19 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Optometrists & Eye Care",
       "Pharmacies",
       "Physical Therapy & Rehab",
-      "Primary Care & Family Doctors"
+      "Primary Care & Family Doctors",
+      "Veterinary Clinics & Animal Hospitals",
+      "Physiotherapists & Biokineticists",
+      "Pediatricians & Child Healthcare Specialists",
+      "Gynaecologists, Obstetricians & Maternity Clinics",
+      "Dermatologists & Skin Specialists",
+      "Orthodontists & Oral Surgeons",
+      "Audiologists & Hearing Aid Specialists",
+      "Homeopathy, Acupuncture & Alternative Medicine",
+      "Occupational Therapy & Speech Pathology",
+      "Ambulance & Emergency Paramedic Services",
+      "Podiatrists & Foot Care Clinics",
+      "Dietitians & Nutritionists"
     ]
   },
   {
@@ -213,7 +315,16 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Locksmiths",
       "Pest Control",
       "Pool Maintenance & Construction",
-      "Tree Services"
+      "Tree Services",
+      "Home Security, Alarm Systems & CCTV",
+      "Solar, Inverters & Backup Batteries",
+      "Water Tanks, Rainwater Harvesting & Filtration",
+      "Blinds, Curtains, Awnings & Shutters",
+      "Kitchen & Bathroom Cupboard Remodelling",
+      "Plant Nurseries & Garden Centres",
+      "Upholstery & Furniture Restoration",
+      "Garage Doors & Gate Automation",
+      "Carpet, Rug & Laminate Flooring Stores"
     ]
   },
   {
@@ -224,7 +335,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Hostels",
       "Hotels & Motels",
       "Resorts & Luxury Lodges",
-      "Travel Agencies & Tour Guides"
+      "Travel Agencies & Tour Guides",
+      "Guest Houses & Boutique Country Inns",
+      "Safari Lodges & Bush Camps",
+      "Self-Catering Cottages & Holiday Apartments",
+      "Airport Transfers, Shuttles & Chauffeur Services",
+      "Visa, Passport & Immigration Travel Consultancies",
+      "Boat Cruises & Yacht Charters"
     ]
   },
   {
@@ -236,7 +353,15 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Heavy Equipment & Machinery",
       "Metal Fabrication",
       "Textile & Apparel Mills",
-      "Wholesale Distributors"
+      "Wholesale Distributors",
+      "Agricultural Machinery, Farming & Agro-Industry",
+      "Packaging & Box Manufacturers",
+      "Mining, Mineral Processing & Drilling Equipment",
+      "Timber, Wood Products & Sawmills",
+      "CNC Machining, Tool & Die Making",
+      "Plastic Injection Moulding & Extrusions",
+      "Steel Foundries, Scrap Metal & Recycling",
+      "Industrial Equipment Repair & Maintenance"
     ]
   },
   {
@@ -247,7 +372,14 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Property Management",
       "Real Estate Agencies",
       "Residential Moving Companies",
-      "Storage Facilities"
+      "Storage Facilities",
+      "Student Accommodation & Campus Residences",
+      "Sectional Title & Body Corporate Management",
+      "Real Estate Appraisers & Property Valuers",
+      "Holiday Home Rentals & Short-Term Lets",
+      "Land Surveyors & Geomatic Engineers",
+      "Conveyancers & Real Estate Attorneys",
+      "Relocation & Commercial Office Moving"
     ]
   },
   {
@@ -261,7 +393,18 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Jewellery & Watches",
       "Pet Shops & Supplies",
       "Sporting Goods Stores",
-      "Toy & Hobby Shops"
+      "Toy & Hobby Shops",
+      "Mobile Phone & Cellular Repair Shops",
+      "Antique Stores & Vintage Curios",
+      "Pawn Shops & Second-Hand Thrift",
+      "Vape Shops, Tobacconists & Cigars",
+      "Fabric, Haberdashery & Sewing Stores",
+      "Hardware & Building Material Suppliers",
+      "Musical Instruments & Audio Gear Stores",
+      "Baby, Nursery & Maternity Stores",
+      "Cosmetics, Perfumes & Beauty Supplies",
+      "Art Supplies & Picture Framing Shops",
+      "Outdoor, Camping & Hunting Gear"
     ]
   },
   {
@@ -273,7 +416,14 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Martial Arts & Boxing Studios",
       "Personal Training",
       "Swimming Pools & Centres",
-      "Yoga & Pilates Studios"
+      "Yoga & Pilates Studios",
+      "Tennis, Squash & Padel Clubs",
+      "Dance Studios & Dancing Academies",
+      "Scuba Diving, Surfing & Water Sports Clubs",
+      "Rock Climbing & Bouldering Gyms",
+      "Sports Academies & Youth Athletic Clubs",
+      "Equestrian Centres & Horse Riding Schools",
+      "Crossfit & Functional Training Boxes"
     ]
   },
   {
@@ -284,7 +434,13 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Freight & Cargo Shipping",
       "Public Transit & Buses",
       "Taxi & Ride-Share Services",
-      "Warehousing"
+      "Warehousing",
+      "Heavy Breakdown & Vehicle Towing Services",
+      "Long-Distance & Cross-Border Freight Haulage",
+      "Vehicle Tracking & Fleet Telematics Solutions",
+      "Boat, Marine & Port Shipping Services",
+      "Moving & Relocation Services",
+      "Cold Chain & Refrigerated Transport"
     ]
   }
 ];

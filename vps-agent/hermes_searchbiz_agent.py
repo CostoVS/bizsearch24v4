@@ -7043,82 +7043,157 @@ def send_telegram_dual(chat_id: int, text: str, voice_override: Optional[str] = 
 CATEGORIES_145_TREE = [
   {"group": "1. AUTOMOTIVE & VEHICLES", "code": "1", "cleanGroup": "AUTOMOTIVE & VEHICLES", "subcategories": [
     "1.1 Auto Body & Repair Shops", "1.2 Car Wash & Detailing", "1.3 Car Rental Agencies", "1.4 Dealerships (New & Used)",
-    "1.5 Motorcycle & Powersports", "1.6 Oil & Lube Stations", "1.7 Parts & Accessories", "1.8 Tire Shops", "1.9 Towing & Roadside Assistance"
+    "1.5 Motorcycle & Powersports", "1.6 Oil & Lube Stations", "1.7 Parts & Accessories", "1.8 Tire Shops", "1.9 Towing & Roadside Assistance",
+    "1.10 Auto Electrical & Diagnostic Services", "1.11 Auto Glass Repair & Windscreen Replacement", "1.12 Brake, Clutch & Suspension Services",
+    "1.13 Transmission, Gearbox & Differential Repair", "1.14 Truck, Bus & Commercial Vehicle Repair", "1.15 Used Car Dealerships & Auto Auctions",
+    "1.16 Petrol Stations & Service Stations", "1.17 Vehicle Inspection & Roadworthy Testing", "1.18 Auto Air Conditioning & Car Audio Fitment",
+    "1.19 Boat & Marine Vehicle Dealers & Repair", "1.20 Trailer & Caravan Sales & Repair"
   ]},
   {"group": "2. BEAUTY & PERSONAL CARE", "code": "2", "cleanGroup": "BEAUTY & PERSONAL CARE", "subcategories": [
     "2.1 Barbershops & Hair Salons", "2.2 Cosmetics & Skincare", "2.3 Day Spas & Wellness Centres", "2.4 Hair Removal & Waxing",
-    "2.5 Makeup Artists", "2.6 Massage Therapy", "2.7 Nail Salons", "2.8 Tanning & Estheticians", "2.9 Tattoo & Piercing Studios"
+    "2.5 Makeup Artists", "2.6 Massage Therapy", "2.7 Nail Salons", "2.8 Tanning & Estheticians", "2.9 Tattoo & Piercing Studios",
+    "2.10 Hair Extensions, Weaves & Braiding Salons", "2.11 Medical Spas & Aesthetic Skin Clinics", "2.12 Eyebrow, Eyelash & Microblading Studios",
+    "2.13 Laser Hair Removal & Skin Rejuvenation", "2.14 Holistic Wellness & Aromatherapy", "2.15 Weight Loss, Slimming & Body Contouring Clinics"
   ]},
   {"group": "3. BUSINESS SERVICES", "code": "3", "cleanGroup": "BUSINESS SERVICES", "subcategories": [
     "3.1 Accounting & Bookkeeping", "3.2 Advertising, Marketing & PR", "3.3 Consultants (Management & Strategy)", "3.4 Co-Working Spaces",
     "3.5 Employment & HR Agencies", "3.6 IT Support & Tech Services", "3.7 Legal Services & Law Firms", "3.8 Office Supply & Equipment",
-    "3.9 Printing & Graphic Design", "3.10 Tax Preparation"
+    "3.9 Printing & Graphic Design", "3.10 Tax Preparation", "3.11 Security Guard, Armed Response & Patrol Services",
+    "3.12 Web Design & Digital Marketing Agencies", "3.13 Architecture & Architectural Drafting Services",
+    "3.14 Engineering Consultants (Civil, Mechanical & Structural)", "3.15 Sign Shop & Commercial Signage",
+    "3.16 Translation, Interpreting & Notary Public Services", "3.17 Private Investigation & Detective Services",
+    "3.18 Debt Collection & Credit Recovery Agencies", "3.19 Waste Management, Recycling & Environmental Services",
+    "3.20 Call Centres & BPO Services"
   ]},
   {"group": "4. CLEANING & JANITORIAL", "code": "4", "cleanGroup": "CLEANING & JANITORIAL", "subcategories": [
     "4.1 Carpet & Upholstery Cleaning", "4.2 Commercial & Office Cleaning", "4.3 Disaster Restoration", "4.4 Dry Cleaning & Laundry",
-    "4.5 Residential House Cleaning", "4.6 Window Cleaning"
+    "4.5 Residential House Cleaning", "4.6 Window Cleaning", "4.7 Pressure Washing & High-Pressure Jetting",
+    "4.8 Roof & Gutter Cleaning Services", "4.9 Chimney Sweep, Duct & Air Vent Cleaning",
+    "4.10 Septic Tank, Drainage & Sanitation Services", "4.11 Industrial Cleaning & Factory Degreasing",
+    "4.12 Deep Cleaning & Move-In / Move-Out Services"
   ]},
   {"group": "5. COMMUNITY & PUBLIC", "code": "5", "cleanGroup": "COMMUNITY & PUBLIC", "subcategories": [
     "5.1 Fire & Police Stations", "5.2 Libraries & Community Centres", "5.3 Non-Profit Organisations", "5.4 Post Offices & Shipping Centres",
-    "5.5 Public Utilities", "5.6 Religious & Places of Worship"
+    "5.5 Public Utilities", "5.6 Religious & Places of Worship", "5.7 Funeral Homes, Cemeteries & Cremation Services",
+    "5.8 Animal Shelters & Pet Rescue Organisations", "5.9 Government & Municipal Offices", "5.10 Embassies, Consulates & High Commissions",
+    "5.11 Public Parks, Botanical Gardens & Nature Reserves", "5.12 Youth Clubs & Community Welfare Centres", "5.13 Civic Centres & Public Halls"
   ]},
   {"group": "6. CONSTRUCTION & TRADES", "code": "6", "cleanGroup": "CONSTRUCTION & TRADES", "subcategories": [
     "6.1 Carpentry & Woodworking", "6.2 Concrete & Masonry", "6.3 Demolition Services", "6.4 Electrical Contractors",
-    "6.5 General Contractors", "6.6 HVAC (Heating & Cooling)", "6.7 Painting & Wallpapering", "6.8 Plumbing Services", "6.9 Roofing & Siding"
+    "6.5 General Contractors", "6.6 HVAC (Heating & Cooling)", "6.7 Painting & Wallpapering", "6.8 Plumbing Services", "6.9 Roofing & Siding",
+    "6.10 Solar Energy & Backup Power Installations", "6.11 Borehole Drilling & Irrigation Contractors",
+    "6.12 Fencing, Gates & Automated Access Control", "6.13 Flooring, Tiling & Paving Contractors",
+    "6.14 Waterproofing & Damp Proofing Specialists", "6.15 Glazing & Glass Installation",
+    "6.16 Plastering, Drywall & Suspended Ceilings", "6.17 Steel Construction, Welding & Metal Framing",
+    "6.18 Scaffolding & Formwork Equipment Hire", "6.19 Insulation & Acoustic Soundproofing", "6.20 Kitchen & Bathroom Renovations"
   ]},
   {"group": "7. EDUCATION & TRAINING", "code": "7", "cleanGroup": "EDUCATION & TRAINING", "subcategories": [
     "7.1 Art & Music Schools", "7.2 Colleges & Universities", "7.3 Daycare & Preschools", "7.4 Driving Schools",
-    "7.5 Language & Tutoring Schools", "7.6 Primary & Secondary Schools", "7.7 Vocational & Trade Schools"
+    "7.5 Language & Tutoring Schools", "7.6 Primary & Secondary Schools", "7.7 Vocational & Trade Schools",
+    "7.8 Flight Schools & Aviation Academies", "7.9 Beauty, Barber & Cosmetology Academies",
+    "7.10 Special Needs & Inclusive Education Schools", "7.11 Computer, IT & Coding Academies",
+    "7.12 Culinary & Hospitality Training Academies", "7.13 Online & Distance Learning Centres",
+    "7.14 Sports Academies & Martial Arts Schools"
   ]},
   {"group": "8. ENTERTAINMENT & RECREATION", "code": "8", "cleanGroup": "ENTERTAINMENT & RECREATION", "subcategories": [
     "8.1 Amusement Parks & Arcades", "8.2 Bowling Alleys & Skating Rinks", "8.3 Casinos & Gambling", "8.4 Concert Halls & Venues",
-    "8.5 Festivals & Fairs", "8.6 Movie Theatres", "8.7 Museums & Art Galleries", "8.8 Nightclubs & Dance Halls"
+    "8.5 Festivals & Fairs", "8.6 Movie Theatres", "8.7 Museums & Art Galleries", "8.8 Nightclubs & Dance Halls",
+    "8.9 Game Lodges, Safaris & Wildlife Reserves", "8.10 Zoos, Aquariums & Reptile Parks",
+    "8.11 Escape Rooms, Laser Tag & Paintball Arenas", "8.12 Go-Kart Tracks & Motor Racing Circuits",
+    "8.13 Live Theatres & Performing Arts Centres", "8.14 Water Parks, Trampoline Parks & Adventure Centres"
   ]},
   {"group": "9. EVENTS & WEDDINGS", "code": "9", "cleanGroup": "EVENTS & WEDDINGS", "subcategories": [
     "9.1 Bridal Shops", "9.2 Catering Services", "9.3 DJs & Live Entertainment", "9.4 Event Planners",
-    "9.5 Party Supply Rentals", "9.6 Photography & Videography", "9.7 Venues & Banquet Halls"
+    "9.5 Party Supply Rentals", "9.6 Photography & Videography", "9.7 Venues & Banquet Halls",
+    "9.8 Audio Visual, Stage & Lighting Hire", "9.9 Florists & Wedding Floral Design",
+    "9.10 Photo Booth Hire & Event Media", "9.11 Wedding Invitations & Event Stationery",
+    "9.12 Event Security & Crowd Management", "9.13 Mobile Bars & Cocktail Catering"
   ]},
   {"group": "10. FINANCIAL SERVICES", "code": "10", "cleanGroup": "FINANCIAL SERVICES", "subcategories": [
-    "10.1 Banks & Credit Unions", "10.2 Insurance Agents & Brokers", "10.3 Loans & Financing", "10.4 Mortgage Brokers", "10.5 Wealth Management & Advisors"
+    "10.1 Banks & Credit Unions", "10.2 Insurance Agents & Brokers", "10.3 Loans & Financing", "10.4 Mortgage Brokers", "10.5 Wealth Management & Advisors",
+    "10.6 Currency Exchange & Foreign Forex", "10.7 Pawn Shops & Collateral Asset Loans",
+    "10.8 Financial Planning & Retirement Advisory", "10.9 Debt Counselling & Debt Review",
+    "10.10 Stockbrokers, Investment Firms & Venture Capital", "10.11 Micro-Finance & Money Lending Services"
   ]},
   {"group": "11. FOOD & DINING", "code": "11", "cleanGroup": "FOOD & DINING", "subcategories": [
     "11.1 Bakeries & Dessert Shops", "11.2 Bars, Pubs & Taverns", "11.3 Breweries, Distilleries & Wineries", "11.4 Cafes & Coffee Shops",
-    "11.5 Fast Food & Drive-Thrus", "11.6 Food Trucks", "11.7 Full-Service Restaurants", "11.8 Juice Bars & Smoothies"
+    "11.5 Fast Food & Drive-Thrus", "11.6 Food Trucks", "11.7 Full-Service Restaurants", "11.8 Juice Bars & Smoothies",
+    "11.9 Steakhouses & Braai / BBQ Restaurants", "11.10 Pizzerias & Italian Restaurants", "11.11 Seafood & Fish Restaurants",
+    "11.12 Asian, Chinese, Indian & Sushi Restaurants", "11.13 Ice Cream, Gelato & Frozen Yoghurt Parlours",
+    "11.14 Halal & Kosher Dining", "11.15 Delicatessens & Gourmet Food Pantries", "11.16 Buffet & Carvery Restaurants"
   ]},
   {"group": "12. GROCERIES & MARKETS", "code": "12", "cleanGroup": "GROCERIES & MARKETS", "subcategories": [
     "12.1 Convenience Stores", "12.2 Farmers Markets", "12.3 Gas Station Markets", "12.4 Health & Organic Food Stores",
-    "12.5 Liquor, Wine & Beer Stores", "12.6 Supermarkets & Grocery Stores"
+    "12.5 Liquor, Wine & Beer Stores", "12.6 Supermarkets & Grocery Stores",
+    "12.7 Butcheries, Meat Markets & Biltong Shops", "12.8 Fishmongers & Seafood Markets",
+    "12.9 Fresh Fruit, Vegetable & Farm Stalls", "12.10 Spice, Herb & Specialty Food Stores",
+    "12.11 Wholesale Cash & Carry Grocers", "12.12 Asian & International Food Supermarkets"
   ]},
   {"group": "13. HEALTH & MEDICAL", "code": "13", "cleanGroup": "HEALTH & MEDICAL", "subcategories": [
     "13.1 Chiropractors", "13.2 Dental Clinics", "13.3 Hospitals & Emergency Rooms", "13.4 Medical Labs & Imaging",
-    "13.5 Mental Health & Counselling", "13.6 Optometrists & Eye Care", "13.7 Pharmacies", "13.8 Physical Therapy & Rehab", "13.9 Primary Care & Family Doctors"
+    "13.5 Mental Health & Counselling", "13.6 Optometrists & Eye Care", "13.7 Pharmacies", "13.8 Physical Therapy & Rehab", "13.9 Primary Care & Family Doctors",
+    "13.10 Veterinary Clinics & Animal Hospitals", "13.11 Physiotherapists & Biokineticists",
+    "13.12 Pediatricians & Child Healthcare Specialists", "13.13 Gynaecologists, Obstetricians & Maternity Clinics",
+    "13.14 Dermatologists & Skin Specialists", "13.15 Orthodontists & Oral Surgeons",
+    "13.16 Audiologists & Hearing Aid Specialists", "13.17 Homeopathy, Acupuncture & Alternative Medicine",
+    "13.18 Occupational Therapy & Speech Pathology", "13.19 Ambulance & Emergency Paramedic Services",
+    "13.20 Podiatrists & Foot Care Clinics", "13.21 Dietitians & Nutritionists"
   ]},
   {"group": "14. HOME & GARDEN", "code": "14", "cleanGroup": "HOME & GARDEN", "subcategories": [
     "14.1 Appliance Repair", "14.2 Handyman Services", "14.3 Hardware & Tool Rental", "14.4 Interior Design & Decor",
-    "14.5 Landscaping & Lawn Care", "14.6 Locksmiths", "14.7 Pest Control", "14.8 Pool Maintenance & Construction", "14.9 Tree Services"
+    "14.5 Landscaping & Lawn Care", "14.6 Locksmiths", "14.7 Pest Control", "14.8 Pool Maintenance & Construction", "14.9 Tree Services",
+    "14.10 Home Security, Alarm Systems & CCTV", "14.11 Solar, Inverters & Backup Batteries",
+    "14.12 Water Tanks, Rainwater Harvesting & Filtration", "14.13 Blinds, Curtains, Awnings & Shutters",
+    "14.14 Kitchen & Bathroom Cupboard Remodelling", "14.15 Plant Nurseries & Garden Centres",
+    "14.16 Upholstery & Furniture Restoration", "14.17 Garage Doors & Gate Automation",
+    "14.18 Carpet, Rug & Laminate Flooring Stores"
   ]},
   {"group": "15. HOTELS & TRAVEL", "code": "15", "cleanGroup": "HOTELS & TRAVEL", "subcategories": [
-    "15.1 Bed & Breakfasts", "15.2 Campgrounds & RV Parks", "15.3 Hostels", "15.4 Hotels & Motels", "15.5 Resorts & Luxury Lodges", "15.6 Travel Agencies & Tour Guides"
+    "15.1 Bed & Breakfasts", "15.2 Campgrounds & RV Parks", "15.3 Hostels", "15.4 Hotels & Motels", "15.5 Resorts & Luxury Lodges", "15.6 Travel Agencies & Tour Guides",
+    "15.7 Guest Houses & Boutique Country Inns", "15.8 Safari Lodges & Bush Camps",
+    "15.9 Self-Catering Cottages & Holiday Apartments", "15.10 Airport Transfers, Shuttles & Chauffeur Services",
+    "15.11 Visa, Passport & Immigration Travel Consultancies", "15.12 Boat Cruises & Yacht Charters"
   ]},
   {"group": "16. MANUFACTURING & INDUSTRIAL", "code": "16", "cleanGroup": "MANUFACTURING & INDUSTRIAL", "subcategories": [
     "16.1 Chemical & Plastics Industry", "16.2 Electronics Manufacturing", "16.3 Food & Beverage Production", "16.4 Heavy Equipment & Machinery",
-    "16.5 Metal Fabrication", "16.6 Textile & Apparel Mills", "16.7 Wholesale Distributors"
+    "16.5 Metal Fabrication", "16.6 Textile & Apparel Mills", "16.7 Wholesale Distributors",
+    "16.8 Agricultural Machinery, Farming & Agro-Industry", "16.9 Packaging & Box Manufacturers",
+    "16.10 Mining, Mineral Processing & Drilling Equipment", "16.11 Timber, Wood Products & Sawmills",
+    "16.12 CNC Machining, Tool & Die Making", "16.13 Plastic Injection Moulding & Extrusions",
+    "16.14 Steel Foundries, Scrap Metal & Recycling", "16.15 Industrial Equipment Repair & Maintenance"
   ]},
   {"group": "17. REAL ESTATE & HOUSING", "code": "17", "cleanGroup": "REAL ESTATE & HOUSING", "subcategories": [
     "17.1 Apartments & Flat Rentals", "17.2 Commercial Real Estate Brokers", "17.3 Property Management", "17.4 Real Estate Agencies",
-    "17.5 Residential Moving Companies", "17.6 Storage Facilities"
+    "17.5 Residential Moving Companies", "17.6 Storage Facilities",
+    "17.7 Student Accommodation & Campus Residences", "17.8 Sectional Title & Body Corporate Management",
+    "17.9 Real Estate Appraisers & Property Valuers", "17.10 Holiday Home Rentals & Short-Term Lets",
+    "17.11 Land Surveyors & Geomatic Engineers", "17.12 Conveyancers & Real Estate Attorneys",
+    "17.13 Relocation & Commercial Office Moving"
   ]},
   {"group": "18. RETAIL SHOPPING", "code": "18", "cleanGroup": "RETAIL SHOPPING", "subcategories": [
     "18.1 Bookstores", "18.2 Clothing, Shoes & Apparel", "18.3 Electronics & Computer Shops", "18.4 Florists & Flower Shops",
-    "18.5 Furniture & Home Goods", "18.6 Jewellery & Watches", "18.7 Pet Shops & Supplies", "18.8 Sporting Goods Stores", "18.9 Toy & Hobby Shops"
+    "18.5 Furniture & Home Goods", "18.6 Jewellery & Watches", "18.7 Pet Shops & Supplies", "18.8 Sporting Goods Stores", "18.9 Toy & Hobby Shops",
+    "18.10 Mobile Phone & Cellular Repair Shops", "18.11 Antique Stores & Vintage Curios",
+    "18.12 Pawn Shops & Second-Hand Thrift", "18.13 Vape Shops, Tobacconists & Cigars",
+    "18.14 Fabric, Haberdashery & Sewing Stores", "18.15 Hardware & Building Material Suppliers",
+    "18.16 Musical Instruments & Audio Gear Stores", "18.17 Baby, Nursery & Maternity Stores",
+    "18.18 Cosmetics, Perfumes & Beauty Supplies", "18.19 Art Supplies & Picture Framing Shops",
+    "18.20 Outdoor, Camping & Hunting Gear"
   ]},
   {"group": "19. SPORTS & FITNESS", "code": "19", "cleanGroup": "SPORTS & FITNESS", "subcategories": [
     "19.1 Bicycle Shops & Repair", "19.2 Golf Courses & Country Clubs", "19.3 Gyms & Fitness Centres", "19.4 Martial Arts & Boxing Studios",
-    "19.5 Personal Training", "19.6 Swimming Pools & Centres", "19.7 Yoga & Pilates Studios"
+    "19.5 Personal Training", "19.6 Swimming Pools & Centres", "19.7 Yoga & Pilates Studios",
+    "19.8 Tennis, Squash & Padel Clubs", "19.9 Dance Studios & Dancing Academies",
+    "19.10 Scuba Diving, Surfing & Water Sports Clubs", "19.11 Rock Climbing & Bouldering Gyms",
+    "19.12 Sports Academies & Youth Athletic Clubs", "19.13 Equestrian Centres & Horse Riding Schools",
+    "19.14 Crossfit & Functional Training Boxes"
   ]},
   {"group": "20. TRANSPORTATION & LOGISTICS", "code": "20", "cleanGroup": "TRANSPORTATION & LOGISTICS", "subcategories": [
     "20.1 Airport Shuttles & Limos", "20.2 Courier & Delivery Services", "20.3 Freight & Cargo Shipping", "20.4 Public Transit & Buses",
-    "20.5 Taxi & Ride-Share Services", "20.6 Warehousing"
+    "20.5 Taxi & Ride-Share Services", "20.6 Warehousing",
+    "20.7 Heavy Breakdown & Vehicle Towing Services", "20.8 Long-Distance & Cross-Border Freight Haulage",
+    "20.9 Vehicle Tracking & Fleet Telematics Solutions", "20.10 Boat, Marine & Port Shipping Services",
+    "20.11 Moving & Relocation Services", "20.12 Cold Chain & Refrigerated Transport"
   ]}
 ]
 
