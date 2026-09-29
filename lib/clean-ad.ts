@@ -83,10 +83,45 @@ export function isCustomerReviewOrGarbage(text?: string | null): boolean {
   return false;
 }
 
+export function sanitizeVerifiedWording(text?: string | null): string {
+  if (!text) return "";
+  let clean = String(text);
+  
+  // Replace "Verified local business" -> "Local business"
+  clean = clean.replace(/\bverified\s+local\s+business(es)?\b/gi, "local business$1");
+  // Replace "Verified South African Business" -> "South African Business"
+  clean = clean.replace(/\bverified\s+south\s+african\s+business(es)?\b/gi, "South African business$1");
+  // Replace "Verified business" -> "Business"
+  clean = clean.replace(/\bverified\s+business(es)?\b/gi, "business$1");
+  // Replace "for verified services and local bookings" -> "for services and local bookings"
+  clean = clean.replace(/\bfor\s+verified\s+services\s+(and\s+local\s+bookings)?\b/gi, "for services and bookings");
+  clean = clean.replace(/\bfor\s+verified\s+services\b/gi, "for services");
+  // Replace "verified services" -> "services"
+  clean = clean.replace(/\bverified\s+services?\b/gi, "services");
+  // Replace "verified service provider" -> "service provider"
+  clean = clean.replace(/\bverified\s+service\s+provider(s)?\b/gi, "service provider$1");
+  // Replace "Verified directory listing" / "verified directory" -> "directory"
+  clean = clean.replace(/\bverified\s+directory\s+listing(s)?\b/gi, "directory listing$1");
+  clean = clean.replace(/\bverified\s+directory\b/gi, "directory");
+  // Replace "verified listing" -> "listing"
+  clean = clean.replace(/\bverified\s+listing(s)?\b/gi, "listing$1");
+  // Replace "(Verified)" or "[Verified]" or "✅ (Verified)"
+  clean = clean.replace(/\(?\[?✅?\s*verified\]?\)?/gi, "");
+  
+  // Clean double spaces and trim
+  clean = clean.replace(/\s{2,}/g, " ").trim();
+  return clean;
+}
+
 export function cleanAd<T extends Record<string, any>>(ad: T): T {
   if (!ad) return ad;
 
   const copy: Record<string, any> = { ...ad };
+
+  // Sanitize title against any "Verified Business" or "(Verified)" text
+  if (copy.title) {
+    copy.title = sanitizeVerifiedWording(copy.title);
+  }
 
   // 1. Clean servicesOffered
   if (copy.servicesOffered) {
@@ -94,6 +129,7 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
     if (serv.toLowerCase().startsWith("services offered:")) {
       serv = serv.substring(17).trim();
     }
+    serv = sanitizeVerifiedWording(serv);
     if (isCustomerReviewOrGarbage(serv) || (copy.title && serv.toLowerCase() === String(copy.title).toLowerCase())) {
       copy.servicesOffered = "";
     } else {
@@ -111,6 +147,9 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
     if (desc.toLowerCase().startsWith("services offered:")) {
       desc = desc.substring(17).trim();
     }
+
+    // Sanitize any "verified business" / "verified services" wording
+    desc = sanitizeVerifiedWording(desc);
 
     if (
       isCustomerReviewOrGarbage(desc) || 
@@ -135,6 +174,12 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
     } else {
       copy.description = "Directory listing.";
     }
+  }
+
+  // 3. Ensure uploaded and unclaimed ads are NEVER marked as verified
+  if (copy.isClaimed === false || copy.plan === 'free' || !copy.isPremium) {
+    copy.verified = false;
+    copy.isVerified = false;
   }
 
   return copy as T;

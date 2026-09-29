@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds } from "@/lib/data";
 import { isCustomerReviewOrGarbage } from "@/lib/clean-ad";
-import { TOTAL_SUBURBS_COUNT } from "@/lib/locations";
 import { Search, MapPin, BadgeCheck, Star, Briefcase, Zap, Sparkles, Edit, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -76,7 +75,7 @@ export default function HomePage() {
   const paginatedFreeAds = freeAds.slice((freeAdsPage - 1) * 12, freeAdsPage * 12);
 
   // Precomputed static count of all suburbs altogether across all 9 provinces
-  const totalSuburbsAltogether = TOTAL_SUBURBS_COUNT;
+  const totalSuburbsAltogether = 6931;
 
   return (
     <div className="flex flex-col w-full bg-slate-50">
@@ -162,7 +161,7 @@ export default function HomePage() {
                           Sponsored
                         </span>
                         <PremiumBadge isPremium={ad.isPremium} />
-                        <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} />
+                        <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
                       </div>
                     </div>
                     {ad.image && (
@@ -227,7 +226,7 @@ export default function HomePage() {
       {premiumAds.length > 0 && (
         <section ref={premiumListingsRef} className="w-full max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
             <h2 className="text-2xl font-bold font-display text-slate-900 mb-4 flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-emerald-600" /> Verified Premium Placements
+              <Sparkles className="w-6 h-6 text-emerald-600" /> Featured Premium Placements
             </h2>
 
             {/* Top Pagination for Premium Ads */}
@@ -285,7 +284,7 @@ export default function HomePage() {
                       <h3 className="font-bold text-lg text-slate-900 leading-snug tracking-tight flex-1 min-w-0">{ad.title}</h3>
                       <div className="flex flex-wrap gap-1.5 justify-start items-center">
                         <PremiumBadge isPremium={ad.isPremium} />
-                        <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} />
+                        <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
                       </div>
                     </div>
                     <div className="flex space-x-2 mb-3 text-xs font-semibold">
@@ -388,7 +387,7 @@ export default function HomePage() {
                     <h3 className="font-bold text-base text-slate-900 leading-snug truncate flex-1 min-w-0">{ad.title}</h3>
                     <div className="flex flex-wrap gap-1 justify-start items-center">
                       <PremiumBadge isPremium={ad.isPremium} />
-                      <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} />
+                      <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
                     </div>
                   </div>
                   <div className="flex space-x-2 mb-2 text-xs font-medium">

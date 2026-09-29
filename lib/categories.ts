@@ -47,7 +47,7 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Dealerships (New & Used)",
       "Motorcycle & Powersports",
       "Oil & Lube Stations",
-      "Parts & Accessories",
+      "Motor Spares, Parts & Accessories",
       "Tire Shops",
       "Towing & Roadside Assistance",
       "Auto Electrical & Diagnostic Services",

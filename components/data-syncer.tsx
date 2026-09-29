@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from 'react';
-import { safeLocalStorage, fetchAndStoreAds } from '@/lib/data';
+import { safeLocalStorage, cleanAdsArray } from '@/lib/data';
 
 export function DataSyncer() {
   useEffect(() => {
@@ -10,14 +10,36 @@ export function DataSyncer() {
       if (document.hidden || isSyncing) return;
       isSyncing = true;
       try {
-        await fetchAndStoreAds();
-
-        // Community Posts & Messages sync from /api/storage
+        // Single unified storage fetch
         const res = await fetch('/api/storage', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data) {
-            // Community posts sync
+            // 1. Ads sync
+            if (Array.isArray(data.ads)) {
+              const serverAds = data.ads.filter((a: any) => a && a.id);
+              const serverDeleted = Array.isArray(data.deletedAds) ? data.deletedAds : [];
+              const storedDeleted = safeLocalStorage.getItem("searchbiz_deleted_ads");
+              let localDeleted: string[] = [];
+              if (storedDeleted) { try { localDeleted = JSON.parse(storedDeleted); } catch (e) {} }
+
+              const combinedDeletedSet = new Set([...serverDeleted, ...localDeleted]);
+              const cleanedServerAds = cleanAdsArray(serverAds);
+              const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
+
+              safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds));
+              safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(Array.from(combinedDeletedSet)));
+
+              if (data.customPartners) {
+                safeLocalStorage.setItem("searchbiz_custom_partners", JSON.stringify(data.customPartners));
+              }
+              if (Array.isArray(data.trashAds)) {
+                safeLocalStorage.setItem("searchbiz_trash_ads", JSON.stringify(data.trashAds));
+              }
+              window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+            }
+
+            // 2. Community posts sync
             const serverPosts = Array.isArray(data.community_posts) ? data.community_posts : [];
             const storedPostsStr = safeLocalStorage.getItem("searchbiz_community_posts_v1");
             let localPosts: any[] = [];
@@ -39,7 +61,7 @@ export function DataSyncer() {
             }
             window.dispatchEvent(new CustomEvent("searchbiz_posts_updated"));
 
-            // Messages sync
+            // 3. Messages sync
             const serverMsgs = Array.isArray(data.messages) ? data.messages : [];
             const deletedMsgs = new Set(Array.isArray(data.deletedMessages) ? data.deletedMessages : []);
             const storedMsgsStr = safeLocalStorage.getItem("searchbiz_messages_v1");
@@ -92,8 +114,9 @@ export function DataSyncer() {
       }
     };
 
-    performSync();
-    const syncInterval = setInterval(performSync, 25000); // 25s background sync
+    // Delay first background sync slightly so initial page render paints instantly
+    const initialTimer = setTimeout(performSync, 400);
+    const syncInterval = setInterval(performSync, 30000); // 30s background sync
 
     const handleVisibilityChange = () => {
       if (!document.hidden) performSync();
@@ -101,6 +124,7 @@ export function DataSyncer() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      clearTimeout(initialTimer);
       clearInterval(syncInterval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };

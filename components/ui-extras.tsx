@@ -6,40 +6,56 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import { safeLocalStorage } from '@/lib/data';
 
-export const VerificationBadge = ({ verified, isGoogleImport }: { verified: boolean; isGoogleImport?: boolean }) => {
-  if (verified) {
-    return (
-      <motion.div 
-        animate={{ scale: [1, 1.05, 1], opacity: [0.9, 1, 0.9] }}
-        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-        className="flex items-center text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-emerald-100 shadow-sm shrink-0"
-      >
-        <div className="relative mr-1.5 flex items-center justify-center">
-          <BadgeCheck className="w-4 h-4 z-10" />
-          <motion.div 
-            animate={{ scale: [1, 1.5, 1], opacity: [0.2, 0.5, 0.2] }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            className="absolute inset-0 bg-emerald-400 rounded-full blur-[2px]"
-          ></motion.div>
-        </div>
-        Verified
-      </motion.div>
-    );
+export const VerificationBadge = ({ 
+  verified, 
+  isGoogleImport,
+  isPremium,
+  isClaimed
+}: { 
+  verified?: boolean; 
+  isGoogleImport?: boolean;
+  isPremium?: boolean;
+  isClaimed?: boolean;
+}) => {
+  // If claimed & paid premium, do not show unclaimed/unverified badges (never show "Verified Business")
+  if (isClaimed === true && isPremium) {
+    return null;
   }
 
   return (
-    <div 
-      className="flex items-center text-slate-600 bg-slate-100/95 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-300 shadow-sm shrink-0 animate-pulse"
-      title="Unclaimed SearchBiz.co.za Listing"
-    >
-      <div className="relative mr-1.5 flex items-center justify-center text-slate-500">
-        <span className="relative flex h-2 w-2 mr-1">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
-        </span>
-        <AlertCircle className="w-3.5 h-3.5 z-10" />
+    <div className="flex flex-col gap-1.5 items-start shrink-0 my-1">
+      {/* 1. Unclaimed Listing */}
+      <div 
+        className="inline-flex items-center text-slate-700 bg-slate-100/95 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border border-slate-300 shadow-xs"
+        title="Unclaimed SearchBiz.co.za Listing"
+      >
+        <AlertCircle className="w-3 h-3 mr-1 text-slate-500 shrink-0" />
+        <span>Unclaimed Listing</span>
       </div>
-      <span>Unclaimed Listing</span>
+
+      {/* 2. Unverified Listing (in red pulsing) */}
+      <div 
+        className="inline-flex items-center text-red-600 bg-red-50/95 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-red-300 shadow-xs animate-pulse"
+        title="Unverified Listing"
+      >
+        <span className="relative flex h-2 w-2 mr-1.5 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+        </span>
+        <span>Unverified Listing</span>
+      </div>
+
+      {/* 3. Free Listing (in red pulsing) */}
+      <div 
+        className="inline-flex items-center text-red-600 bg-red-50/95 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-red-300 shadow-xs animate-pulse"
+        title="Free Listing"
+      >
+        <span className="relative flex h-2 w-2 mr-1.5 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+        </span>
+        <span>Free Listing</span>
+      </div>
     </div>
   );
 };

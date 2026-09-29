@@ -133,11 +133,11 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     ? payload.description.trim()
     : `${payload.title.trim()} offers top-tier professional ${payload.category || 'business'} services in ${town}, ${province.toUpperCase()}. Contact us today for reliable support and quotes.`;
 
-  const isFree = payload.isClaimed === false || payload.plan === 'free' || payload.isPremium === false;
-  const isClaimed = payload.isClaimed !== undefined ? payload.isClaimed : !isFree;
-  const isPremium = payload.isPremium !== undefined ? payload.isPremium : !isFree;
-  const verified = payload.verified !== undefined ? payload.verified : !isFree;
-  const plan = payload.plan ? payload.plan : (isFree ? 'free' : 'PREMIUM');
+  const isFree = payload.isClaimed === false || payload.plan === 'free' || payload.isPremium === false || !payload.plan;
+  const isClaimed = payload.isClaimed === true;
+  const isPremium = payload.isPremium === true;
+  const verified = false; // Uploaded ads are NEVER verified
+  const plan = isPremium ? 'PREMIUM' : 'free';
 
   const newAd = {
     id: adId,

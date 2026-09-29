@@ -4,3 +4,17 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+/* Zero-JS layout stability & translate widget containment */
+html, body {
+  top: 0px !important;
+  position: static !important;
+}
+
+.skiptranslate,
+iframe[class*="goog"],
+iframe[id*="goog"],
+iframe[class*="VIpgJd"],
+div[class*="VIpgJd"] {
+  display: none !important;
+}

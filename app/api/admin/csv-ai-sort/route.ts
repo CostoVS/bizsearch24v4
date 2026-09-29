@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
@@ -8,14 +7,14 @@ import { isScraperStatusOrGarbage, isLikelyStreetAddress, isCategoryOrTradeName 
 // All categories list for categorization
 const ALL_SUBCATEGORIES = CATEGORIES_STRUCTURED.flatMap(g => g.subcategories);
 
-// Fallback rule-based category classifier
+// Rule-based category classifier
 function detectCategoryFromText(text: string): string {
   const t = (text || "").toLowerCase();
   
   if (t.includes("solar") || t.includes("inverter") || t.includes("battery") || t.includes("backup power") || t.includes("photovoltaic")) return "Solar Power Installers";
   if (t.includes("plumb") || t.includes("drain") || t.includes("geyser") || t.includes("pipe leak") || t.includes("unblock")) return "Plumbers";
   if (t.includes("electric") || t.includes("wiring") || t.includes("db board") || t.includes("certificate of compliance") || t.includes("coc")) return "Electricians";
-  if (t.includes("auto parts") || t.includes("motor spares") || t.includes("used spares") || t.includes("car spares") || t.includes("truck and auto") || t.includes("spare parts") || t.includes("truck parts") || t.includes("accessories")) return "Parts & Accessories";
+  if (t.includes("auto parts") || t.includes("motor spares") || t.includes("used spares") || t.includes("car spares") || t.includes("truck and auto") || t.includes("spare parts") || t.includes("truck parts") || t.includes("accessories")) return "Motor Spares, Parts & Accessories";
   if (t.includes("mechanic") || t.includes("auto repair") || t.includes("automotive") || t.includes("car repair") || t.includes("panel beat") || t.includes("gearbox") || t.includes("brake") || t.includes("auto electrical")) return "Auto Body & Repair Shops";
   if (t.includes("car sales") || t.includes("dealership") || t.includes("used cars") || t.includes("motor dealer")) return "Dealerships (New & Used)";
   if (t.includes("attorney") || t.includes("lawyer") || t.includes("advocate") || t.includes("legal") || t.includes("conveyanc") || t.includes("notary")) return "Attorneys & Lawyers";
@@ -53,109 +52,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No businesses provided to categorize." }, { status: 400 });
     }
 
-    // Prepare batches for Gemini AI classification
-    const batches: any[][] = [];
-    for (let i = 0; i < businesses.length; i += 25) {
-      batches.push(businesses.slice(i, i + 25).map((b, idx) => ({
-        index: i + idx,
-        name: b.title || "",
-        address: b.address || "",
-        phone: b.phone || "",
-        services: b.servicesOffered || b.description || "",
-        currentCategory: b.category || ""
-      })));
-    }
-
-    const aiClassifications: Map<number, { category?: string; province?: string; city?: string; servicesOffered?: string }> = new Map();
-
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        
-        for (const batch of batches) {
-          const prompt = `You are a South African business directory classification engine.
-Given the following list of businesses, analyze their title, address, phone number, and services to determine:
-1. "category": Pick the single most accurate South African industry/trade category from: ${ALL_SUBCATEGORIES.slice(0, 80).join(", ")}. If none match, use "General Business Services".
-2. "province": South African province slug: "gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", or "northern-cape".
-3. "city": The primary town/city (e.g. "Johannesburg", "Durban", "Cape Town", "Pretoria", "Gqeberha", "Bloemfontein", "Mbombela", "Polokwane", "Rustenburg", "Kimberley", "Umzinto", "Isipingo", "Pinetown", "Scottburgh", etc.).
-4. "servicesOffered": A concise list of 2-5 actual services offered based ONLY on the business type and text. DO NOT include customer reviews, ratings, or reviewer quotes.
-
-CRITICAL INSTRUCTIONS:
-- DO NOT alter, overwrite, or fabricate the original business name, street address, or phone number.
-- Output a valid JSON array of objects with keys: "index" (number), "category" (string), "province" (string), "city" (string), "servicesOffered" (string).
-
-Batch to classify:
-${JSON.stringify(batch, null, 2)}`;
-
-          const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json"
-            }
-          });
-
-          if (response.text) {
-            try {
-              const json = JSON.parse(response.text);
-              if (Array.isArray(json)) {
-                for (const item of json) {
-                  if (typeof item.index === "number") {
-                    aiClassifications.set(item.index, item);
-                  }
-                }
-              }
-            } catch (err) {
-              console.error("Gemini batch JSON parse error:", err);
-            }
-          }
-        }
-      } catch (geminiErr) {
-        console.error("Gemini classification failed or timed out, applying heuristic classifier:", geminiErr);
-      }
-    }
-
     // Process each business ensuring that ACTUAL name, address, phone, email, and website are 100% PRESERVED
     const finalBusinesses = businesses.map((b, index) => {
-      const ai = aiClassifications.get(index);
-      
       const combinedText = `${b.title || ""} ${b.address || ""} ${b.servicesOffered || ""} ${b.description || ""}`;
       const heuristicLocation = detectLocationFromPhoneAndText(b.phone || "", `${b.address || ""} ${b.city || ""} ${b.province || ""}`, overrideProvince || b.province);
       const heuristicCategory = detectCategoryFromText(combinedText);
 
-      // Determine category: Priority -> Explicit Override -> AI Classification -> Existing Valid Category -> Heuristic -> Fallback
+      // Determine category: Priority -> Explicit Override -> Existing Valid Category -> Heuristic -> Fallback
       let category = b.category && b.category !== "Other" && b.category !== "General Business Services" ? b.category : "";
       if (overrideCategory && overrideCategory !== "Other" && overrideCategory !== "General Business Services") {
         category = overrideCategory;
-      } else if (ai?.category && ai.category !== "Other" && ai.category !== "General Business Services") {
-        category = ai.category;
       } else if (!category) {
         category = heuristicCategory || "General Business Services";
       }
 
-      // Determine province: Priority -> AI detected from address/phone -> Heuristic detected from address & phone -> Existing -> Fallback
+      // Determine province: Priority -> Override -> Heuristic detected from address & phone -> Existing -> Fallback
       let province = b.province;
-      if (ai?.province && ["gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", "northern-cape"].includes(ai.province.toLowerCase())) {
-        province = ai.province.toLowerCase();
+      if (overrideProvince) {
+        province = overrideProvince.toLowerCase();
       } else if (heuristicLocation.province) {
         province = heuristicLocation.province;
-      } else if (overrideProvince) {
-        province = overrideProvince.toLowerCase();
-      } else {
+      } else if (!province || !["gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", "northern-cape"].includes(province.toLowerCase())) {
         province = "gauteng";
       }
 
       // Determine city
       let city = b.city || heuristicLocation.city || "Johannesburg";
-      if (ai?.city && typeof ai.city === "string" && ai.city.trim().length > 1) {
-        city = ai.city.trim();
-      }
 
       // Determine services
-      let services = b.servicesOffered || "";
-      if (ai?.servicesOffered && typeof ai.servicesOffered === "string" && ai.servicesOffered.trim().length > 0) {
-        services = ai.servicesOffered.trim();
-      }
+      let services = (b.servicesOffered || "").trim();
 
       // Clean raw address if it contains garbage, category names, or invalid address text
       let cleanAddress = (b.address || "").trim();

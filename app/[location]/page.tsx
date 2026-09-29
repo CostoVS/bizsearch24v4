@@ -122,7 +122,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const displayName = location.split(/[-_]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   return {
     title: `Businesses in ${displayName} | SearchBiz.co.za`,
-    description: `Find top rated and verified local businesses, plumbers, electricians and more in ${displayName}, South Africa.`,
+    description: `Find top rated local businesses, plumbers, electricians and more in ${displayName}, South Africa.`,
   }
 }
 

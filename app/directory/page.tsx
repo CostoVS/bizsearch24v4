@@ -532,7 +532,7 @@ function DirectoryContent() {
                   <h3 className="font-bold text-lg text-slate-900 leading-tight tracking-tight flex-1 min-w-0">{ad.title}</h3>
                   <div className="flex flex-wrap gap-1.5 justify-start items-center">
                     <PremiumBadge isPremium={ad.isPremium} />
-                    <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} />
+                    <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-3 text-xs font-semibold">

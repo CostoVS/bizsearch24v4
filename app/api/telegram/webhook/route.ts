@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createBotAd, deleteBotAd, searchBotAds, restoreBotAd, restoreAllBotAds, getBotTrashAds } from '@/lib/bot-ad-service';
 import nodemailer from 'nodemailer';
-import { GoogleGenAI } from '@google/genai';
 
 export const dynamic = 'force-dynamic';
 
@@ -249,7 +248,7 @@ You can also simply type:
       const category = parts[1] || 'General Services';
       const city = parts[2] || 'Johannesburg';
       const phone = parts[3] || '0821234567';
-      const description = parts[4] || `${title} provides professional ${category} in ${city}. Verified local service provider.`;
+      const description = parts[4] || `${title} provides professional ${category} in ${city}. Local service provider.`;
 
       if (!title) {
         await sendTelegramMessage(chatId, '❌ Business title is required.');
@@ -262,8 +261,10 @@ You can also simply type:
         city,
         phone,
         description,
-        verified: true,
-        isPremium: true
+        verified: false,
+        isPremium: false,
+        isClaimed: false,
+        plan: 'free'
       });
 
       if (result.success && result.ad) {
@@ -448,8 +449,10 @@ To undo this, send:
           address: parsed.address,
           phone: parsed.phone,
           description: parsed.description,
-          verified: true,
-          isPremium: true
+          verified: false,
+          isPremium: false,
+          isClaimed: false,
+          plan: 'free'
         });
 
         if (res.success && res.ad) {
@@ -628,21 +631,8 @@ support@searchbiz.co.za`;
 
     // 10c. Storytelling & Creative Writing
     if (lower.includes('tell a story') || lower.includes('tell one story') || lower.includes('tell me a story') || lower.includes('give me a story') || lower.includes('write a story') || lower === 'story') {
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const aiRes = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Tell a captivating, heartwarming, and inspirational short story about a South African entrepreneur building a business against all odds, with wit, warmth, and perseverance. Keep it engaging and under 220 words.`
-          });
-          if (aiRes?.text) {
-            await sendTelegramMessage(chatId, `📖 <b>Here is a story for you:</b>\n\n${aiRes.text}`);
-            return NextResponse.json({ ok: true });
-          }
-        } catch (e) {
-          console.error('Gemini story error:', e);
-        }
-      }
+      await sendTelegramMessage(chatId, `📖 <b>The SearchBiz Journey:</b>\n\nIn a bustling Durban workshop, Sipho spent years repairing gearboxes with unmatched precision, but relied purely on word-of-mouth. When a customer listed his workshop on SearchBiz.co.za, verified calls started pouring in from Umkomaas to Ballito.\n\nToday, Sipho runs a 5-bay fitment centre with 8 apprentice mechanics. Verified local trust turns hard work into lasting prosperity! 🇿🇦✨`);
+      return NextResponse.json({ ok: true });
     }
 
     // 11. Conversational & FAQ Handlers
@@ -692,28 +682,7 @@ Would you like to post an ad or create a new business listing now?
       return NextResponse.json({ ok: true });
     }
 
-    // General Generative AI Conversational Assistant (Gemini)
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const aiRes = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `You are Hermes, the helpful and professional Executive AI Bot for SearchBiz (South Africa's verified local business directory at searchbiz.co.za).
-The user is ${senderName}.
-Their message: "${text}".
-Provide a friendly, concise, and helpful response suitable for Telegram. Mention how you can help them with SearchBiz directory listings, advertising (R199/mo plan), or business inquiries. Format with clean, readable text. Keep it under 150 words.`
-        });
-
-        if (aiRes && aiRes.text) {
-          await sendTelegramMessage(chatId, aiRes.text);
-          return NextResponse.json({ ok: true });
-        }
-      } catch (geminiErr: any) {
-        console.error('[TelegramWebhook] Gemini generation failed:', geminiErr);
-      }
-    }
-
-    // Fallback: friendly guidance
+    // Friendly executive assistance
     await sendTelegramMessage(chatId, `
 🤖 <b>SearchBiz Executive Agent</b>
 I'm here to help, ${senderName}!

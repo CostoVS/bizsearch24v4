@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
@@ -83,15 +82,17 @@ export async function POST(req: NextRequest) {
           province,
           address,
           phone,
-          description: `Verified listing for ${title} in ${city}, ${province}. Address: ${address}.`,
-          verified: true,
-          isPremium: true
+          description: `Directory listing for ${title} in ${city}, ${province}. Address: ${address}.`,
+          verified: false,
+          isPremium: false,
+          isClaimed: false,
+          plan: 'free'
         });
 
         if (createRes.success && createRes.ad) {
           const ad = createRes.ad;
           return NextResponse.json({
-            text: `✨ **Advertisement Successfully Published!**\n\n🏢 **${ad.title}**\n🏷️ **Category:** ${ad.category}\n📍 **Location:** ${ad.city || city}, ${(ad.province || province).toUpperCase()}\n🏠 **Address:** ${address}\n📞 **Phone:** ${ad.phone}\n🆔 **ID:** \`${ad.id}\`\n⭐ **Status:** Verified & Premium Listing\n\n🌐 View live on SearchBiz: https://searchbiz.co.za/directory?q=${encodeURIComponent(ad.title)}`
+            text: `✨ **Advertisement Successfully Published!**\n\n🏢 **${ad.title}**\n🏷️ **Category:** ${ad.category}\n📍 **Location:** ${ad.city || city}, ${(ad.province || province).toUpperCase()}\n🏠 **Address:** ${address}\n📞 **Phone:** ${ad.phone}\n🆔 **ID:** \`${ad.id}\`\n📋 **Status:** Unclaimed Listing\n\n🌐 View live on SearchBiz: https://searchbiz.co.za/directory?q=${encodeURIComponent(ad.title)}`
           });
         }
       } catch (err: any) {
@@ -145,7 +146,7 @@ OFFICIAL SEARCHBIZ DIRECTORY STRUCTURE:
 - Western Cape (Cape Town, Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville)
 
 2. ALL 20 SEARCHBIZ DIRECTORY NUMBERED CATEGORIES & 305 SPECIALIZED SUBCATEGORIES:
-1. AUTOMOTIVE & VEHICLES (Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Towing & Breakdown, Auto Electrical, Windscreens, Brakes & Clutch, Gearbox Repair, Commercial Vehicle Repair, Used Cars & Auctions, Petrol Stations, Roadworthy Testing, Car Audio, Marine & Boat Dealers, Trailers & Caravans)
+1. AUTOMOTIVE & VEHICLES (Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Towing & Breakdown, Auto Electrical, Windscreens, Brakes & Clutch, Gearbox Repair, Commercial Vehicle Repair, Used Cars & Auctions, Petrol Stations, Roadworthy Testing, Car Audio, Marine & Boat Dealers, Trailers & Caravans)
 2. BEAUTY & PERSONAL CARE (Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare, Tattoos & Piercings, Braiding Salons, Medical Spas & Aesthetic Clinics, Microblading, Laser Hair Removal, Holistic Wellness, Weight Loss & Slimming)
 3. BUSINESS SERVICES (Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Co-Working, IT Support, Legal & Law Firms, Office Supplies, Printing & Signage, Tax Preparation, Security Guard & Armed Response, Web Design & Digital Agencies, Architects, Engineering Consultants, Translation, Private Detectives, Debt Collection, Waste Management, Call Centres & BPO)
 4. CLEANING & JANITORIAL (Carpet & Upholstery, Commercial Office Cleaning, Disaster Restoration, Dry Cleaning & Laundry, Domestic House Cleaning, Window Cleaning, High Pressure Jetting, Roof & Gutter Cleaning, Air Vent Cleaning, Septic Tank & Sanitation, Industrial Degreasing, Move-In / Move-Out Deep Cleaning)
@@ -201,7 +202,7 @@ IMPORTANT RULES:
     ) {
       return NextResponse.json({
         text: `📂 **SearchBiz South Africa — All 20 Official Directory Categories & Subcategories**\n\n` +
-          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
+          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
           `2. **Beauty & Personal Care:** Barbershops, Day Spas, Hair Salons, Makeup Artists, Massage, Nail Salons, Skincare\n` +
           `3. **Business Services:** Accounting, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage\n` +
           `4. **Cleaning & Janitorial:** Carpet & Upholstery, Commercial Office Cleaning, Domestic Maid Services, Window Cleaning, Pressure Washing\n` +
@@ -452,55 +453,6 @@ UNIVERSAL COGNITION & REASONING CONSTITUTION:
     }
 
     // --- 3. OPTIONAL GEMINI FALLBACK (NON-BLOCKING) ---
-    if (process.env.GEMINI_API_KEY && process.env.USE_GEMINI_FALLBACK === "true") {
-      try {
-        const ai = new GoogleGenAI({
-          apiKey: process.env.GEMINI_API_KEY,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build",
-            },
-          },
-        });
-
-        const contents: any[] = [];
-        if (Array.isArray(history)) {
-          history.forEach((msg: any) => {
-            contents.push({
-              role: msg.sender === "user" ? "user" : "model",
-              parts: [{ text: msg.text }],
-            });
-          });
-        }
-
-        contents.push({
-          role: "user",
-          parts: [{ text: message }],
-        });
-
-        const generatePromise = ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents,
-          config: {
-            systemInstruction: enhancedSystemInstruction,
-            temperature: 0.3,
-          },
-        });
-
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Gemini call timed out after 4s")), 4000)
-        );
-
-        const response: any = await Promise.race([generatePromise, timeoutPromise]);
-
-        if (response?.text) {
-          return NextResponse.json({ text: response.text });
-        }
-      } catch (geminiError) {
-        console.error("Gemini optional fallback note:", geminiError);
-      }
-    }
-
     // --- 3. HARD FALLBACK: HIGHLY ROBUST SEARCH ENGINE ---
     const normalizedQuery = message.toLowerCase().trim();
 
@@ -530,7 +482,7 @@ UNIVERSAL COGNITION & REASONING CONSTITUTION:
     ) {
       return NextResponse.json({
         text: `📂 **SearchBiz South Africa — All 20 Official Directory Categories & Subcategories**\n\n` +
-          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
+          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
           `2. **Beauty & Personal Care:** Barbershops, Day Spas, Hair Salons, Makeup Artists, Massage, Nail Salons, Skincare\n` +
           `3. **Business Services:** Accounting, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage\n` +
           `4. **Cleaning & Janitorial:** Carpet & Upholstery, Commercial Office Cleaning, Domestic Maid Services, Window Cleaning, Pressure Washing\n` +
@@ -643,10 +595,10 @@ UNIVERSAL COGNITION & REASONING CONSTITUTION:
     });
 
     if (matchedAds.length > 0) {
-      let responseText = `I found **${matchedAds.length} verified listing(s)** in our live index matching "${searchTarget}": \n\n`;
+      let responseText = `I found **${matchedAds.length} listing(s)** in our live index matching "${searchTarget}": \n\n`;
       
       matchedAds.forEach((ad, i) => {
-        responseText += `### ${i + 1}. ${ad.title} ${ad.verified ? "✅ (Verified)" : ""}\n`;
+        responseText += `### ${i + 1}. ${ad.title}\n`;
         responseText += `* **Category:** ${ad.category}\n`;
         responseText += `* **Location:** ${ad.city || ad.location ? (ad.city || ad.location).charAt(0).toUpperCase() + (ad.city || ad.location).slice(1) : "N/A"}, ${ad.province ? ad.province.toUpperCase() : "N/A"}\n`;
         if (ad.address) responseText += `* **Address:** ${ad.address}\n`;

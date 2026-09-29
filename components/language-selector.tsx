@@ -38,20 +38,12 @@ export function LanguageSelector() {
       }
     } else {
       // Auto-detect from device settings
-      const userLangs = navigator.languages || [navigator.language];
+      const userLangs = typeof navigator !== "undefined" ? (navigator.languages || [navigator.language]) : [];
       for (const lang of userLangs) {
         const baseLang = lang.split("-")[0].toLowerCase();
         const supported = SUPPORTED_LANGUAGES.find((l) => l.code === baseLang);
         if (supported && baseLang !== "en") {
-          // Found a supported language preference that isn't English, automatically set it
-          const setCookie = (value: string) => {
-            window.document.cookie = value;
-          };
-          setCookie(`googtrans=/en/${baseLang}; path=/;`);
-          setCookie(
-            `googtrans=/en/${baseLang}; domain=${window.location.hostname}; path=/;`,
-          );
-          window.location.reload();
+          setCurrentLang(baseLang);
           break;
         }
       }

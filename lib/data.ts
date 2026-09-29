@@ -20,6 +20,7 @@ import {
   getCategoryCode as GET_CAT_CODE
 } from './categories';
 import { cleanAdsArray } from './clean-ad';
+export { cleanAdsArray };
 
 export const PROVINCES = SA_PROVINCES;
 export const CATEGORIES = ALL_CATS;
@@ -29,6 +30,7 @@ export const CATEGORY_ICONS = ALL_CAT_ICONS;
 export const getCategoryIcon = GET_CAT_ICON;
 export const stripCategoryNumber = STRIP_CAT_NUM;
 export const getCategoryCode = GET_CAT_CODE;
+export const TOTAL_SUBURBS_COUNT = 6931;
 
 // Memoized static set of all lowercase South African location names (provinces, towns, suburbs)
 let locationsSet: Set<string> | null = null;
@@ -262,6 +264,11 @@ export function saveTrashAds(trash: any[]): void {
   }
 }
 
+// In-memory cache to prevent repetitive JSON.parse and localStorage reads on every render
+let _memStoredAds: any[] | null = null;
+let _memStoredAdsRaw: string | null = null;
+let _activeFetchAdsPromise: Promise<any[]> | null = null;
+
 // Unified global advertisements client register with localStorage persistence
 export function getStoredAds(): any[] {
   if (typeof window === "undefined") {
@@ -269,17 +276,25 @@ export function getStoredAds(): any[] {
   }
   
   const stored = safeLocalStorage.getItem("searchbiz_all_ads");
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        const deletedSet = new Set(getDeletedAdIds());
-        const filtered = parsed.filter(ad => ad && ad.id && !deletedSet.has(ad.id));
-        return cleanAdsArray(filtered);
-      }
-    } catch (e) {
-      console.error("Error parsing searchbiz_all_ads:", e);
+  if (!stored) return [];
+
+  // Instant in-memory cache hit if raw string in storage hasn't changed
+  if (_memStoredAds && _memStoredAdsRaw === stored) {
+    return _memStoredAds;
+  }
+
+  try {
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) {
+      const deletedSet = new Set(getDeletedAdIds());
+      const filtered = parsed.filter(ad => ad && ad.id && !deletedSet.has(ad.id));
+      const cleaned = cleanAdsArray(filtered);
+      _memStoredAds = cleaned;
+      _memStoredAdsRaw = stored;
+      return cleaned;
     }
+  } catch (e) {
+    console.error("Error parsing searchbiz_all_ads:", e);
   }
   return [];
 }
@@ -287,11 +302,19 @@ export function getStoredAds(): any[] {
 export async function fetchAndStoreAds(): Promise<any[]> {
   if (typeof window === "undefined") return [];
   
-  const MAX_RETRIES = 3;
+  // Return active in-flight request if one is already running to avoid redundant parallel network calls
+  if (_activeFetchAdsPromise) {
+    return _activeFetchAdsPromise;
+  }
+
+  const MAX_RETRIES = 2;
   
   async function performFetch(attempt: number = 0): Promise<any[]> {
     try {
-      const res = await fetch('/api/storage', { cache: 'no-store' });
+      const res = await fetch('/api/storage', { 
+        cache: 'default',
+        headers: { 'Accept': 'application/json' }
+      });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       if (data && Array.isArray(data.ads)) {
@@ -309,7 +332,10 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         const cleanedServerAds = cleanAdsArray(serverAds);
         const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
-        safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds));
+        const serialized = JSON.stringify(finalAds);
+        safeLocalStorage.setItem("searchbiz_all_ads", serialized);
+        _memStoredAds = finalAds;
+        _memStoredAdsRaw = serialized;
         
         if (data.customPartners) {
           safeLocalStorage.setItem("searchbiz_custom_partners", JSON.stringify(data.customPartners));
@@ -341,15 +367,19 @@ export async function fetchAndStoreAds(): Promise<any[]> {
       
     } catch (e) {
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt)));
         return performFetch(attempt + 1);
       }
-      console.error("fetchAndStoreAds failed after retries:", e);
+      console.warn("fetchAndStoreAds fallback to local cache:", e);
       return getStoredAds();
     }
   }
   
-  return performFetch();
+  _activeFetchAdsPromise = performFetch().finally(() => {
+    _activeFetchAdsPromise = null;
+  });
+
+  return _activeFetchAdsPromise;
 }
 
 export async function saveStoredAds(ads: any[]): Promise<void> {

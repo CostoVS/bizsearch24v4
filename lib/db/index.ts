@@ -56,7 +56,12 @@ export const initDb = () => {
   }
   if (db && pool) return db;
 
-  const connectionString = process.env.DATABASE_URL || "postgresql://sb_admin_secure_usr:Sb9_kL82_vX97_mQ41_zP30_rN@db:5432/searchbiz_db";
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString || connectionString.includes('@db:5432')) {
+    // No external SQL database configured - instantly use high-speed local disk store
+    markDbOffline();
+    return null;
+  }
 
   try {
     pool = new Pool({

@@ -196,7 +196,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
 • Physical Address: ${ad.address || "N/A"}
 • Phone Number: ${ad.phone || "N/A"}
 • Email Address: ${ad.email || "N/A"}
-• Verification Status: ${ad.isVerified || ad.verified ? "Verified" : "Unverified / Unclaimed Listing"}
+• Listing Status: Unclaimed & Unverified Listing
 
 --------------------------------------------------
 📋 REPORT REASON:
@@ -663,7 +663,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                         : "Standard Ad"}
                   </span>
                   <PremiumBadge isPremium={ad.isPremium} />
-                  <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} />
+                  <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
                 </div>
                 <h2 className="text-xl md:text-3xl font-bold tracking-tight text-white leading-tight">
                   {ad.title}
@@ -1183,7 +1183,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                       </div>
                       <div className="overflow-hidden">
                         <span className="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">
-                          Verified Physical Address
+                          Physical Business Address
                         </span>
                         <span className="text-sm font-bold text-slate-800 break-words line-clamp-2">
                           {ad.address} {ad.suburb ? `(${ad.suburb})` : ""}
@@ -1244,7 +1244,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                        {ad.isClaimed === false ? "Manage & Contact Listing" : "Direct Verified Channels"}
+                        {ad.isClaimed === false ? "Manage & Contact Listing" : "Direct Contact Channels"}
                       </h4>
                       {ad.preferredContact && ad.isClaimed !== false && (
                         <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">

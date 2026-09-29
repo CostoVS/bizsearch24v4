@@ -11,6 +11,15 @@ export const dynamic = 'force-dynamic';
 const DB_KEY = 'main';
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 
+function getDiskMtime(): number {
+  try {
+    if (fs.existsSync(JSON_PATH)) {
+      return fs.statSync(JSON_PATH).mtimeMs;
+    }
+  } catch (e) {}
+  return 0;
+}
+
 // Global cache object to survive hot reloads and next.js api invocations in the same process
 const globalRef = global as any;
 if (globalRef.storageCache === undefined) {
@@ -18,6 +27,9 @@ if (globalRef.storageCache === undefined) {
 }
 if (globalRef.storageCacheTime === undefined) {
   globalRef.storageCacheTime = 0;
+}
+if (globalRef.storageMtime === undefined) {
+  globalRef.storageMtime = getDiskMtime();
 }
 if (globalRef.isDbOffline === undefined) {
   globalRef.isDbOffline = false;
@@ -33,6 +45,9 @@ function getLocalDataNoCache() {
       const data = JSON.parse(fileContent);
       if (data && typeof data === 'object') {
         data.updatedAt = data.updatedAt || 0;
+        if (Array.isArray(data.ads)) {
+          data.ads = cleanAdsArray(data.ads);
+        }
         return data;
       }
     }
@@ -64,6 +79,9 @@ function saveLocalDataNoCache(data: any) {
       data.updatedAt = Date.now();
     }
     fs.writeFileSync(JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    globalRef.storageMtime = getDiskMtime();
+    globalRef.storageCache = data;
+    globalRef.storageCacheTime = Date.now();
   } catch (e) {
     console.error("Failed to write local json data:", e);
   }
@@ -280,14 +298,31 @@ async function revalidateCacheBackground(): Promise<void> {
 
 export async function GET(req: Request) {
   try {
-    // Read local .data/db.json disk database directly first for zero-latency reflection of agent ads
+    const currentMtime = getDiskMtime();
+    // 1. Ultra-fast in-memory cache hit (< 1ms) if disk has not changed
+    if (
+      globalRef.storageCache && 
+      Array.isArray(globalRef.storageCache.ads) && 
+      globalRef.storageCache.ads.length > 0 &&
+      globalRef.storageMtime === currentMtime
+    ) {
+      return NextResponse.json(globalRef.storageCache, {
+        headers: {
+          'Cache-Control': 'public, max-age=1, stale-while-revalidate=4',
+          'X-Cache': 'RAM-MEMORY-HIT'
+        }
+      });
+    }
+
+    // 2. Read local .data/db.json disk database directly for zero-latency reflection of agent ads
     const localData = getLocalDataNoCache();
     if (localData && Array.isArray(localData.ads) && localData.ads.length > 0) {
       globalRef.storageCache = localData;
+      globalRef.storageMtime = currentMtime;
       globalRef.storageCacheTime = Date.now();
       return NextResponse.json(localData, {
         headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Cache-Control': 'public, max-age=1, stale-while-revalidate=4',
           'X-Cache': 'FRESH-DISK-LIVE'
         }
       });

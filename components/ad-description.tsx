@@ -1,4 +1,5 @@
 import React from 'react';
+import { sanitizeVerifiedWording } from '@/lib/clean-ad';
 
 interface AdDescriptionProps {
   description: string | null | undefined;
@@ -8,10 +9,13 @@ interface AdDescriptionProps {
 export function AdDescription({ description, className = "" }: AdDescriptionProps) {
   if (!description) return null;
   
-  const lines = description.split(',').map(line => line.trim()).filter(Boolean);
+  const sanitized = sanitizeVerifiedWording(description);
+  if (!sanitized) return null;
+
+  const lines = sanitized.split(',').map(line => line.trim()).filter(Boolean);
   
   if (lines.length <= 1) {
-    return <p className={className}>{description}</p>;
+    return <p className={className}>{sanitized}</p>;
   }
 
   return (

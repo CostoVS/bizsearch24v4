@@ -404,13 +404,13 @@ export default function UserDashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          {ad.verified ? (
+                          {ad.isPremium ? (
                             <span className="inline-flex items-center text-emerald-800 text-xs font-bold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                              <BadgeCheck className="w-3.5 h-3.5 mr-2 text-emerald-500" /> Verified Premium
+                              <BadgeCheck className="w-3.5 h-3.5 mr-2 text-emerald-500" /> Premium Member
                             </span>
                           ) : (
                             <span className="inline-flex items-center text-slate-500 text-[10px] uppercase font-bold tracking-wider bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
-                              Standard Listing
+                              Free Listing
                             </span>
                           )}
                           <button

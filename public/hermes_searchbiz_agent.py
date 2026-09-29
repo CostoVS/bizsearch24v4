@@ -2404,7 +2404,7 @@ def publish_vault_lead_as_free_unclaimed(lead: dict) -> dict:
     clean_phone = lead.get("phone") or "0821234567"
     clean_addr = lead.get("address") or f"{clean_city}, {clean_prov}"
     
-    desc = f"Verified local business operating in {clean_city}, {clean_prov.replace('-', ' ').title()}. Contact {clean_phone} for inquiries."
+    desc = f"Local business operating in {clean_city}, {clean_prov.replace('-', ' ').title()}. Contact {clean_phone} for inquiries."
     if lead.get("rating") and lead.get("reviews_count"):
         desc += f" (Google Rating: {lead['rating']} ★ with {lead['reviews_count']} reviews)."
 
@@ -5433,7 +5433,7 @@ def publish_listings_target(chat_id: int, target: str = "all", plan: str = "free
         bphone = lead.get("phone") or lead.get("whatsapp") or "0821234567"
         baddr = lead.get("address") or f"{bcity}, {bprov}"
         
-        desc = f"Verified local business operating in {bcity}, {bprov.replace('-', ' ').title()}. Contact {bphone} for verified services and local bookings."
+        desc = f"Local business operating in {bcity}, {bprov.replace('-', ' ').title()}. Contact {bphone} for services and local bookings."
         if lead.get("rating") and lead.get("reviews"):
             desc += f" Google Rating: {lead['rating']} ★ ({lead['reviews']} reviews)."
 
@@ -5767,7 +5767,7 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
                     b_city = loc_town or b.get("city") or "Durban"
                     b_phone_val = b.get("phone") or b.get("whatsapp") or "0821234567"
                     b_addr = b.get("address") or f"{loc_name}, {loc_town}, {prov_name}"
-                    b_desc = f"Verified local business operating in {loc_town}, {prov_name}. Contact {b_phone_val} for verified services and local bookings."
+                    b_desc = f"Local business operating in {loc_town}, {prov_name}. Contact {b_phone_val} for services and local bookings."
                     if b.get("rating") and b.get("reviews_count"):
                         b_desc += f" Google Rating: {b['rating']} ★ ({b['reviews_count']} reviews)."
 
@@ -5997,7 +5997,7 @@ def publish_leads_from_listings(chat_id: int, filter_term: str = "", target_plan
         bphone = lead.get("phone") or lead.get("whatsapp") or "0821234567"
         baddr = lead.get("address") or f"{bcity}, {bprov}"
         
-        desc = f"Verified local business operating in {bcity}, {bprov.replace('-', ' ').title()}. Contact {bphone} for verified services and local bookings."
+        desc = f"Local business operating in {bcity}, {bprov.replace('-', ' ').title()}. Contact {bphone} for services and local bookings."
         if lead.get("rating") and lead.get("reviews"):
             desc += f" Google Rating: {lead['rating']} ★ ({lead['reviews']} reviews)."
 
@@ -6706,7 +6706,7 @@ def send_telegram_dual(chat_id: int, text: str, voice_override: Optional[str] = 
 CATEGORIES_145_TREE = [
   {"group": "1. AUTOMOTIVE & VEHICLES", "code": "1", "cleanGroup": "AUTOMOTIVE & VEHICLES", "subcategories": [
     "1.1 Auto Body & Repair Shops", "1.2 Car Wash & Detailing", "1.3 Car Rental Agencies", "1.4 Dealerships (New & Used)",
-    "1.5 Motorcycle & Powersports", "1.6 Oil & Lube Stations", "1.7 Parts & Accessories", "1.8 Tire Shops", "1.9 Towing & Roadside Assistance"
+    "1.5 Motorcycle & Powersports", "1.6 Oil & Lube Stations", "1.7 Motor Spares, Parts & Accessories", "1.8 Tire Shops", "1.9 Towing & Roadside Assistance"
   ]},
   {"group": "2. BEAUTY & PERSONAL CARE", "code": "2", "cleanGroup": "BEAUTY & PERSONAL CARE", "subcategories": [
     "2.1 Barbershops & Hair Salons", "2.2 Cosmetics & Skincare", "2.3 Day Spas & Wellness Centres", "2.4 Hair Removal & Waxing",
@@ -6796,7 +6796,7 @@ ALL_CLEAN_SUBCATEGORIES = [
 def match_searchbiz_category(raw_category: str) -> str:
     """Maps any input or scraped category or numeric index (e.g. 1.1, 6.8, 14.2) to one of SearchBiz's official subcategories."""
     if not raw_category:
-        return "Parts & Accessories"
+        return "Motor Spares, Parts & Accessories"
     clean_cat = raw_category.strip().lower()
 
     # 1. Match numeric index like "1.1", "6.8", "14.2", "20.6"
@@ -6826,7 +6826,7 @@ def match_searchbiz_category(raw_category: str) -> str:
 
     # 4. Domain keyword heuristics
     if any(k in clean_cat for k in ["spare", "part", "auto part", "car part", "motor spares"]):
-        return "Parts & Accessories"
+        return "Motor Spares, Parts & Accessories"
     if any(k in clean_cat for k in ["wash", "detail"]):
         return "Car Wash & Detailing"
     if any(k in clean_cat for k in ["repair", "mechanic", "workshop", "auto body", "panel"]):
@@ -6985,10 +6985,10 @@ def searchbiz_create_ad(
     email: str = None,
     website: str = None,
     whatsapp: str = None,
-    is_claimed: bool = True,
-    is_premium: bool = True,
-    plan: str = "PREMIUM",
-    verified: bool = True,
+    is_claimed: bool = False,
+    is_premium: bool = False,
+    plan: str = "free",
+    verified: bool = False,
     image: str = None,
     images: list = None
 ):
@@ -7090,7 +7090,7 @@ def parse_and_create_ad_from_text(text: str) -> Optional[Dict[str, Any]]:
                 break
 
     if not title:
-        title = "Verified South African Business"
+        title = "Local South African Business"
 
     city = fields.get("address") or fields.get("city") or fields.get("location")
     if not city:
@@ -9124,7 +9124,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
 
     # 2. SearchBiz Local Server Llama3 AI (/api/llama3/chat)
     base_url = get_active_api_base()
-    for ep in ["/api/llama3/chat", "/api/gemini/chat"]:
+    for ep in ["/api/llama3/chat"]:
         try:
             cloud_url = f"{base_url}{ep}"
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}"}
@@ -9169,27 +9169,7 @@ def ask_ai(prompt: str, system_prompt: str = None, chat_id: int = None) -> str:
         except Exception:
             continue
 
-    # 4. Optional Gemini Fallback ONLY if explicitly enabled
-    if os.getenv("USE_GEMINI", "false").lower() in ("true", "1") and GEMINI_API_KEY:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-            payload = {
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 600},
-                "systemInstruction": {"parts": [{"text": effective_system}]}
-            }
-            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=5) as res:
-                g_data = json.loads(res.read().decode("utf-8"))
-                cands = g_data.get("candidates", [])
-                if cands:
-                    text_val = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                    if text_val:
-                        return text_val.strip()
-        except Exception:
-            pass
-
-    # 5. Universal Cognitive Reasoning & Problem Solving Engine (High-Level Fallback)
+    # 4. Universal Cognitive Reasoning & Problem Solving Engine (High-Level Fallback)
     return ExecutiveCognitiveEngine.reason_and_solve(prompt, chat_id=chat_id, system_context=effective_system)
 
 def ask_ollama(prompt: str) -> str:
@@ -12560,7 +12540,7 @@ Translate the content accurately, idiomatically, and culturally appropriate into
             return
 
         title, category, city, phone = parts[0], parts[1], parts[2], parts[3]
-        description = parts[4] if len(parts) > 4 else f"Verified {category} in {city}."
+        description = parts[4] if len(parts) > 4 else f"{category} in {city}."
 
         send_chat_action(chat_id, "typing")
         res = searchbiz_create_ad(title, category, city, phone, description)
