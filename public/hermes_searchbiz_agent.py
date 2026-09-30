@@ -2443,19 +2443,6 @@ ai@searchbiz.co.za | https://searchbiz.co.za
         ads_published_count = import_res.get("imported_count", 0)
 
     # Step 8: Build Telegram Summary
-    sample_lines = []
-    for b in businesses[:6]:
-        phone_str = f"📞 <code>{b['phone']}</code>" if b.get("phone") else "📞 No phone"
-        wa_str = f"📱 WA: <code>{b['whatsapp']}</code>" if b.get("whatsapp") else ""
-        email_str = f"✉️ <code>{b['email']}</code>" if b.get("email") else ""
-        hours_str = f"⏰ <i>{b['trading_hours']}</i>" if b.get("trading_hours") else ""
-        web_str = f"🌐 <a href='{b['website']}'>Website</a>" if b.get("website") else ""
-        extra_parts = [p for p in [phone_str, wa_str, email_str, web_str] if p]
-        contact_line = " | ".join(extra_parts)
-        sample_lines.append(f"• <b>{html.escape(b['name'])}</b> ({html.escape(b['category'])})\n  {contact_line}\n  📍 {html.escape(b.get('address', ''))}\n  {hours_str}")
-
-    preview_block = "\n\n".join(sample_lines)
-
     if ads_published_count > 0:
         ad_status_note = f"🌐 <b>SearchBiz Free Tier Ads Created:</b> <b>{ads_published_count}</b> listings published live!\n  <i>(Publicly showing: Business Name, Phone Number, and Physical Address only. Strictly ZERO images. All other rich details kept safe in CSV!)</i>"
     else:
@@ -2473,9 +2460,6 @@ ai@searchbiz.co.za | https://searchbiz.co.za
 
 📋 <b>All 19 Columns Preserved in CSV:</b>
 Business Name, Category, Phone Number, Telephone / Mobile, WhatsApp Number, Email Address, Street Address, City, Suburb, Province, Postal Code, Trading Hours, Website, Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Rating, Reviews Count, and Google Maps URL.
-
-🔍 <b>Extracted Businesses Preview:</b>
-{preview_block}
 
 🚀 <b>Next Actions:</b>
 • <code>/listings</code> - Inspect organized listings directory
@@ -5906,6 +5890,10 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
             send_telegram(chat_id, "🛑 <b>Scraper Stopped:</b> Province mission aborted by emergency stop command.")
             break
 
+        prov_start_time = time.time()
+        prov_scraped_before = len(consolidated_leads)
+        prov_ads_before = total_ads_placed
+
         prov_name = prov_info["name"]
         prov_slug = prov_info["slug"]
         prov_code = prov_info.get("code", "SA")
@@ -5929,9 +5917,6 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
                 continue
 
             loc_counter += 1
-            if loc_counter % 6 == 1:
-                send_chat_action(chat_id, "typing")
-                send_telegram(chat_id, f"📍 <b>Crawling '{category_display}' in {loc_name} ({loc_town}, {prov_code})...</b>\n<i>Towns covered: {len(towns_visited)} | Total Verified Leads: {len(consolidated_leads)}</i>")
 
             # Harvest businesses with strict phone validation
             leads = harvest_businesses_for_location(clean_cat, loc_name, loc_town, prov_name, prov_slug)
@@ -5995,6 +5980,22 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
             if loc_counter >= 35 and not suburb_level_mode and not is_all_provinces and not any(k in lower for k in ["keep going", "all 923", "full list", "all suburbs", "all kzn suburbs", "every suburb", "entire province"]):
                 logger.info(f"Completed initial hub sweep of {loc_counter} locations in {prov_name}. Consolidating results...")
                 break
+
+        # Calculate exact duration for this province and notify user once done
+        prov_duration = time.time() - prov_start_time
+        prov_scraped_count = len(consolidated_leads) - prov_scraped_before
+        prov_ads_count = total_ads_placed - prov_ads_before
+        p_mins = int(prov_duration // 60)
+        p_secs = int(prov_duration % 60)
+        prov_time_str = f"{p_mins}m {p_secs}s" if p_mins > 0 else f"{p_secs}s"
+
+        send_chat_action(chat_id, "typing")
+        send_telegram(chat_id, f"""🇿🇦 <b>Province Completed: {prov_name}</b>
+📂 <b>Category:</b> <code>{category_display}</code>
+⏱️ <b>Time Taken:</b> <b>{prov_time_str}</b>
+🔢 <b>Businesses Harvested:</b> <b>{prov_scraped_count}</b>
+🌐 <b>SearchBiz Free Ads Placed:</b> <b>{prov_ads_count}</b>
+📊 <b>Progress:</b> Province {prov_idx}/{len(provinces_to_scrape)} ({len(consolidated_leads)} Total Leads)""")
 
     # 6. Generate ONE Consolidated Mission CSV File
     safe_prov = re.sub(r'[^a-zA-Z0-9]', '_', provinces_to_scrape[0]["code"] if len(provinces_to_scrape) == 1 else "National")
