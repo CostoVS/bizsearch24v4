@@ -5898,6 +5898,12 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
         prov_slug = prov_info["slug"]
         prov_code = prov_info.get("code", "SA")
 
+        # Live Real-Time Telegram Progress Indicator: Province In Progress
+        send_chat_action(chat_id, "typing")
+        send_telegram(chat_id, f"""⏳ <b>[Province {prov_idx}/{len(provinces_to_scrape)}] IN PROGRESS: {prov_name} ({prov_code})</b>
+📂 <b>Category:</b> <code>{category_display}</code>
+🇿🇦 <i>Scanning Google Maps, OpenStreetMap & commercial hubs across {prov_name}...</i>""")
+
         target_locations = get_unique_target_locations_for_province(prov_slug, suburb_level=suburb_level_mode)
         
         # Log planned scope
@@ -5989,13 +5995,18 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
         p_secs = int(prov_duration % 60)
         prov_time_str = f"{p_mins}m {p_secs}s" if p_mins > 0 else f"{p_secs}s"
 
+        if prov_idx < len(provinces_to_scrape):
+            next_p = provinces_to_scrape[prov_idx]
+            next_info_str = f"\n\n➡️ <b>Next Province:</b> <b>{next_p['name']} ({next_p.get('code', 'SA')})</b> in progress..."
+        else:
+            next_info_str = f"\n\n🎉 <b>All {len(provinces_to_scrape)} Provinces Complete for {category_display}!</b>\n📦 <i>Generating single consolidated CSV & emailing now...</i>"
+
         send_chat_action(chat_id, "typing")
-        send_telegram(chat_id, f"""🇿🇦 <b>Province Completed: {prov_name}</b>
+        send_telegram(chat_id, f"""✅ <b>[Province {prov_idx}/{len(provinces_to_scrape)}] COMPLETED: {prov_name} ({prov_code})</b>
 📂 <b>Category:</b> <code>{category_display}</code>
 ⏱️ <b>Time Taken:</b> <b>{prov_time_str}</b>
-🔢 <b>Businesses Harvested:</b> <b>{prov_scraped_count}</b>
-🌐 <b>SearchBiz Free Ads Placed:</b> <b>{prov_ads_count}</b>
-📊 <b>Progress:</b> Province {prov_idx}/{len(provinces_to_scrape)} ({len(consolidated_leads)} Total Leads)""")
+🔢 <b>Businesses Harvested in {prov_name}:</b> <b>{prov_scraped_count}</b> (Total So Far: {len(consolidated_leads)})
+🌐 <b>SearchBiz Free Ads Placed:</b> <b>{prov_ads_count}</b> (Total So Far: {total_ads_placed}){next_info_str}""")
 
     # 6. Generate ONE Consolidated Mission CSV File
     safe_prov = re.sub(r'[^a-zA-Z0-9]', '_', provinces_to_scrape[0]["code"] if len(provinces_to_scrape) == 1 else "National")
@@ -6187,10 +6198,12 @@ def scrape_all_145_categories_sequential_pipeline(chat_id: int, query_directive:
     start_code_match = re.search(r'\b(?:start\s+(?:at|from)|from)\s+(\d+\.\d+)\b', lower)
     start_code = start_code_match.group(1) if start_code_match else "1.1"
 
-    # Flatten all 145 subcategories into an ordered list
+    # Flatten all subcategories into an ordered list
     ordered_subcategories = []
     for group in CATEGORIES_145_TREE:
-        g_name = group.get("cleanName", group.get("name", ""))
+        g_name = group.get("cleanGroup") or group.get("cleanName") or group.get("group") or group.get("name") or ""
+        # Strip numeric prefix from group if present (e.g. "1. AUTOMOTIVE & VEHICLES" -> "Automotive & Vehicles")
+        clean_g_name = re.sub(r'^\d+\.\s*', '', g_name).title()
         for sub_str in group.get("subcategories", []):
             match = re.match(r'^(\d+\.\d+)\s*(.*)$', sub_str.strip())
             if match:
@@ -6200,7 +6213,7 @@ def scrape_all_145_categories_sequential_pipeline(chat_id: int, query_directive:
                     "code": c_code,
                     "name": c_name,
                     "full_name": sub_str.strip(),
-                    "group_name": g_name
+                    "group_name": clean_g_name
                 })
 
     # Filter by start_code if specified
