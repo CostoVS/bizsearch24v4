@@ -1538,28 +1538,202 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
     suburb = detected_suburb or ""
     province = detected_province or "Gauteng"
 
-    # 2. Detect category
+    # 2. Universal 20-Category & 145-Subcategory Auto-Detector
     common_categories = [
-        ("spares", "Spares Shops"),
-        ("spare", "Spares Shops"),
-        ("auto part", "Auto Spares & Parts"),
-        ("car part", "Auto Spares & Parts"),
-        ("motor spares", "Auto Spares & Parts"),
-        ("panel beater", "Panel Beaters"),
-        ("mechanic", "Auto Mechanics"),
-        ("tyre", "Tyre & Fitment Centres"),
-        ("restaurant", "Restaurants"),
-        ("plumber", "Plumbers"),
-        ("electrician", "Electricians"),
-        ("hardware", "Hardware Stores"),
-        ("pharmacy", "Pharmacies"),
-        ("hotel", "Hotels & B&Bs")
+        # 1. Automotive & Vehicles
+        ("cash wash", "Car Wash & Detailing"),
+        ("car wash", "Car Wash & Detailing"),
+        ("carwash", "Car Wash & Detailing"),
+        ("auto wash", "Car Wash & Detailing"),
+        ("detailing", "Car Wash & Detailing"),
+        ("auto detailing", "Car Wash & Detailing"),
+        ("car detailing", "Car Wash & Detailing"),
+        ("valet", "Car Wash & Detailing"),
+        ("auto valet", "Car Wash & Detailing"),
+        ("car valet", "Car Wash & Detailing"),
+        ("car polish", "Car Wash & Detailing"),
+        ("car spa", "Car Wash & Detailing"),
+        ("spares", "Motor Spares, Parts & Accessories"),
+        ("spare", "Motor Spares, Parts & Accessories"),
+        ("auto part", "Motor Spares, Parts & Accessories"),
+        ("car part", "Motor Spares, Parts & Accessories"),
+        ("motor spares", "Motor Spares, Parts & Accessories"),
+        ("parts & accessories", "Motor Spares, Parts & Accessories"),
+        ("panel beater", "Auto Body & Repair Shops"),
+        ("panelbeater", "Auto Body & Repair Shops"),
+        ("auto body", "Auto Body & Repair Shops"),
+        ("smash repair", "Auto Body & Repair Shops"),
+        ("spray paint", "Auto Body & Repair Shops"),
+        ("mechanic", "Auto Body & Repair Shops"),
+        ("workshop", "Auto Body & Repair Shops"),
+        ("car repair", "Auto Body & Repair Shops"),
+        ("tyre", "Tire Shops"),
+        ("tire", "Tire Shops"),
+        ("wheel", "Tire Shops"),
+        ("towing", "Towing & Roadside Assistance"),
+        ("tow truck", "Towing & Roadside Assistance"),
+        ("breakdown", "Towing & Roadside Assistance"),
+        ("dealership", "Dealerships (New & Used)"),
+        ("car sales", "Dealerships (New & Used)"),
+        ("used car", "Used Car Dealerships & Auto Auctions"),
+        ("car rental", "Car Rental Agencies"),
+        ("auto glass", "Auto Glass Repair & Windscreen Replacement"),
+        ("windscreen", "Auto Glass Repair & Windscreen Replacement"),
+        ("auto electrical", "Auto Electrical & Diagnostic Services"),
+        ("roadworthy", "Vehicle Inspection & Roadworthy Testing"),
+        ("petrol station", "Petrol Stations & Service Stations"),
+        ("fuel station", "Petrol Stations & Service Stations"),
+        ("filling station", "Petrol Stations & Service Stations"),
+        # 2. Beauty & Personal Care
+        ("hair", "Hair Salons & Stylists"),
+        ("salon", "Hair Salons & Stylists"),
+        ("barber", "Barbershops"),
+        ("spa", "Day Spas & Wellness Centres"),
+        ("nail", "Nail Salons & Nail Bars"),
+        ("massage", "Massage Therapy & Reflexology"),
+        ("beauty", "Beauty Salons & Aesthetics"),
+        ("skincare", "Skincare Clinics & Dermatological Aesthetics"),
+        ("makeup", "Makeup Artists & Bridal Beauty"),
+        # 3. Business Services
+        ("accounting", "Accounting, Bookkeeping & Auditing"),
+        ("accountant", "Accounting, Bookkeeping & Auditing"),
+        ("bookkeeper", "Accounting, Bookkeeping & Auditing"),
+        ("advertising", "Advertising, Marketing & Brand Agencies"),
+        ("marketing", "Advertising, Marketing & Brand Agencies"),
+        ("consulting", "Business Management & Strategy Consulting"),
+        ("graphic design", "Graphic, UI/UX & Web Design Studios"),
+        ("web design", "Graphic, UI/UX & Web Design Studios"),
+        ("hr", "Human Resources & Recruitment Agencies"),
+        ("recruitment", "Human Resources & Recruitment Agencies"),
+        ("it support", "IT Support, Networking & Managed Services"),
+        ("computer repair", "IT Support, Networking & Managed Services"),
+        ("legal", "Legal Services & Law Firms"),
+        ("lawyer", "Legal Services & Law Firms"),
+        ("attorney", "Legal Services & Law Firms"),
+        ("law firm", "Legal Services & Law Firms"),
+        ("printing", "Printing, Signage & Large-Format Branding"),
+        ("signage", "Printing, Signage & Large-Format Branding"),
+        ("security", "Security Guarding, Armed Response & CCTV"),
+        # 4. Cleaning & Janitorial
+        ("cleaning", "Commercial & Office Cleaning"),
+        ("cleaner", "Commercial & Office Cleaning"),
+        ("carpet clean", "Carpet, Rug & Upholstery Cleaning"),
+        ("window clean", "Window & Façade Cleaning"),
+        ("maid", "Domestic Cleaning & Maid Services"),
+        ("pressure wash", "High-Pressure Cleaning & Washing"),
+        # 5. Community & Public
+        ("church", "Places of Worship & Religious Organisations"),
+        ("charity", "Charities, Non-Profits & Community Outreach"),
+        # 6. Construction & Trades
+        ("plumber", "Plumbing Contractors & Geyser Repair"),
+        ("plumbing", "Plumbing Contractors & Geyser Repair"),
+        ("electrician", "Electrical Contractors & Solar Installers"),
+        ("electrical", "Electrical Contractors & Solar Installers"),
+        ("solar", "Solar Power, Inverters & Backup Energy"),
+        ("builder", "General Building Contractors & Renovations"),
+        ("construction", "General Building Contractors & Renovations"),
+        ("carpenter", "Carpentry, Joinery & Custom Woodwork"),
+        ("painter", "Painting & Waterproofing Contractors"),
+        ("roofing", "Roofing, Trusses & Ceiling Installation"),
+        ("roofer", "Roofing, Trusses & Ceiling Installation"),
+        ("welder", "Welding, Steel Fabrication & Security Gates"),
+        ("welding", "Welding, Steel Fabrication & Security Gates"),
+        ("tiler", "Tiling, Flooring & Paving Contractors"),
+        # 7. Education & Training
+        ("school", "High Schools & Secondary Education"),
+        ("primary school", "Primary & Elementary Schools"),
+        ("high school", "High Schools & Secondary Education"),
+        ("college", "Colleges, Universities & Higher Education"),
+        ("daycare", "Daycares, Creches & Preschools"),
+        ("driving school", "Driving Schools & Lessons"),
+        ("tutor", "Tutoring & Extra Lessons"),
+        # 8. Entertainment & Recreation
+        ("cinema", "Cinemas & Theatres"),
+        ("gym", "Gyms & Fitness Centres"),
+        ("nightclub", "Nightclubs, Bars & Lounges"),
+        # 9. Events & Weddings
+        ("catering", "Catering & Private Chef Services"),
+        ("event planner", "Event Planning & Coordination"),
+        ("wedding venue", "Wedding Venues & Reception Halls"),
+        ("photographer", "Photography Studios & Event Photographers"),
+        ("dj", "DJs, Sound Engineering & AV Hire"),
+        # 10. Financial Services
+        ("insurance", "Insurance Brokers & Underwriters"),
+        ("loan", "Micro Loans, Credit & Pawn Services"),
+        ("tax", "Tax Practitioners & SARS Compliance"),
+        ("debt review", "Debt Review & Counseling"),
+        # 11. Food & Dining
+        ("restaurant", "Full-Service Restaurants"),
+        ("cafe", "Cafes & Coffee Shops"),
+        ("coffee", "Cafes & Coffee Shops"),
+        ("fast food", "Fast Food, Takeaways & Drive-Thrus"),
+        ("bakery", "Bakeries, Pastry Shops & Patisseries"),
+        ("pub", "Bars, Pubs & Taverns"),
+        ("bar", "Bars, Pubs & Taverns"),
+        # 12. Groceries & Markets
+        ("supermarket", "Supermarkets, Hypermarkets & Wholesalers"),
+        ("butchery", "Butcheries & Meat Wholesalers"),
+        ("bottle store", "Bottle Stores, Liquor Shops & Wine Merchants"),
+        ("fruit & veg", "Fruit, Vegetable & Fresh Produce Markets"),
+        # 13. Health & Medical
+        ("doctor", "Primary Care & Family Doctors (GPs)"),
+        ("dr", "Primary Care & Family Doctors (GPs)"),
+        ("dentist", "Dental Clinics & Orthodontics"),
+        ("dental", "Dental Clinics & Orthodontics"),
+        ("pharmacy", "Pharmacies & Dispensaries"),
+        ("chemist", "Pharmacies & Dispensaries"),
+        ("optometrist", "Optometrists & Optical Dispensaries"),
+        ("hospital", "Hospitals & Emergency Medical Centres"),
+        ("clinic", "Clinics & Community Health Centres"),
+        ("vet", "Veterinary Clinics & Animal Hospitals"),
+        ("physio", "Physiotherapists & Biokineticists"),
+        # 14. Home & Garden
+        ("hardware", "Hardware, Tools & Building Materials"),
+        ("furniture", "Furniture Stores & Custom Cabinetry"),
+        ("landscaping", "Landscaping & Garden Care"),
+        ("nursery", "Plant Nurseries & Garden Centres"),
+        ("pest control", "Pest Control & Extermination"),
+        ("tree felling", "Tree Felling & Stump Removal"),
+        ("appliance repair", "Appliance Repair & Servicing"),
+        # 15. Hotels & Travel
+        ("hotel", "Hotels & Motels"),
+        ("b&b", "Bed & Breakfasts (B&Bs)"),
+        ("guest house", "Guest Houses & Country Lodges"),
+        ("lodge", "Game Lodges & Safari Resorts"),
+        ("travel agency", "Travel Agencies & Tour Operators"),
+        # 16. Manufacturing & Industrial
+        ("manufacturing", "Metal, Steel & Aluminium Fabrication"),
+        ("warehouse", "Warehousing, Logistics & Cold Storage"),
+        # 17. Real Estate & Housing
+        ("estate agent", "Estate Agencies & Residential Sales"),
+        ("property", "Property Management & Letting Agencies"),
+        ("real estate", "Estate Agencies & Residential Sales"),
+        # 18. Retail Shopping
+        ("clothing", "Clothing Boutiques & Apparel"),
+        ("boutique", "Clothing Boutiques & Apparel"),
+        ("electronics", "Cellular, Electronics & Gadget Stores"),
+        ("jeweller", "Jewellery Stores & Watchmakers"),
+        ("shopping mall", "Shopping Centres & Malls"),
+        # 19. Sports & Fitness
+        ("fitness", "Gyms & Fitness Centres"),
+        ("bicycle", "Bicycle Shops & Repair"),
+        ("yoga", "Yoga & Pilates Studios"),
+        # 20. Transportation & Logistics
+        ("courier", "Courier & Delivery Services"),
+        ("freight", "Freight & Cargo Shipping"),
+        ("moving", "Moving & Relocation Services"),
+        ("shuttle", "Airport Shuttles & Limos")
     ]
     detected_cat = None
     for kw, cat_name in common_categories:
         if kw in lower_q:
             detected_cat = cat_name
             break
+    if not detected_cat:
+        # Check numeric code like 1.1, 6.8, 13.2
+        num_code_match = re.search(r'\b(\d+\.\d+)\b', lower_q)
+        if num_code_match:
+            detected_cat = match_searchbiz_category(num_code_match.group(1))
     if not detected_cat:
         # If query has clean "in <city>" format
         for sep in [" in ", " near ", " around ", " at ", " for "]:
@@ -1568,7 +1742,7 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
                 if len(parts) >= 2:
                     cand = re.sub(r'^(?:please\s+)?(?:scrape|search|find|extract|get)\s+(?:google\s+maps|maps)?\s*', '', parts[0], flags=re.IGNORECASE).strip()
                     if len(cand) < 40 and not any(w in cand.lower() for w in ["didn't", "correctly", "result", "csv"]):
-                        detected_cat = cand.title()
+                        detected_cat = match_searchbiz_category(cand)
                         break
     if not detected_cat:
         try:
@@ -1583,7 +1757,7 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
                     break
         except Exception:
             pass
-    category = detected_cat or "Spares Shops"
+    category = detected_cat or "General Services"
 
     engine_desc = "🎭 Playwright Stealth Chromium (Headless Mouse-Wheel Scraper)" if PLAYWRIGHT_INSTALLED else "🛡️ Geospatial OpenStreetMap & Verified Regional SA Registries"
 
@@ -4873,11 +5047,25 @@ out center 35;
 """
 
     # 3. Car Wash (Group 1.2)
-    if any(k in c_lower for k in ["car wash", "auto wash", "detailing", "valet", "1.2"]):
-        return f"""[out:json][timeout:10];
+    if any(k in c_lower for k in ["car wash", "cash wash", "auto wash", "carwash", "detailing", "detail", "valet", "1.2"]):
+        return f"""[out:json][timeout:15];
 (
   node["amenity"="car_wash"]({bbox});
   way["amenity"="car_wash"]({bbox});
+  node["shop"="car_wash"]({bbox});
+  way["shop"="car_wash"]({bbox});
+  node["craft"="car_wash"]({bbox});
+  way["craft"="car_wash"]({bbox});
+  node["craft"="car_detailing"]({bbox});
+  way["craft"="car_detailing"]({bbox});
+  node["shop"="car_detailing"]({bbox});
+  way["shop"="car_detailing"]({bbox});
+  node["craft"="auto_detailing"]({bbox});
+  way["craft"="auto_detailing"]({bbox});
+  node["service"="car_wash"]({bbox});
+  way["service"="car_wash"]({bbox});
+  node["name"~"Car Wash|Carwash|Auto Wash|Detailing|Auto Valet|Car Spa|Auto Spa|Valet",i]({bbox});
+  way["name"~"Car Wash|Carwash|Auto Wash|Detailing|Auto Valet|Car Spa|Auto Spa|Valet",i]({bbox});
 );
 out center 35;
 """
@@ -5101,7 +5289,7 @@ def is_business_category_match(
     is_grocery_target = bool(re.search(r'\b(supermarket|supermarkets|grocery|groceries|convenience|market|markets)\b', target_cat) or "12." in target_cat)
     is_beauty_target = bool(re.search(r'\b(hair|salon|salons|barber|barbers|spa|spas|beauty|nail|nails)\b', target_cat) or "2." in target_cat)
     is_food_target = bool(re.search(r'\b(restaur|restaurant|restaurants|cafe|cafes|food|dining|bakery|bakeries|pub|pubs|bar|bars)\b', target_cat) or "11." in target_cat)
-    is_auto_target = bool(re.search(r'\b(auto|car|cars|vehicle|vehicles|motor|motors|repair|repairs|panel|beater|beaters|spares|spare|parts|tire|tires|tyre|tyres|towing|tow|dealership|dealerships|mechanic|mechanics|workshop|workshops)\b', target_cat) or any(k in target_cat for k in ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"]))
+    is_auto_target = bool(re.search(r'\b(auto|car|cars|vehicle|vehicles|motor|motors|repair|repairs|panel|beater|beaters|spares|spare|parts|tire|tires|tyre|tyres|towing|tow|dealership|dealerships|mechanic|mechanics|workshop|workshops|wash|carwash|cash wash|detailing|detail|valet|autowash|autovalet)\b', target_cat) or any(k in target_cat for k in ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"]))
     is_trade_target = bool(re.search(r'\b(plumb|plumber|plumbers|plumbing|electr|electric|electrician|electricians|build|builder|builders|building|construct|construction|carpent|carpenter|carpenters|paint|painter|painters|roof|roofer|roofers|roofing|contractor|contractors)\b', target_cat) or "6." in target_cat)
     is_medical_target = bool(re.search(r'\b(doc|docs|doctor|doctors|dent|dental|dentist|dentists|medic|medical|clinic|clinics|pharm|pharmacy|pharmacies|optom|optometrist|health|hospital|hospitals)\b', target_cat) or "13." in target_cat)
 
@@ -5175,24 +5363,41 @@ def is_business_category_match(
     if is_auto_target:
         is_spares_only = any(k in target_cat for k in ["spares", "parts", "accessories", "1.7"])
         is_tyres_only = any(k in target_cat for k in ["tire", "tyre", "wheel", "1.8"])
-        is_wash_only = any(k in target_cat for k in ["wash", "detail", "valet", "1.2"])
+        is_wash_only = any(k in target_cat for k in ["wash", "detail", "valet", "1.2", "carwash", "autowash", "cash wash"])
         is_dealer_only = any(k in target_cat for k in ["dealer", "dealership", "sales", "1.4"])
         is_body_repair = any(k in target_cat for k in ["body", "repair", "panel", "mechanic", "smash", "workshop", "1.1"])
 
-        has_auto_tag = any(t in ["car_repair", "car_parts", "tyres", "car", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash"] for t in tag_vals)
-        has_auto_ptype = any(pt in p_type for pt in ["auto", "car", "motor", "mechanic", "repair", "parts", "tire", "tyre", "wheel", "body shop", "towing", "wash", "dealership"])
+        has_auto_tag = any(t in ["car_repair", "car_parts", "tyres", "car", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash", "car_detailing", "auto_detailing", "cleaning"] for t in tag_vals)
+        has_auto_ptype = any(pt in p_type for pt in ["auto", "car", "motor", "mechanic", "repair", "parts", "tire", "tyre", "wheel", "body shop", "towing", "wash", "car wash", "detail", "detailing", "valet", "dealership"])
 
         auto_pos_kw = [
             "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
             "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
             "brake", "suspension", "radiator", "gearbox", "diff", "dent", "chassis",
             "bakkie", "tyre", "tire", "spares", "parts", "glasfit", "pg glass",
-            "midas", "autozone", "supa quick", "hi-q", "tiger wheel", "towing"
+            "midas", "autozone", "supa quick", "hi-q", "tiger wheel", "towing",
+            "wash", "carwash", "cash wash", "detailing", "detail", "valet", "autowash",
+            "autovalet", "spa", "polish", "polishing", "ceramic", "coating", "clean"
         ]
         has_auto_kw = any(re.search(rf'\b{re.escape(kw)}\b', combined_desc) for kw in auto_pos_kw)
 
         if not (has_auto_tag or has_auto_ptype or has_auto_kw):
             return False, "lacks_automotive_indicator"
+
+        # If strict 1.2 Car Wash & Detailing
+        if is_wash_only:
+            wash_pos = [
+                "wash", "carwash", "car wash", "cash wash", "detailing", "detail", "auto detailing", "car detailing",
+                "valet", "auto valet", "autowash", "auto wash", "clean", "polishing", "polish", "ceramic",
+                "ceramic coating", "steam wash", "mobile wash", "auto spa", "car spa", "sparkle", "gleam",
+                "shine", "gloss", "hand wash", "pressure wash", "waterless wash", "scratch repair", "paint protection", "tinting", "window tint"
+            ]
+            has_wash_ptype = any(pt in p_type for pt in ["wash", "car wash", "detail", "detailing", "valet", "cleaning", "auto", "car"])
+            has_wash_tag = any(t in ["car_wash", "car_detailing", "auto_detailing", "cleaning", "car_repair"] for t in tag_vals)
+            has_wash_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in wash_pos) or any(k in clean_name for k in ["wash", "carwash", "detail", "valet", "shine", "sparkle", "clean", "autospa", "carspa", "coating", "polish"])
+            if not (has_wash_ptype or has_wash_tag or has_wash_kw):
+                return False, "lacks_car_wash_indicator"
+            return True, "valid_car_wash_match"
 
         # If strict 1.1 Auto Body & Repair Shops
         if is_body_repair and not (is_spares_only or is_tyres_only or is_wash_only or is_dealer_only):
@@ -6307,6 +6512,138 @@ ai@searchbiz.co.za | https://searchbiz.co.za"""
 def scrape_multi_province_pipeline(chat_id: int, query_directive: str) -> dict:
     """Delegates to unified autonomous province and suburbs scraper engine."""
     return scrape_province_suburbs_pipeline(chat_id, query_directive)
+
+def scrape_all_145_categories_sequential_pipeline(chat_id: int, query_directive: str = "") -> dict:
+    """
+    Master Autonomous 145-Category Sequential Nationwide Scraping Engine:
+    1. Sequentially loops through all 145 subcategories (from 1.1 up to 20.12).
+    2. For each category:
+       - Scrapes Google Maps & OpenStreetMap across all 9 provinces & 6,931 suburbs/towns.
+       - Discards duplicates, non-matches, and entries lacking telephone/WhatsApp contact.
+       - Stores full business profiles (Name, Category, Email, Website, Phone, Landline, WhatsApp, Address, Trading Hours, Rating, Social Links) in SQLite database (status='scraped', email_sent=0).
+       - Automatically publishes Free Unclaimed Ads (R0.00) on searchbiz.co.za for immediate indexation.
+       - Consolidates all 9 provinces into ONE single CSV file for that category.
+       - Automatically emails the CSV to nicholauscostochetty@gmail.com and sends document to Telegram.
+       - Advances automatically to the next category (1.2, 1.3, etc.).
+    3. When all 145 categories are finished, sends a comprehensive master report and enters Standby Mode waiting for user command to begin email outreach.
+    """
+    lower = query_directive.lower()
+    
+    # 1. Target Delivery Email
+    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', query_directive)
+    target_delivery_email = email_match.group(0).lower() if email_match else "nicholauscostochetty@gmail.com"
+
+    # 2. Extract starting code if specified (e.g. "start at 1.2" or "from 1.1")
+    start_code_match = re.search(r'\b(?:start\s+(?:at|from)|from)\s+(\d+\.\d+)\b', lower)
+    start_code = start_code_match.group(1) if start_code_match else "1.1"
+
+    # Flatten all 145 subcategories into an ordered list
+    ordered_subcategories = []
+    for group in CATEGORIES_145_TREE:
+        g_name = group.get("cleanName", group.get("name", ""))
+        for sub_str in group.get("subcategories", []):
+            match = re.match(r'^(\d+\.\d+)\s*(.*)$', sub_str.strip())
+            if match:
+                c_code = match.group(1)
+                c_name = match.group(2).strip()
+                ordered_subcategories.append({
+                    "code": c_code,
+                    "name": c_name,
+                    "full_name": sub_str.strip(),
+                    "group_name": g_name
+                })
+
+    # Filter by start_code if specified
+    if start_code and start_code != "1.1":
+        start_idx = 0
+        for i, item in enumerate(ordered_subcategories):
+            if item["code"] == start_code:
+                start_idx = i
+                break
+        ordered_subcategories = ordered_subcategories[start_idx:]
+
+    total_categories_to_run = len(ordered_subcategories)
+
+    master_init_msg = f"""🌟 <b>SearchBiz Master Nationwide Category Harvester Activated</b>
+═══════════════════════════════════════════
+🎯 <b>Total Subcategories in Scope:</b> <b>{total_categories_to_run} Subcategories</b> (All 20 Sectors)
+🇿🇦 <b>Geographic Scope:</b> <b>All 9 South African Provinces</b> (6,931 Suburbs & 666 Towns)
+📬 <b>Delivery Destination:</b> Direct Telegram CSV Documents + Email to <b>{target_delivery_email}</b>
+🌐 <b>SearchBiz Auto-Placement:</b> <b>Live Free Unclaimed Listings (R0.00)</b> on searchbiz.co.za
+🔒 <b>Cold Outreach Protection:</b> <b>STANDBY MODE ACTIVE</b> (All leads stored safely with emails/phones; NO cold outreach sent until your explicit command)
+
+⚡ <b>Autonomous Sequence Execution:</b>
+Hermes & Layla will now scrape Category <b>{ordered_subcategories[0]['code']} ({ordered_subcategories[0]['name']})</b> across all 9 provinces, publish to SearchBiz, email you the unified CSV, and automatically advance to the next category until all categories are complete!
+
+⏳ <i>Commencing nationwide cycle now...</i>"""
+
+    send_telegram(chat_id, master_init_msg)
+    send_chat_action(chat_id, "upload_document")
+
+    reset_stop_flag()
+
+    master_scraped_total = 0
+    master_ads_total = 0
+    completed_categories = []
+
+    for cat_idx, cat_info in enumerate(ordered_subcategories, 1):
+        if check_stop_requested():
+            send_telegram(chat_id, f"🛑 <b>[Master Harvester Halted]</b> Sequence stopped by user command after {len(completed_categories)} categories.")
+            break
+
+        c_code = cat_info["code"]
+        c_name = cat_info["name"]
+        c_full = cat_info["full_name"]
+        c_group = cat_info["group_name"]
+
+        send_chat_action(chat_id, "typing")
+        send_telegram(chat_id, f"🚀 <b>[Category {cat_idx}/{total_categories_to_run}]</b> <i>Starting nationwide sweep for:</i>\n📂 <b>{c_full}</b> ({c_group})\n🇿🇦 <i>Scanning all 9 provinces & commercial hubs...</i>")
+
+        # Execute nationwide sweep for this specific category
+        cat_directive = f"scrape all 9 provinces and all suburbs for category {c_code} {c_name} and upload free ads to searchbiz and email CSV to {target_delivery_email}"
+        cat_result = scrape_province_suburbs_pipeline(chat_id=chat_id, query_directive=cat_directive)
+
+        scraped_in_cat = cat_result.get("total_scraped", 0)
+        ads_in_cat = cat_result.get("total_ads_placed", 0)
+        csv_file = cat_result.get("csv_filename", "")
+
+        master_scraped_total += scraped_in_cat
+        master_ads_total += ads_in_cat
+        completed_categories.append({
+            "code": c_code,
+            "name": c_name,
+            "count": scraped_in_cat,
+            "ads": ads_in_cat,
+            "csv": csv_file
+        })
+
+        # Pacing between full category missions
+        time.sleep(random.uniform(2.0, 3.5))
+
+    # Master Final Completion Announcement
+    completion_msg = f"""🎉 <b>[Master Nationwide Category Harvest Completed!]</b>
+═══════════════════════════════════════════
+🏆 <b>Categories Completed:</b> <b>{len(completed_categories)} of {total_categories_to_run} Subcategories</b>
+🔢 <b>Total Verified Businesses Harvested:</b> <b>{master_scraped_total} Listings</b> (Phones, WhatsApp, Websites & Emails)
+🌐 <b>SearchBiz Free Unclaimed Ads Live:</b> <b>{master_ads_total} Published Ads</b>
+📁 <b>Mission CSV Files Emailed:</b> Delivered to <b>{target_delivery_email}</b>
+
+🔒 <b>STATUS: STANDBY MODE</b>
+All business leads and contact details are securely archived in the SQLite vault and SearchBiz directory index.
+Hermes & Layla are in standby waiting for your directive to begin emailing businesses to join SearchBiz!
+
+👉 <b>Commands:</b>
+• <code>/stats</code> - View live database and directory statistics
+• <code>/outreach_all</code> - Launch verified email onboarding campaign when you are ready!"""
+
+    send_telegram(chat_id, completion_msg)
+    return {
+        "success": True,
+        "categories_completed": len(completed_categories),
+        "total_scraped": master_scraped_total,
+        "total_ads_placed": master_ads_total,
+        "target_email": target_delivery_email
+    }
 
 def publish_leads_from_listings(chat_id: int, filter_term: str = "", target_plan: str = "free") -> dict:
     """
@@ -10531,6 +10868,39 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
         send_chat_action(chat_id, "typing")
         card = get_province_areas_card(text)
         send_telegram(chat_id, card)
+        return True
+
+    # ------------------------------------------------------------------------
+    # 0-AA. Master 145-Category Sequential Nationwide Scraping Engine (SUPER TOP PRIORITY)
+    # Intercepts:
+    # - "Ok I want this Hermes laya to scrape Google maps for each category each province upload it and email me once finished per category and all 9 provinces..."
+    # - "scrape google maps for each category each province", "scrape all categories in all 9 provinces"
+    # - "scrape category 1.1 on all 9 provinces then upload then email then 1.2 then 1.3"
+    # - "/scrape_all_categories", "/scrape_all_categories_nationwide", "/all_categories_all_provinces"
+    # ------------------------------------------------------------------------
+    is_all_categories_master_scrape_req = (
+        text.startswith((
+            "/scrape_all_categories_nationwide", "/scrape_all_categories", "/all_categories_sweep",
+            "/all_categories_all_provinces", "/scrape_every_category", "/master_harvest"
+        )) or
+        any(k in lower for k in [
+            "for each category each province", "each category each province", "every category each province",
+            "each category all 9 provinces", "each category and all 9 provinces", "every category in all 9 provinces",
+            "scrape all categories", "scrape every category", "all 145 categories",
+            "all categories in all 9 provinces", "all categories across all 9 provinces",
+            "all categories all 9 provinces", "all categories 9 provinces",
+            "then it goes to category 1.2", "then starts with 1.3 category", "until it finishes all the categories",
+            "per category and all 9 provinces", "for 1 category, then when it's done with that it goes to category"
+        ]) or
+        (
+            any(w in lower for w in ["each category", "every category", "all categories"]) and
+            any(p in lower for p in ["all 9 provinces", "each province", "every province", "all provinces"]) and
+            any(a in lower for a in ["scrape", "maps", "upload", "email", "csv"])
+        )
+    )
+    if is_all_categories_master_scrape_req:
+        send_chat_action(chat_id, "upload_document")
+        scrape_all_145_categories_sequential_pipeline(chat_id, text)
         return True
 
     # ------------------------------------------------------------------------
