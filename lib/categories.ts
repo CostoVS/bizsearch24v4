@@ -60,7 +60,15 @@ const RAW_GROUPS: { name: string; subs: string[] }[] = [
       "Vehicle Inspection & Roadworthy Testing",
       "Auto Air Conditioning & Car Audio Fitment",
       "Boat & Marine Vehicle Dealers & Repair",
-      "Trailer & Caravan Sales & Repair"
+      "Trailer & Caravan Sales & Repair",
+      "Auto Scrap Yards, Salvage & Wreckers",
+      "Auto Locksmith & Key Specialists",
+      "Auto Sound, Security & Tracking",
+      "Auto Upholstery & Interior Repair",
+      "Wheel Alignment, Balancing & Rim Repair",
+      "Exhaust, Muffler & Performance Tuning",
+      "Car Battery Sales, Testing & Fitment",
+      "Radiator, Cooling & Heat Exchanger Specialists"
     ]
   },
   {

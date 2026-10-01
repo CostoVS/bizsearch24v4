@@ -202,26 +202,26 @@ IMPORTANT RULES:
     ) {
       return NextResponse.json({
         text: `📂 **SearchBiz South Africa — All 20 Official Directory Categories & Subcategories**\n\n` +
-          `1. **Automotive & Vehicles:** Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Towing & Breakdown, Tyre Fitment, Mechanics\n` +
-          `2. **Beauty & Personal Care:** Barbershops, Day Spas, Hair Salons, Makeup Artists, Massage, Nail Salons, Skincare\n` +
-          `3. **Business Services:** Accounting, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage\n` +
-          `4. **Cleaning & Janitorial:** Carpet & Upholstery, Commercial Office Cleaning, Domestic Maid Services, Window Cleaning, Pressure Washing\n` +
-          `5. **Community & Public:** Charities, Churches, Community Centres, Emergency Services, Libraries, Police & Fire Stations\n` +
-          `6. **Construction & Trades:** Carpentry, Building Contractors, Electricians, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding\n` +
-          `7. **Education & Training:** Colleges, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools\n` +
-          `8. **Entertainment & Recreation:** Amusement Parks, Bowling, Cinemas, Nightclubs, Sports Clubs & Stadiums\n` +
-          `9. **Events & Weddings:** Catering, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues\n` +
-          `10. **Financial Services:** Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners\n` +
-          `11. **Food & Dining:** Bakeries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Restaurants & Fine Dining\n` +
-          `12. **Groceries & Markets:** Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets\n` +
-          `13. **Health & Medical:** Chiropractors, Dentists, Doctors (GPs), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Vets\n` +
-          `14. **Home & Garden:** Appliance Repairs, Blinds & Curtains, Furniture, Interior Design, Landscaping & Garden Care, Nurseries, Tree Felling\n` +
-          `15. **Industrial & Manufacturing:** Chemical & Plastic, Heavy Equipment, Metal & Steel Fabrication, Packaging, Warehousing\n` +
-          `16. **Pets & Animals:** Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops\n` +
-          `17. **Professional Services:** Architecture, Audit & Assurance, Engineering Consultants, Notaries, Conveyancers, Quantity Surveyors\n` +
-          `18. **Real Estate:** Commercial Brokers, Estate Agents, Property Management, Rental Agencies, Valuation Surveyors\n` +
-          `19. **Retail & Shopping:** Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery, Shopping Centres & Malls\n` +
-          `20. **Travel & Tourism:** B&Bs, Car Rental, Game Reserves, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators\n\n` +
+          `1. **Automotive & Vehicles:** Auto Body & Repair Shops, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Tire Shops, Towing & Breakdown, Auto Electrical, Auto Glass & Windscreen, Brake & Clutch, Gearbox & Transmission, Auto Scrap Yards, Salvage & Wreckers (Junk Yards), Auto Locksmiths, Auto Sound & Tracking, Auto Upholstery, Wheel Alignment, Exhaust & Tuning, Car Battery Fitment, Radiators\n` +
+          `2. **Beauty & Personal Care:** Barbershops & Hair Salons, Cosmetics & Skincare, Day Spas & Wellness Centres, Hair Removal & Waxing, Makeup Artists, Massage Therapy, Nail Salons, Tanning, Tattoo Studios, Hair Extensions, Medical Spas & Aesthetics\n` +
+          `3. **Business Services:** Accounting & Bookkeeping, Advertising & Marketing, Management Consultants, Co-Working Spaces, HR & Recruitment, IT Support, Legal & Attorneys, Office Supplies, Printing & Signage, Security Guard & Armed Response, Web Design, Architecture, Engineering Consultants, Translation, Private Investigation, Debt Collection, Waste Management & Recycling, Call Centres\n` +
+          `4. **Cleaning & Janitorial:** Carpet & Upholstery Cleaning, Commercial & Office Cleaning, Disaster Restoration, Dry Cleaning & Laundry, Domestic Maid Services, Window Cleaning, High-Pressure Jetting, Roof & Gutter Cleaning, Septic Tank & Sanitation, Industrial Factory Degreasing\n` +
+          `5. **Community & Public:** Fire & Police Stations, Libraries & Community Centres, Non-Profit Organisations, Post Offices & Courier Depots, Public Utilities, Religious & Places of Worship, Funeral Homes & Cremation, Animal Shelters, Municipal Offices, Embassies, Parks & Botanical Gardens\n` +
+          `6. **Construction & Trades:** Carpentry & Woodworking, Concrete & Masonry, Demolition, Electricians, General Building Contractors, HVAC (Air Conditioning & Heating), Painting & Waterproofing, Plumbing Services, Roofing & Siding, Solar Power & Inverters, Borehole Drilling & Irrigation, Fencing & Gate Automation, Flooring & Tiling, Steel & Metal Fabrication, Scaffolding, Kitchen & Bathroom Renovations\n` +
+          `7. **Education & Training:** Art & Music Schools, Colleges & Universities, Daycare & Preschools, Driving Schools, Tutoring & Extra Lessons, Primary & High Schools, Vocational Trade Schools, Aviation Flight Academies, Beauty & Cosmetology Academies, Coding Academies, Culinary Schools\n` +
+          `8. **Entertainment & Recreation:** Amusement Parks & Arcades, Bowling & Skating, Casinos, Concert Halls, Festivals, Movie Theatres, Museums & Art Galleries, Nightclubs & Bars, Game Lodges & Safari Reserves, Zoos & Aquariums, Escape Rooms & Paintball, Go-Kart Tracks, Theatres\n` +
+          `9. **Events & Weddings:** Bridal Shops, Catering Services, DJs & Sound Hire, Event Planners, Party Rentals, Photography & Videography, Wedding Venues, Stage & Lighting Hire, Florists & Floral Design, Photo Booths, Mobile Cocktail Bars\n` +
+          `10. **Financial Services:** Banks & Credit Unions, Insurance Brokers, Personal & Business Loans, Mortgage Originators, Wealth Management, Foreign Forex Exchange, Pawn Shops & Collateral Loans, Financial Planning & Retirement, Debt Counselling & Review, Stockbrokers & Investments\n` +
+          `11. **Food & Dining:** Bakeries & Dessert Shops, Bars, Pubs & Taverns, Breweries & Wineries, Cafes & Coffee Shops, Fast Food & Takeaways, Food Trucks, Full-Service Restaurants, Steakhouses & Braai, Pizzerias & Italian, Seafood, Asian & Sushi, Ice Cream Parlours, Halal & Kosher Dining\n` +
+          `12. **Groceries & Markets:** Convenience Stores, Farmers Markets, Gas Station Forecourt Stores, Health & Organic Food, Bottle Stores, Supermarkets, Butcheries & Biltong Shops, Fishmongers & Seafood Markets, Fresh Produce Stalls, Wholesale Cash & Carry\n` +
+          `13. **Health & Medical:** Chiropractors, Dental Clinics, Hospitals & Emergency Rooms, Medical Labs & Pathology, Mental Health & Psychologists, Optometrists & Eye Care, Pharmacies, Physiotherapists & Biokineticists, Primary Care General Practitioners (GPs), Veterinary Clinics & Hospitals, Pediatricians, Gynaecologists, Dermatologists, Orthodontists, Audiologists, Emergency Ambulance Services, Dietitians\n` +
+          `14. **Home & Garden:** Appliance Repairs, Handyman Services, Hardware & Tool Hire, Interior Design, Landscaping & Lawn Care, Locksmiths, Pest Control, Pool Maintenance & Construction, Tree Felling, Home Security & CCTV, Solar & Battery Backup, Rainwater Harvesting & Jojo Tanks, Blinds & Curtains, Cupboard Remodelling, Plant Nurseries, Garage Doors & Gates\n` +
+          `15. **Hotels & Travel:** Bed & Breakfasts, Campgrounds & Caravan Parks, Backpacker Hostels, Hotels & Motels, Luxury Resorts & Safari Lodges, Travel Agencies & Tour Guides, Guest Houses, Self-Catering Cottages, Airport Shuttles & Chauffeurs, Boat & Yacht Charters\n` +
+          `16. **Manufacturing & Industrial:** Chemical & Plastics, Electronics Manufacturing, Food & Beverage Production, Heavy Machinery & Earthmoving, Metal & Steel Fabrication, Textile Mills, Wholesale Distributors, Agricultural Equipment, Packaging Manufacturers, Mining & Drilling, Timber & Sawmills, CNC Machining, Plastic Moulding, Scrap Metal Recycling & Smelting\n` +
+          `17. **Real Estate & Housing:** Apartment & Flat Rentals, Commercial Real Estate Brokers, Property Management, Estate Agencies, Moving Companies & Relocations, Self-Storage Facilities, Student Residences, Body Corporate Management, Property Valuers, Holiday Rentals, Land Surveyors, Conveyancers\n` +
+          `18. **Retail & Shopping:** Bookstores, Clothing & Apparel Boutiques, Electronics & Cellular Shops, Florists, Furniture & Decor, Jewellery Stores, Pet Shops, Sporting Goods, Toy Stores, Mobile Phone Repair, Antique Stores, Second-Hand Pawn Shops, Vape Shops & Tobacconists, Fabric & Sewing, Hardware & Building Suppliers, Music & Instruments\n` +
+          `19. **Sports & Fitness:** Bicycle Shops & Repair, Golf Courses & Pro Shops, Gyms & Fitness Centres, Martial Arts & Boxing, Personal Trainers, Swimming Centres, Yoga & Pilates Studios, Tennis & Padel Clubs, Dance Studios, Scuba & Surfing Schools, Rock Climbing Gyms, Horse Riding & Equestrian, CrossFit Boxes\n` +
+          `20. **Transportation & Logistics:** Airport Shuttles, Courier & Express Delivery, Freight & Cargo Forwarding, Public Transit & Bus Fleets, Taxi & Ride-Hailing, Warehousing & Distribution, Heavy Breakdown Towing, Cross-Border Freight Haulage, Fleet Telematics & GPS Tracking, Port & Marine Shipping, Refrigerated Cold Chain Logistics\n\n` +
           `🌐 Explore live: https://searchbiz.co.za/directory`
       });
     }
@@ -270,6 +270,44 @@ IMPORTANT RULES:
           `• **+R199.00 / month** per additional listed ad\n` +
           `• **Official .co.za Domain Registration:** **R99.00 / year**\n\n` +
           `🌐 Manage or register listings: https://searchbiz.co.za/pricing`
+      });
+    }
+
+    // Sub-Agents & Harvester Commands
+    if (
+      norm.includes("subagent") ||
+      norm.includes("sub agent") ||
+      norm.includes("more agents") ||
+      norm.includes("cover all groups") ||
+      norm.includes("all groups") ||
+      norm.includes("mega swarm") ||
+      norm.includes("super swarm") ||
+      norm.includes("swarm") ||
+      norm.includes("one command") ||
+      norm.includes("use them all") ||
+      norm.includes("how to scrape") ||
+      norm.includes("scraper commands") ||
+      norm.includes("telegram commands")
+    ) {
+      return NextResponse.json({
+        text: `🤖 **SearchBiz Scalable Sub-Agent Swarm Engine (Up to 320 Concurrent Workers)**\n\n` +
+          `You can now spawn sub-agents covering **ALL 20 groups and all 313 subcategories simultaneously**, scale worker counts freely, or sweep through sector by sector:\n\n` +
+          `🌟 **1. Cover ALL Groups & Subcategories Concurrently (Mega-Swarm):**\n` +
+          `👉 \`/mega_swarm\` *(Launches 50 concurrent sub-agents actively interleaving across all 20 groups)*\n` +
+          `👉 \`/mega_swarm 100\` *(Runs 100 concurrent sub-agents covering all sectors simultaneously)*\n` +
+          `👉 \`/mega_swarm 313\` *(Dedicated sub-agent for every single subcategory in the national index!)*\n\n` +
+          `⚡ **2. Multi-Group Wave (Super-Swarm):**\n` +
+          `👉 \`/super_swarm 5\` *(Runs 5 entire main categories in parallel, each with all its subcategories active!)*\n\n` +
+          `⭐ **3. The Master One-Command Pipeline:**\n` +
+          `👉 \`/all\` (or \`/scrape_all\`) *(Runs group-by-group continuous swarm: Group 1 [28 agents], Group 2 [15 agents], ..., through Group 20 until 100% finished)*\n\n` +
+          `🎯 **4. Single Main Category Swarm:**\n` +
+          `👉 \`/subagents_group 1\` *(Spawns 28 sub-agents for Automotive)*\n` +
+          `👉 \`/subagents_group 2\` *(Spawns 15 sub-agents for Beauty & Wellness)*\n\n` +
+          `⚙️ **5. Telemetry & Controls:**\n` +
+          `• \`/set_workers [1-320]\` — Dynamically scale sub-agent workforce\n` +
+          `• \`/subagents_status\` — Live worker telemetry and memory usage card\n` +
+          `• \`/subagents_pause\`, \`/subagents_resume\`, \`/subagents_stop\` — Safe operational controls\n\n` +
+          `🛡️ *Protected by 36 rotating desktop/mobile User-Agents, 4 Overpass mirrors, and Low-RAM garbage collection (~120MB).*`
       });
     }
 
