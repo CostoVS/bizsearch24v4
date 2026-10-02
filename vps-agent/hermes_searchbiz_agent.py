@@ -9653,13 +9653,18 @@ def direct_db_insert_ad_batch(items: list) -> dict:
         os.makedirs(os.path.dirname(db_json_path), exist_ok=True)
 
     existing_ads = []
+    existing_data = {}
     if os.path.exists(db_json_path):
         try:
             with open(db_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                existing_ads = data.get("ads", [])
+                existing_data = json.load(f)
+                if isinstance(existing_data, dict):
+                    existing_ads = existing_data.get("ads", [])
+                else:
+                    existing_data = {}
         except Exception:
             existing_ads = []
+            existing_data = {}
 
     existing_keys = set()
     for a in existing_ads:
@@ -9738,9 +9743,8 @@ def direct_db_insert_ad_batch(items: list) -> dict:
     if added_cnt > 0:
         combined_ads = new_ads + existing_ads
         data_out = {
+            **existing_data,
             "ads": combined_ads,
-            "banners": [],
-            "messages": [],
             "updatedAt": int(time.time() * 1000)
         }
         try:

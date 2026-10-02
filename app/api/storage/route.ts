@@ -10,9 +10,13 @@ export const dynamic = 'force-dynamic';
 
 const DB_KEY = 'main';
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
+const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 function getDiskMtime(): number {
   try {
+    if (fs.existsSync(PERSIST_PATH)) {
+      return fs.statSync(PERSIST_PATH).mtimeMs;
+    }
     if (fs.existsSync(JSON_PATH)) {
       return fs.statSync(JSON_PATH).mtimeMs;
     }
@@ -39,20 +43,23 @@ if (globalRef.dbOfflineUntil === undefined) {
 }
 
 function getLocalDataNoCache() {
-  try {
-    if (fs.existsSync(JSON_PATH)) {
-      const fileContent = fs.readFileSync(JSON_PATH, 'utf-8');
-      const data = JSON.parse(fileContent);
-      if (data && typeof data === 'object') {
-        data.updatedAt = data.updatedAt || 0;
-        if (Array.isArray(data.ads)) {
-          data.ads = cleanAdsArray(data.ads);
+  const candidatePaths = [PERSIST_PATH, JSON_PATH];
+  for (const targetPath of candidatePaths) {
+    try {
+      if (fs.existsSync(targetPath)) {
+        const fileContent = fs.readFileSync(targetPath, 'utf-8');
+        const data = JSON.parse(fileContent);
+        if (data && typeof data === 'object') {
+          data.updatedAt = data.updatedAt || 0;
+          if (Array.isArray(data.ads)) {
+            data.ads = cleanAdsArray(data.ads);
+          }
+          return data;
         }
-        return data;
       }
+    } catch (e) {
+      console.error(`Failed to read json data from ${targetPath}:`, e);
     }
-  } catch (e) {
-    console.error("Failed to read local json data:", e);
   }
   return { 
     ads: [], 
@@ -70,21 +77,26 @@ function getLocalDataNoCache() {
 }
 
 function saveLocalDataNoCache(data: any) {
-  try {
-    const dir = path.dirname(JSON_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    if (!data.updatedAt) {
-      data.updatedAt = Date.now();
-    }
-    fs.writeFileSync(JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
-    globalRef.storageMtime = getDiskMtime();
-    globalRef.storageCache = data;
-    globalRef.storageCacheTime = Date.now();
-  } catch (e) {
-    console.error("Failed to write local json data:", e);
+  if (!data.updatedAt) {
+    data.updatedAt = Date.now();
   }
+  const payload = JSON.stringify(data, null, 2);
+
+  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
+    try {
+      const dir = path.dirname(targetPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(targetPath, payload, 'utf-8');
+    } catch (e) {
+      console.error(`Failed to write json data to ${targetPath}:`, e);
+    }
+  }
+
+  globalRef.storageMtime = getDiskMtime();
+  globalRef.storageCache = data;
+  globalRef.storageCacheTime = Date.now();
 }
 
 async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 500): Promise<T> {
@@ -300,7 +312,9 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const isFull = url.searchParams.get('full') === 'true';
-    const limitParam = parseInt(url.searchParams.get('limit') || '200', 10);
+    const rawLimit = url.searchParams.get('limit');
+    const isLimitAll = rawLimit === 'all' || rawLimit === '0' || rawLimit === 'unlimited';
+    const limitNum = rawLimit && !isLimitAll ? parseInt(rawLimit, 10) : null;
     const currentMtime = getDiskMtime();
 
     let baseData: any = null;
@@ -344,16 +358,24 @@ export async function GET(req: Request) {
       const filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
         
+        const adAddr = (ad.address || '').toLowerCase();
+        const adProv = (ad.province || '').toLowerCase();
+        const adProvName = (ad.provinceName || '').toLowerCase();
+        const adTown = (ad.town || ad.city || ad.location || '').toLowerCase();
+        const adSuburb = (ad.suburb || '').toLowerCase();
+        const adCat = (ad.category || '').toLowerCase();
+        const adCode = (ad.categoryCode || '').toLowerCase();
+        const adGroup = (ad.categoryGroup || '').toLowerCase();
+
         // Address check
         if (addrParam) {
-          const adAddr = (ad.address || '').toLowerCase();
-          if (!adAddr.includes(addrParam)) return false;
+          if (!adAddr.includes(addrParam) && !addrParam.includes(adAddr) && !adTown.includes(addrParam) && !adSuburb.includes(addrParam)) {
+            return false;
+          }
         }
         
         // Province check
         if (provParam) {
-          const adProv = (ad.province || '').toLowerCase();
-          const adProvName = (ad.provinceName || '').toLowerCase();
           const provMatch = adProv === provParam || adProvName === provParam || adProv.includes(provParam) || provParam.includes(adProv);
           const serviceProvMatch = ad.serviceAreas?.some((sa: any) => (sa.province || '').toLowerCase() === provParam || (sa.provinceName || '').toLowerCase() === provParam);
           if (!provMatch && !serviceProvMatch && adProv !== 'national') return false;
@@ -361,79 +383,71 @@ export async function GET(req: Request) {
 
         // Town / City check
         if (townParam) {
-          const adTown = (ad.town || ad.city || ad.location || '').toLowerCase();
-          const adSuburb = (ad.suburb || '').toLowerCase();
-          const adAddr = (ad.address || '').toLowerCase();
-          const townMatch = adTown === townParam || adSuburb === townParam || adTown.includes(townParam) || townParam.includes(adTown) || adAddr.includes(townParam);
-          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => (sa.town || '').toLowerCase() === townParam || (sa.suburb || '').toLowerCase() === townParam);
-          if (!townMatch && !serviceTownMatch) return false;
+          const townMatch = adTown === townParam || adSuburb === townParam || adTown.includes(townParam) || townParam.includes(adTown) || 
+                            adAddr.includes(townParam) || adProv === townParam || adProv.includes(townParam) || townParam.includes(adProv);
+          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => 
+            (sa.town || '').toLowerCase() === townParam || 
+            (sa.suburb || '').toLowerCase() === townParam ||
+            (sa.province || '').toLowerCase() === townParam
+          );
+          if (!townMatch && !serviceTownMatch && adProv !== 'national') return false;
         }
 
         // Suburb check
         if (subParam) {
-          const adSuburb = (ad.suburb || '').toLowerCase();
-          const adTown = (ad.town || ad.city || '').toLowerCase();
-          const adAddr = (ad.address || '').toLowerCase();
           const subMatch = adSuburb === subParam || adSuburb.includes(subParam) || adTown.includes(subParam) || adAddr.includes(subParam);
           const serviceSubMatch = ad.serviceAreas?.some((sa: any) => (sa.suburb || '').toLowerCase() === subParam);
-          if (!subMatch && !serviceSubMatch) return false;
+          if (!subMatch && !serviceSubMatch && adProv !== 'national') return false;
         }
 
         // Category check
         if (catParam) {
-          const adCat = (ad.category || '').toLowerCase();
-          const adCode = (ad.categoryCode || '').toLowerCase();
-          const adGroup = (ad.categoryGroup || '').toLowerCase();
-          const catMatch = adCat === catParam || adCat.includes(catParam) || catParam.includes(adCat) || adCode === catParam || adGroup.includes(catParam);
+          const catMatch = adCat === catParam || adCat.includes(catParam) || catParam.includes(adCat) || 
+                          adCode === catParam || adCode.startsWith(catParam) || adGroup.includes(catParam) || catParam.includes(adGroup);
           if (!catMatch) return false;
         }
 
-        // Keyword query check
+        // Keyword query check (Multi-word token search across all business attributes)
         if (qParam) {
           const title = (ad.title || '').toLowerCase();
           const desc = (ad.description || '').toLowerCase();
           const serv = (ad.servicesOffered || '').toLowerCase();
-          const cat = (ad.category || '').toLowerCase();
-          const code = (ad.categoryCode || '').toLowerCase();
-          const town = (ad.city || ad.town || ad.location || '').toLowerCase();
-          const sub = (ad.suburb || '').toLowerCase();
-          const prov = (ad.province || ad.provinceName || '').toLowerCase();
-          const addr = (ad.address || '').toLowerCase();
-          const kw = (ad.searchTags || (ad.keywords || []).join(' ')).toLowerCase();
+          const kw = (ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
 
-          const qMatch = title.includes(qParam) || desc.includes(qParam) || serv.includes(qParam) ||
-                         cat.includes(qParam) || code === qParam || town.includes(qParam) ||
-                         sub.includes(qParam) || prov.includes(qParam) || addr.includes(qParam) || kw.includes(qParam);
-          if (!qMatch) return false;
+          const combinedText = `${title} ${desc} ${serv} ${adCat} ${adCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw}`;
+          const qWords = qParam.split(/\s+/).filter(Boolean);
+          const allWordsMatch = qWords.every((w: string) => combinedText.includes(w));
+          if (!allWordsMatch) return false;
         }
 
         return true;
       });
 
+      const adsToReturn = (limitNum && !isNaN(limitNum)) ? filtered.slice(0, limitNum) : filtered;
+
       return NextResponse.json({
         ...baseData,
         totalAdsCount: filtered.length,
         verifiedCount: filtered.filter((a: any) => a && a.verified).length,
-        ads: filtered.slice(0, Math.min(1000, limitParam))
+        ads: adsToReturn
       }, {
         headers: {
-          'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
-          'X-Cache': 'RAM-FILTERED'
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'X-Cache': 'RAM-FILTERED-ALL'
         }
       });
     }
 
     if (!isFull) {
-      // Return lightweight payload (< 30KB) for instant site loading
-      const previewAds = allAds.slice(0, Math.min(500, limitParam));
+      const returnAds = (limitNum && !isNaN(limitNum)) ? allAds.slice(0, limitNum) : allAds;
       return NextResponse.json({
         ...baseData,
         totalAdsCount,
         verifiedCount,
-        ads: previewAds
+        ads: returnAds
       }, {
         headers: {
-          'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
           'X-Cache': 'RAM-FAST-PREVIEW'
         }
       });
@@ -442,7 +456,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ...baseData,
       totalAdsCount,
-      verifiedCount
+      verifiedCount,
+      ads: allAds
     }, {
       headers: {
         'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
@@ -458,7 +473,7 @@ export async function GET(req: Request) {
       ...fallback,
       totalAdsCount: fallbackAds.length,
       verifiedCount: fallbackAds.filter((a: any) => a && a.verified).length,
-      ads: fallbackAds.slice(0, 200)
+      ads: fallbackAds
     }, { 
       status: 200, 
       headers: {

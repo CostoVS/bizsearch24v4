@@ -49,11 +49,11 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
     const loadAndFilter = async () => {
       let allListings: Ad[] = [];
       
-      // Load current locally known ads
-      allListings = getStoredAds() as Ad[];
-      if (allListings.length === 0 && propAds && propAds.length > 0) {
-        allListings = propAds;
-      }
+      // Merge propAds with locally stored ads so SSR results are never lost
+      const mergedMap = new Map<string, Ad>();
+      (propAds || []).forEach(a => { if (a && a.id) mergedMap.set(a.id, a); });
+      (getStoredAds() as Ad[] || []).forEach(a => { if (a && a.id) mergedMap.set(a.id, { ...(mergedMap.get(a.id) || {}), ...a }); });
+      allListings = Array.from(mergedMap.values());
       
       // Filter locally first for performance
       const performFilter = (currentAds: Ad[]) => {
@@ -79,10 +79,12 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           const matchesTarget = (target: string) => {
             if (!target) return false;
             return (
-              adLoc === target || adCity === target || adTown === target || adSub === target ||
+              adLoc === target || adCity === target || adTown === target || adSub === target || adProv === target ||
               (adCity && (adCity.includes(target) || target.includes(adCity))) ||
+              (adTown && (adTown.includes(target) || target.includes(adTown))) ||
               (adSub && (adSub.includes(target) || target.includes(adSub))) ||
               (adLoc && (adLoc.includes(target) || target.includes(adLoc))) ||
+              (adProv && (adProv.includes(target) || target.includes(adProv))) ||
               (adAddr && adAddr.includes(target))
             );
           };
@@ -96,7 +98,8 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
             const inService = (ad as any).serviceAreas.some((sa: any) => {
               const saSub = (sa.suburb || '').toLowerCase();
               const saTown = (sa.town || '').toLowerCase();
-              return saSub === normSlug || saSub === normProper || saTown === normSlug || saTown === normProper;
+              const saProv = (sa.province || '').toLowerCase();
+              return saSub === normSlug || saSub === normProper || saTown === normSlug || saTown === normProper || saProv === normSlug || saProv === normProper;
             });
             if (inService) return true;
           }
@@ -108,15 +111,24 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
       const initialFiltered = performFilter(allListings);
       if (initialFiltered.length > 0) {
         setFilteredAds(initialFiltered);
+      } else if (propAds && propAds.length > 0) {
+        setFilteredAds(propAds);
       }
 
-      // Query server specifically for this location to ensure new ads show up without wiping existing ones
-      const targetQuery = properName ? `town=${encodeURIComponent(properName)}&` : '';
-      fetch(`/api/storage?${targetQuery}limit=500`, { cache: 'no-store' })
+      // Query server specifically for this location to ensure all ads show up without arbitrary cap
+      const normLower = properName.toLowerCase().trim();
+      const isProv = normLower.includes('cape') || normLower.includes('natal') || normLower.includes('gauteng') ||
+                     normLower.includes('state') || normLower.includes('limpopo') || normLower.includes('mpumalanga') || normLower.includes('west');
+      const targetQuery = properName ? (isProv ? `province=${encodeURIComponent(properName)}&` : `town=${encodeURIComponent(properName)}&`) : '';
+      
+      fetch(`/api/storage?${targetQuery}limit=all`, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
           if (data && Array.isArray(data.ads) && data.ads.length > 0) {
-            setFilteredAds(performFilter(data.ads as Ad[]));
+            const serverFiltered = performFilter(data.ads as Ad[]);
+            if (serverFiltered.length > 0) {
+              setFilteredAds(serverFiltered);
+            }
           }
         })
         .catch(() => {});

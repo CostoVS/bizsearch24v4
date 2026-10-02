@@ -4,6 +4,7 @@ import { cleanAdsArray } from './clean-ad';
 import { SA_PROVINCES } from './locations';
 
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
+const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 // Global cache access matching /app/api/storage/route.ts
 const globalRef = global as any;
@@ -34,43 +35,51 @@ export interface BotAdPayload {
 }
 
 export function readServerDb(): any {
-  try {
-    if (fs.existsSync(JSON_PATH)) {
-      const fileContent = fs.readFileSync(JSON_PATH, 'utf-8');
-      const data = JSON.parse(fileContent);
-      if (data && typeof data === 'object') {
-        data.ads = Array.isArray(data.ads) ? data.ads : [];
-        data.trashAds = Array.isArray(data.trashAds) ? data.trashAds : [];
-        data.deletedAds = Array.isArray(data.deletedAds) ? data.deletedAds : [];
-        return data;
+  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
+    try {
+      if (fs.existsSync(targetPath)) {
+        const fileContent = fs.readFileSync(targetPath, 'utf-8');
+        const data = JSON.parse(fileContent);
+        if (data && typeof data === 'object') {
+          data.ads = Array.isArray(data.ads) ? data.ads : [];
+          data.trashAds = Array.isArray(data.trashAds) ? data.trashAds : [];
+          data.deletedAds = Array.isArray(data.deletedAds) ? data.deletedAds : [];
+          return data;
+        }
       }
+    } catch (e) {
+      console.error(`[BotAdService] Failed to read ${targetPath}:`, e);
     }
-  } catch (e) {
-    console.error('[BotAdService] Failed to read db.json:', e);
   }
   return { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now() };
 }
 
 export function writeServerDb(data: any): void {
-  try {
-    const dir = path.dirname(JSON_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    data.updatedAt = Date.now();
-    fs.writeFileSync(JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
-    
-    // Update global cache and mtime so GET /api/storage serves fresh data instantly
+  data.updatedAt = Date.now();
+  const payload = JSON.stringify(data, null, 2);
+
+  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
     try {
-      globalRef.storageMtime = fs.statSync(JSON_PATH).mtimeMs;
+      const dir = path.dirname(targetPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(targetPath, payload, 'utf-8');
     } catch (e) {
-      globalRef.storageMtime = Date.now();
+      console.error(`[BotAdService] Failed to write ${targetPath}:`, e);
     }
-    globalRef.storageCache = data;
-    globalRef.storageCacheTime = Date.now();
-  } catch (e) {
-    console.error('[BotAdService] Failed to write db.json:', e);
   }
+  
+  // Update global cache and mtime so GET /api/storage serves fresh data instantly
+  try {
+    globalRef.storageMtime = fs.existsSync(PERSIST_PATH) 
+      ? fs.statSync(PERSIST_PATH).mtimeMs 
+      : fs.statSync(JSON_PATH).mtimeMs;
+  } catch (e) {
+    globalRef.storageMtime = Date.now();
+  }
+  globalRef.storageCache = data;
+  globalRef.storageCacheTime = Date.now();
 }
 
 // Normalize province string to canonical slug

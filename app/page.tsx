@@ -37,7 +37,7 @@ export default function HomePage() {
 
     // Force a fresh fetch from server immediately on mount to solve "0 Companies" lag
     fetchAndStoreAds().then(freshAds => {
-      if (freshAds) {
+      if (freshAds && freshAds.length > 0) {
         setAds(freshAds.filter((a: any) => a.isActive !== false));
       }
     }).finally(() => {
@@ -45,11 +45,17 @@ export default function HomePage() {
     });
 
     const handleUpdate = () => {
-      setAds(getStoredAds().filter((a: any) => a.isActive !== false));
+      const stored = getStoredAds().filter((a: any) => a.isActive !== false);
+      if (stored.length > 0) {
+        setAds(stored);
+      }
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
-        setAds(getStoredAds().filter((a: any) => a.isActive !== false));
+        const stored = getStoredAds().filter((a: any) => a.isActive !== false);
+        if (stored.length > 0) {
+          setAds(stored);
+        }
       }
     };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);

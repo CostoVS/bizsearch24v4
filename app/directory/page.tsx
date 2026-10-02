@@ -97,7 +97,7 @@ function DirectoryContent() {
     if (suburb) params.set('suburb', suburb);
 
     const queryString = params.toString();
-    const endpoint = queryString ? `/api/storage?${queryString}&limit=500` : '/api/storage?limit=500';
+    const endpoint = queryString ? `/api/storage?${queryString}&limit=all` : '/api/storage?limit=all';
 
     let isCurrent = true;
 
@@ -134,23 +134,32 @@ function DirectoryContent() {
     // Only load generic background cache if there are NO active search filters
     if (hasFilters) return;
 
-    setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+    const cached = getStoredAds().filter((a: any) => a.isActive !== false);
+    if (cached.length > 0) {
+      setAllAds(prev => (prev.length === 0 ? cached : prev));
+    }
 
     // Force a fresh fetch from server immediately on mount to solve sync lag
     fetchAndStoreAds().then(freshAds => {
-      if (freshAds && !hasFilters) {
+      if (freshAds && freshAds.length > 0 && !hasFilters) {
         setAllAds(freshAds.filter((a: any) => a.isActive !== false));
       }
     });
 
     const handleUpdate = () => {
       if (!hasFilters) {
-        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+        const fresh = getStoredAds().filter((a: any) => a.isActive !== false);
+        if (fresh.length > 0) {
+          setAllAds(fresh);
+        }
       }
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (!hasFilters && (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads")) {
-        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+        const fresh = getStoredAds().filter((a: any) => a.isActive !== false);
+        if (fresh.length > 0) {
+          setAllAds(fresh);
+        }
       }
     };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);

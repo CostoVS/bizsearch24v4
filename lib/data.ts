@@ -335,7 +335,7 @@ export async function fetchAndStoreAds(): Promise<any[]> {
   
   async function performFetch(attempt: number = 0): Promise<any[]> {
     try {
-      const res = await fetch('/api/storage', { 
+      const res = await fetch('/api/storage?limit=all', { 
         cache: 'no-store',
         headers: { 'Accept': 'application/json' }
       });
@@ -363,10 +363,14 @@ export async function fetchAndStoreAds(): Promise<any[]> {
           safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
         }
 
-        const serialized = JSON.stringify(finalAds);
-        safeLocalStorage.setItem("searchbiz_all_ads", serialized);
-        _memStoredAds = finalAds;
-        _memStoredAdsRaw = serialized;
+        const currentLocal = getStoredAds();
+        // Protect local ads if server returned empty due to sync lag
+        if (finalAds.length > 0 || currentLocal.length === 0) {
+          const serialized = JSON.stringify(finalAds);
+          safeLocalStorage.setItem("searchbiz_all_ads", serialized);
+          _memStoredAds = finalAds;
+          _memStoredAdsRaw = serialized;
+        }
         
         if (data.customPartners) {
           safeLocalStorage.setItem("searchbiz_custom_partners", JSON.stringify(data.customPartners));
