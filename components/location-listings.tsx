@@ -105,14 +105,21 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
         });
       };
 
-      setFilteredAds(performFilter(allListings));
+      const initialFiltered = performFilter(allListings);
+      if (initialFiltered.length > 0) {
+        setFilteredAds(initialFiltered);
+      }
 
-      // Force a fresh fetch from server to ensure new ads show up even on first load
-      fetchAndStoreAds().then(freshAds => {
-        if (freshAds) {
-          setFilteredAds(performFilter(freshAds as Ad[]));
-        }
-      });
+      // Query server specifically for this location to ensure new ads show up without wiping existing ones
+      const targetQuery = properName ? `town=${encodeURIComponent(properName)}&` : '';
+      fetch(`/api/storage?${targetQuery}limit=500`, { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          if (data && Array.isArray(data.ads) && data.ads.length > 0) {
+            setFilteredAds(performFilter(data.ads as Ad[]));
+          }
+        })
+        .catch(() => {});
     };
 
     loadAndFilter();

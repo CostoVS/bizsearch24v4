@@ -36,6 +36,7 @@ function DirectoryContent() {
   const suburb = rawSuburb.toLowerCase().trim();
 
   const [allAds, setAllAds] = useState<any[]>([]);
+  const [serverFilteredAds, setServerFilteredAds] = useState<any[] | null>(null);
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -98,18 +99,25 @@ function DirectoryContent() {
     const queryString = params.toString();
     const endpoint = queryString ? `/api/storage?${queryString}&limit=500` : '/api/storage?limit=500';
 
-    fetch(endpoint, { cache: 'default', headers: { Accept: 'application/json' } })
+    let isCurrent = true;
+
+    fetch(endpoint, { cache: 'no-store', headers: { Accept: 'application/json' } })
       .then(res => res.json())
       .then(data => {
+        if (!isCurrent) return;
         if (data && Array.isArray(data.ads)) {
-          setAllAds(data.ads.filter((a: any) => a && a.isActive !== false));
+          const validAds = data.ads.filter((a: any) => a && a.isActive !== false);
+          setServerFilteredAds(validAds);
+          setAllAds(validAds);
         }
       })
       .catch(err => {
         console.error('Directory fetch error:', err);
       })
       .finally(() => {
-        setIsLocalLoading(false);
+        if (isCurrent) {
+          setIsLocalLoading(false);
+        }
       });
 
     const scrollTimer = setTimeout(() => {
@@ -117,25 +125,31 @@ function DirectoryContent() {
     }, 50);
 
     return () => {
+      isCurrent = false;
       clearTimeout(scrollTimer);
     };
   }, [q, category, town, province, suburb]);
 
   useEffect(() => {
-        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+    // Only load generic background cache if there are NO active search filters
+    if (hasFilters) return;
+
+    setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
 
     // Force a fresh fetch from server immediately on mount to solve sync lag
     fetchAndStoreAds().then(freshAds => {
-      if (freshAds) {
+      if (freshAds && !hasFilters) {
         setAllAds(freshAds.filter((a: any) => a.isActive !== false));
       }
     });
 
     const handleUpdate = () => {
-      setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+      if (!hasFilters) {
+        setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
+      }
     };
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
+      if (!hasFilters && (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads")) {
         setAllAds(getStoredAds().filter((a: any) => a.isActive !== false));
       }
     };
@@ -145,7 +159,7 @@ function DirectoryContent() {
       window.removeEventListener("searchbiz_ads_updated", handleUpdate);
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, []);
+  }, [hasFilters]);
 
   const filteredResults = allAds.filter(ad => {
     let match = true;
@@ -303,7 +317,7 @@ function DirectoryContent() {
     return match;
   });
 
-  const results = sortAdsWithPositions(filteredResults);
+  const results = sortAdsWithPositions(hasFilters && serverFilteredAds !== null ? serverFilteredAds : filteredResults);
   const paginatedResults = results.slice((currentPage - 1) * 12, currentPage * 12);
 
   return (
