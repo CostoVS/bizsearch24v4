@@ -9620,7 +9620,7 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
     try:
         data_bytes = json.dumps(payload).encode("utf-8") if payload else None
         req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=15) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         body = he.read().decode("utf-8")
@@ -9935,11 +9935,11 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             GLOBAL_BULK_SYNC["is_running"] = False
             return
 
-        batch_size = 500
+        batch_size = 100
         batches = [all_leads[i:i + batch_size] for i in range(0, total_leads, batch_size)]
         GLOBAL_BULK_SYNC["total_batches"] = len(batches)
 
-        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads.\n🚀 Launching high-speed batch upload stream to SearchBiz...")
+        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (100 per batch).\n🚀 Launching high-speed batch upload stream to SearchBiz...")
 
         for b_idx, batch_items in enumerate(batches, 1):
             if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
@@ -9947,25 +9947,34 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 
             GLOBAL_BULK_SYNC["current_batch"] = b_idx
 
-            # Send bulk payload to SearchBiz API endpoint
-            try:
-                res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": batch_items})
-                if res.get("success"):
-                    added = res.get("addedCount", 0)
-                    skipped = res.get("skippedDuplicatesCount", 0)
-                    GLOBAL_BULK_SYNC["total_uploaded"] += added
-                    GLOBAL_BULK_SYNC["total_skipped_duplicates"] += skipped
-                else:
-                    db_res = direct_db_insert_ad_batch(batch_items)
-                    GLOBAL_BULK_SYNC["total_uploaded"] += db_res.get("addedCount", 0)
-                    GLOBAL_BULK_SYNC["total_skipped_duplicates"] += db_res.get("skippedDuplicatesCount", 0)
-            except Exception as e:
+            # Send bulk payload to SearchBiz API endpoint with automatic retry
+            uploaded_this_batch = False
+            for attempt in range(3):
+                try:
+                    res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": batch_items})
+                    if res.get("success"):
+                        added = res.get("addedCount", 0)
+                        skipped = res.get("skippedDuplicatesCount", 0)
+                        GLOBAL_BULK_SYNC["total_uploaded"] += added
+                        GLOBAL_BULK_SYNC["total_skipped_duplicates"] += skipped
+                        uploaded_this_batch = True
+                        break
+                    else:
+                        err_msg = res.get("error") or res.get("details") or str(res)
+                        logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} error: {err_msg}")
+                        time.sleep(1.0)
+                except Exception as e:
+                    logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} network exception: {e}")
+                    time.sleep(1.0)
+
+            if not uploaded_this_batch:
+                # If remote API is unavailable, write directly to local DB
                 try:
                     db_res = direct_db_insert_ad_batch(batch_items)
                     GLOBAL_BULK_SYNC["total_uploaded"] += db_res.get("addedCount", 0)
                     GLOBAL_BULK_SYNC["total_skipped_duplicates"] += db_res.get("skippedDuplicatesCount", 0)
-                except Exception:
-                    pass
+                except Exception as de:
+                    logger.error(f"Fallback direct_db_insert_ad_batch failed for batch {b_idx}: {de}")
 
             # Update status every 5 batches or on last batch
             if b_idx % 5 == 0 or b_idx == len(batches):

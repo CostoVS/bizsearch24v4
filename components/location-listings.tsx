@@ -37,7 +37,7 @@ interface LocationListingsProps {
 export default function LocationListings({ ads: propAds, properName }: LocationListingsProps) {
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
-  const [filteredAds, setFilteredAds] = useState<Ad[]>([]);
+  const [filteredAds, setFilteredAds] = useState<Ad[]>(propAds && propAds.length > 0 ? propAds : []);
   const [currentPage, setCurrentPage] = useState(1);
   const listingsRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +51,9 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
       
       // Load current locally known ads
       allListings = getStoredAds() as Ad[];
+      if (allListings.length === 0 && propAds && propAds.length > 0) {
+        allListings = propAds;
+      }
       
       // Filter locally first for performance
       const performFilter = (currentAds: Ad[]) => {
@@ -58,17 +61,47 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
         const currentSlug = (pathParts[pathParts.length - 1] || '').toLowerCase();
 
         return currentAds.filter(ad => {
-          if (!ad || !ad.location) return false;
+          if (!ad) return false;
           if ((ad as any).isActive === false) return false;
 
-          const adLoc = ad.location.toLowerCase().trim();
+          const adLoc = (ad.location || "").toLowerCase().trim();
+          const adCity = ((ad as any).city || "").toLowerCase().trim();
+          const adTown = ((ad as any).town || "").toLowerCase().trim();
+          const adSub = ((ad as any).suburb || "").toLowerCase().trim();
+          const adAddr = ((ad as any).address || "").toLowerCase().trim();
           const adProv = ((ad as any).province || "").toLowerCase().trim();
           const normProper = properName.toLowerCase().trim();
           const normSlug = currentSlug.trim();
           const dashedSlug = currentSlug.replace(/-/g, ' ').toLowerCase().trim();
 
           if (adLoc === 'all locations' || adLoc === 'all-locations' || adProv === 'national') return true;
-          return adLoc === normProper || adLoc === normSlug || adLoc === dashedSlug || adLoc.replace(/\s+/g, '-') === normSlug;
+
+          const matchesTarget = (target: string) => {
+            if (!target) return false;
+            return (
+              adLoc === target || adCity === target || adTown === target || adSub === target ||
+              (adCity && (adCity.includes(target) || target.includes(adCity))) ||
+              (adSub && (adSub.includes(target) || target.includes(adSub))) ||
+              (adLoc && (adLoc.includes(target) || target.includes(adLoc))) ||
+              (adAddr && adAddr.includes(target))
+            );
+          };
+
+          if (matchesTarget(normProper) || matchesTarget(normSlug) || matchesTarget(dashedSlug) || matchesTarget(currentSlug.replace(/-/g, ''))) {
+            return true;
+          }
+
+          // Service areas check
+          if (Array.isArray((ad as any).serviceAreas)) {
+            const inService = (ad as any).serviceAreas.some((sa: any) => {
+              const saSub = (sa.suburb || '').toLowerCase();
+              const saTown = (sa.town || '').toLowerCase();
+              return saSub === normSlug || saSub === normProper || saTown === normSlug || saTown === normProper;
+            });
+            if (inService) return true;
+          }
+
+          return false;
         });
       };
 

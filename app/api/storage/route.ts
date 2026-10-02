@@ -338,10 +338,17 @@ export async function GET(req: Request) {
     const townParam = (url.searchParams.get('town') || '').toLowerCase().trim();
     const provParam = (url.searchParams.get('province') || '').toLowerCase().trim();
     const subParam = (url.searchParams.get('suburb') || '').toLowerCase().trim();
+    const addrParam = (url.searchParams.get('address') || '').toLowerCase().trim();
 
-    if (qParam || catParam || townParam || provParam || subParam) {
+    if (qParam || catParam || townParam || provParam || subParam || addrParam) {
       const filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
+        
+        // Address check
+        if (addrParam) {
+          const adAddr = (ad.address || '').toLowerCase();
+          if (!adAddr.includes(addrParam)) return false;
+        }
         
         // Province check
         if (provParam) {
@@ -391,11 +398,12 @@ export async function GET(req: Request) {
           const town = (ad.city || ad.town || ad.location || '').toLowerCase();
           const sub = (ad.suburb || '').toLowerCase();
           const prov = (ad.province || ad.provinceName || '').toLowerCase();
+          const addr = (ad.address || '').toLowerCase();
           const kw = (ad.searchTags || (ad.keywords || []).join(' ')).toLowerCase();
 
           const qMatch = title.includes(qParam) || desc.includes(qParam) || serv.includes(qParam) ||
                          cat.includes(qParam) || code === qParam || town.includes(qParam) ||
-                         sub.includes(qParam) || prov.includes(qParam) || kw.includes(qParam);
+                         sub.includes(qParam) || prov.includes(qParam) || addr.includes(qParam) || kw.includes(qParam);
           if (!qMatch) return false;
         }
 
@@ -539,7 +547,20 @@ export async function POST(req: Request) {
 
       const allDeletedSet = new Set([...currentDeleted, ...clientDeleted]);
       newData.deletedAds = Array.from(allDeletedSet);
-      newData.ads = incomingAds.filter((a: any) => !allDeletedSet.has(a.id));
+
+      // SAFETY SHIELD: Never wipe existing server ads if client sends an empty array or partial preview slice
+      if (incomingAds.length === 0 && currentAds.length > 0) {
+        newData.ads = currentAds.filter((a: any) => a && a.id && !allDeletedSet.has(a.id));
+      } else if (incomingAds.length < currentAds.length && !body.allowTruncate) {
+        // Client sent a subset (e.g. 200 preview ads). Merge updates without dropping other server ads
+        const mergedMap = new Map();
+        currentAds.forEach((a: any) => { if (a && a.id) mergedMap.set(a.id, a); });
+        incomingAds.forEach((a: any) => { if (a && a.id) mergedMap.set(a.id, { ...mergedMap.get(a.id), ...a }); });
+        newData.ads = Array.from(mergedMap.values()).filter((a: any) => a && a.id && !allDeletedSet.has(a.id));
+      } else {
+        newData.ads = incomingAds.filter((a: any) => !allDeletedSet.has(a.id));
+      }
+
       if (Array.isArray(newData.trashAds)) {
         newData.trashAds = newData.trashAds.filter((t: any) => t && t.id && !allDeletedSet.has(t.id));
       }

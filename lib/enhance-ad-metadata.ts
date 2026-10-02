@@ -185,12 +185,18 @@ export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
     keywordSet.add(canonicalPostalCode);
   }
 
-  // Add title & description tokens
+  // Add title, address & description tokens
   if (copy.title) {
     String(copy.title).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
   }
+  if (copy.address) {
+    String(copy.address).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
+  }
   if (copy.servicesOffered) {
     String(copy.servicesOffered).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
+  }
+  if (copy.description) {
+    String(copy.description).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 3 && keywordSet.add(t));
   }
 
   copy.keywords = Array.from(keywordSet);

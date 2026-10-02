@@ -60,7 +60,12 @@ export function writeServerDb(data: any): void {
     data.updatedAt = Date.now();
     fs.writeFileSync(JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
     
-    // Update global cache so GET /api/storage serves fresh data
+    // Update global cache and mtime so GET /api/storage serves fresh data instantly
+    try {
+      globalRef.storageMtime = fs.statSync(JSON_PATH).mtimeMs;
+    } catch (e) {
+      globalRef.storageMtime = Date.now();
+    }
     globalRef.storageCache = data;
     globalRef.storageCacheTime = Date.now();
   } catch (e) {

@@ -110,9 +110,9 @@ export default function HomePage() {
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-emerald-400 mb-1">
-                    {loading ? <span className="animate-pulse opacity-50">...</span> : (ads.filter(a => a.isActive !== false).length || getTotalAdsCount()).toLocaleString()}
+                    {loading ? <span className="animate-pulse opacity-50">...</span> : getVerifiedAdsCount().toLocaleString()}
                   </div>
-                  <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Approved & Active</div>
+                  <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Verified & Approved</div>
                 </div>
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>

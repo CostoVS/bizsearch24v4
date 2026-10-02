@@ -181,6 +181,7 @@ function DirectoryContent() {
       const titleMatch = ad.title?.toLowerCase().includes(lowerQ);
       const descMatch = ad.description?.toLowerCase().includes(lowerQ);
       const servMatch = ad.servicesOffered?.toLowerCase().includes(lowerQ);
+      const addrMatch = ad.address?.toLowerCase().includes(lowerQ);
       const codeMatch = ad.categoryCode?.toLowerCase() === lowerQ || ad.categoryCode?.toLowerCase().startsWith(lowerQ);
       const groupMatch = ad.categoryGroup?.toLowerCase().includes(lowerQ) || ad.parentCategory?.toLowerCase().includes(lowerQ);
       const kwMatch = ad.keywords?.some((k: string) => k.toLowerCase().includes(lowerQ)) || ad.searchTags?.toLowerCase().includes(lowerQ);
@@ -198,15 +199,15 @@ function DirectoryContent() {
       // If q matches a known South African location name:
       // - It MUST match global/all-locations ads
       // - Or if the ad is physically in that province/town/suburb
-      // - Or if the keyword happens to be in the title, description, services, or category
+      // - Or if the keyword happens to be in the title, description, services, address, or category
       if (isLocWord) {
-        if (!isGlobalLocation && !townMatch && !provMatch && !subMatch && !titleMatch && !descMatch && !servMatch && !catMatch) {
+        if (!isGlobalLocation && !townMatch && !provMatch && !subMatch && !addrMatch && !titleMatch && !descMatch && !servMatch && !catMatch) {
           match = false;
         }
       } else {
         // If q is NOT a location name:
-        // - Standard keyword match in title, description, services, category, or ad locations
-        if (!titleMatch && !descMatch && !servMatch && !catMatch && !townMatch && !provMatch && !subMatch) {
+        // - Standard keyword match in title, description, services, address, category, or ad locations
+        if (!titleMatch && !descMatch && !servMatch && !addrMatch && !catMatch && !townMatch && !provMatch && !subMatch) {
           match = false;
         }
       }

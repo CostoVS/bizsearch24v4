@@ -336,7 +336,7 @@ export async function fetchAndStoreAds(): Promise<any[]> {
   async function performFetch(attempt: number = 0): Promise<any[]> {
     try {
       const res = await fetch('/api/storage', { 
-        cache: 'default',
+        cache: 'no-store',
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) throw new Error("Failed to fetch");
@@ -377,16 +377,14 @@ export async function fetchAndStoreAds(): Promise<any[]> {
           window.dispatchEvent(new CustomEvent("searchbiz_trash_updated"));
         }
 
-        // If local had deleted ads not yet on server, notify server non-blockingly
+        // If local had deleted ad IDs not yet on server, report deleted IDs only without modifying server ads
         const unsyncedDeleted = localDeleted.filter(id => !serverDeleted.includes(id));
         if (unsyncedDeleted.length > 0) {
           fetch('/api/storage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              ads: finalAds,
-              deletedAds: combinedDeleted,
-              forceSyncAds: true
+              deletedAds: combinedDeleted
             })
           }).catch(() => {});
         }
