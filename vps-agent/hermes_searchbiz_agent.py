@@ -9902,6 +9902,7 @@ def start_bulk_sync_to_searchbiz(chat_id: int) -> dict:
     and bulk-uploads all non-duplicate business records directly to searchbiz.co.za!
     """
     global GLOBAL_BULK_SYNC
+    reset_stop_flag()
     if GLOBAL_BULK_SYNC["is_running"]:
         msg = f"""⚡ <b>SearchBiz Bulk Sync Already Active!</b>
 ═══════════════════════════════════════════
@@ -9915,6 +9916,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 
     def _sync_runner():
         global GLOBAL_BULK_SYNC
+        reset_stop_flag()
         GLOBAL_BULK_SYNC["is_running"] = True
         GLOBAL_BULK_SYNC["total_uploaded"] = 0
         GLOBAL_BULK_SYNC["total_skipped_duplicates"] = 0
@@ -9923,7 +9925,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 ═══════════════════════════════════════════
 📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records across listings/ & databases...
 🛡️ <b>Deduplication Shield:</b> Syncing with SearchBiz index to prevent duplicate ads
-⚡ <b>High-Speed Bulk Uploads:</b> Batching 500 records per HTTP payload
+⚡ <b>High-Speed Bulk Uploads:</b> Batching 100 records per HTTP payload
 📬 <b>Target Site:</b> https://searchbiz.co.za (0.03s Zero-Lag Mode)
 
 <i>Gathering harvested business records now...</i>"""
@@ -9946,7 +9948,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
         send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (100 per batch).\n🚀 Launching high-speed batch upload stream to SearchBiz...")
 
         for b_idx, batch_items in enumerate(batches, 1):
-            if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+            if not GLOBAL_BULK_SYNC["is_running"]:
                 break
 
             GLOBAL_BULK_SYNC["current_batch"] = b_idx
@@ -9966,10 +9968,10 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                     else:
                         err_msg = res.get("error") or res.get("details") or str(res)
                         logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} error: {err_msg}")
-                        time.sleep(1.0)
+                        time.sleep(0.5)
                 except Exception as e:
                     logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} network exception: {e}")
-                    time.sleep(1.0)
+                    time.sleep(0.5)
 
             if not uploaded_this_batch:
                 # If remote API is unavailable, write directly to local DB
@@ -9992,7 +9994,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 🌐 <b>Target Directory:</b> https://searchbiz.co.za/directory"""
                 send_telegram(chat_id, progress_card)
 
-            time.sleep(0.05)
+            time.sleep(0.02)
 
         GLOBAL_BULK_SYNC["is_running"] = False
         done_card = f"""🏆 <b>SearchBiz Bulk Sync Complete!</b>
