@@ -9755,9 +9755,146 @@ def direct_db_insert_ad_batch(items: list) -> dict:
         "skippedDuplicatesCount": skipped_cnt
     }
 
+def collect_all_harvested_leads() -> list:
+    """Collects all harvested business leads across listings/, scraped_leads_vault/, SQLite hermes_data.db, and CSVs."""
+    all_leads = []
+    seen_lead_keys = set()
+
+    def add_lead(b_name, b_cat, b_prov, b_city, b_suburb, b_addr, b_phone, b_whatsapp, b_email, b_web, b_desc, b_hours, b_services):
+        if not b_name: return
+        t_clean = re.sub(r'[^a-z0-9]', '', str(b_name).lower())
+        p_clean = re.sub(r'[^0-9]', '', str(b_phone or ''))
+        c_clean = re.sub(r'[^a-z0-9]', '', str(b_city or '').lower())
+        k = f"{t_clean}_{p_clean}" if p_clean else f"{t_clean}_{c_clean}"
+        if k in seen_lead_keys: return
+        seen_lead_keys.add(k)
+        
+        all_leads.append({
+            "title": str(b_name).strip(),
+            "category": str(b_cat or "General Services").strip(),
+            "province": str(b_prov or "gauteng").strip(),
+            "city": str(b_city or "Johannesburg").strip(),
+            "location": str(b_city or "Johannesburg").strip(),
+            "suburb": str(b_suburb or "").strip(),
+            "address": str(b_addr or f"{b_city or 'Johannesburg'}, South Africa").strip(),
+            "phone": str(b_phone or "").strip(),
+            "whatsapp": str(b_whatsapp or b_phone or "").strip(),
+            "email": str(b_email or "").strip(),
+            "website": str(b_web or "").strip(),
+            "description": str(b_desc or f"Local business in {b_city or 'South Africa'}.").strip(),
+            "tradingHours": str(b_hours or "Mon-Fri 08:00 - 17:00").strip(),
+            "servicesOffered": str(b_services or b_cat or "Professional Services").strip(),
+            "isClaimed": False,
+            "isPremium": False,
+            "plan": "free"
+        })
+
+    # 1. Check SQLite databases for business_leads and scraped_vault_leads
+    sqlite_paths = ["hermes_data.db", "vps-agent/hermes_data.db", "public/hermes_data.db", "hermes_memory.db"]
+    for db_path in sqlite_paths:
+        if not os.path.exists(db_path): continue
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            # check business_leads
+            try:
+                cur.execute("SELECT name, category, province, city, address, phone, found_whatsapp, found_email, website, found_description, trading_hours FROM business_leads")
+                for r in cur.fetchall():
+                    add_lead(r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[1])
+            except Exception: pass
+            # check scraped_vault_leads
+            try:
+                cur.execute("SELECT business_name, category, province, city, address, phone, whatsapp, email, website, description, trading_hours, services_offered FROM scraped_vault_leads")
+                for r in cur.fetchall():
+                    add_lead(r[0], r[1], r[2], r[3], "", r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+            except Exception: pass
+            conn.close()
+        except Exception as dbe:
+            logger.debug(f"SQLite collection note {db_path}: {dbe}")
+
+    # 2. Check listings/ directory recursively for JSON files
+    search_dirs = ["listings", "vps-agent/listings", "public/listings", "scraped_leads_vault", "vps-agent/scraped_leads_vault"]
+    for s_dir in search_dirs:
+        if not os.path.exists(s_dir): continue
+        for root, _, files in os.walk(s_dir):
+            for fname in files:
+                if fname.endswith(".json"):
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            rec = json.load(f)
+                            if isinstance(rec, list):
+                                for item in rec:
+                                    add_lead(
+                                        item.get("name") or item.get("business_name") or item.get("title"),
+                                        item.get("category"),
+                                        item.get("province"),
+                                        item.get("city"),
+                                        item.get("suburb"),
+                                        item.get("address"),
+                                        item.get("phone") or item.get("telephone"),
+                                        item.get("whatsapp") or item.get("found_whatsapp"),
+                                        item.get("email") or item.get("found_email"),
+                                        item.get("website"),
+                                        item.get("description") or item.get("found_description"),
+                                        item.get("trading_hours"),
+                                        item.get("services") or item.get("services_offered")
+                                    )
+                            elif isinstance(rec, dict):
+                                add_lead(
+                                    rec.get("name") or rec.get("business_name") or rec.get("title"),
+                                    rec.get("category"),
+                                    rec.get("province"),
+                                    rec.get("city"),
+                                    rec.get("suburb"),
+                                    rec.get("address"),
+                                    rec.get("phone") or rec.get("telephone"),
+                                    rec.get("whatsapp") or rec.get("found_whatsapp"),
+                                    rec.get("email") or rec.get("found_email"),
+                                    rec.get("website"),
+                                    rec.get("description") or rec.get("found_description"),
+                                    rec.get("trading_hours"),
+                                    rec.get("services") or rec.get("services_offered")
+                                )
+                    except Exception:
+                        pass
+
+    # 3. Check CSV files in listings/
+    for s_dir in search_dirs:
+        if not os.path.exists(s_dir): continue
+        for root, _, files in os.walk(s_dir):
+            for fname in files:
+                if fname.endswith(".csv"):
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                            reader = csv.reader(f)
+                            header = next(reader, None)
+                            if not header: continue
+                            h_map = {col.strip().lower(): idx for idx, col in enumerate(header)}
+                            for row in reader:
+                                if not row or len(row) < 3: continue
+                                def get_c(col_name, default=""):
+                                    idx = h_map.get(col_name)
+                                    return row[idx].strip() if idx is not None and idx < len(row) else default
+                                b_name = get_c("business name") or get_c("name") or get_c("title")
+                                b_phone = get_c("phone number") or get_c("phone") or get_c("telephone")
+                                b_city = get_c("city / town") or get_c("city") or get_c("town")
+                                b_suburb = get_c("suburb")
+                                b_prov = get_c("province")
+                                b_cat = get_c("category")
+                                b_addr = get_c("address")
+                                b_web = get_c("website")
+                                b_email = get_c("email")
+                                add_lead(b_name, b_cat, b_prov, b_city, b_suburb, b_addr, b_phone, b_phone, b_email, b_web, "", "", b_cat)
+                    except Exception:
+                        pass
+
+    return all_leads
+
 def start_bulk_sync_to_searchbiz(chat_id: int) -> dict:
     """
-    Scans all harvested leads across memory, SQLite vault, and listings files,
+    Scans all harvested leads across memory, SQLite vault, listings/ directory (197,000+ files),
     and bulk-uploads all non-duplicate business records directly to searchbiz.co.za!
     """
     global GLOBAL_BULK_SYNC
@@ -9780,7 +9917,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 
         init_msg = """🚀 <b>SearchBiz Hyper-Sync Engine Activated!</b>
 ═══════════════════════════════════════════
-📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records...
+📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records across listings/ & databases...
 🛡️ <b>Deduplication Shield:</b> Syncing with SearchBiz index to prevent duplicate ads
 ⚡ <b>High-Speed Bulk Uploads:</b> Batching 500 records per HTTP payload
 📬 <b>Target Site:</b> https://searchbiz.co.za (0.03s Zero-Lag Mode)
@@ -9788,82 +9925,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 <i>Gathering harvested business records now...</i>"""
         send_telegram(chat_id, init_msg)
 
-        # 1. Gather all leads from memory vault & SQLite & listings files
-        all_leads = []
-        seen_lead_keys = set()
-
-        # From SQLite scraped_vault_leads
-        try:
-            init_memory_db()
-            with get_db() as conn:
-                cur = conn.execute("SELECT business_name, category, province, city, address, phone, telephone, whatsapp, email, website, description, trading_hours, services_offered FROM scraped_vault_leads")
-                rows = cur.fetchall()
-                for r in rows:
-                    b_name = r[0] or ""
-                    b_phone = r[5] or r[6] or r[7] or ""
-                    if not b_name: continue
-                    k = f"{re.sub(r'[^a-z0-9]', '', b_name.lower())}_{re.sub(r'[^0-9]', '', b_phone)}"
-                    if k not in seen_lead_keys:
-                        seen_lead_keys.add(k)
-                        all_leads.append({
-                            "title": b_name,
-                            "category": r[1] or "General Services",
-                            "province": r[2] or "gauteng",
-                            "city": r[3] or "Johannesburg",
-                            "location": r[3] or "Johannesburg",
-                            "address": r[4] or f"{r[3]}, South Africa",
-                            "phone": b_phone,
-                            "whatsapp": r[7] or b_phone,
-                            "email": r[8] or "",
-                            "website": r[9] or "",
-                            "description": r[10] or f"Verified business in {r[3]}, South Africa.",
-                            "tradingHours": r[11] or "Mon-Fri 08:00 - 17:00",
-                            "servicesOffered": r[12] or r[1] or "Professional Services",
-                            "isClaimed": False,
-                            "isPremium": False,
-                            "plan": "free"
-                        })
-        except Exception as sq_err:
-            logger.debug(f"SQLite vault read error: {sq_err}")
-
-        # From scraped_leads_vault/*.json
-        if os.path.exists(VAULT_LEADS_DIR):
-            try:
-                vault_files = os.listdir(VAULT_LEADS_DIR)
-                for vf in vault_files[:250000]:
-                    if not vf.endswith(".json"): continue
-                    v_path = os.path.join(VAULT_LEADS_DIR, vf)
-                    try:
-                        with open(v_path, "r", encoding="utf-8") as f:
-                            rec = json.load(f)
-                            b_name = rec.get("business_name") or rec.get("name") or ""
-                            b_phone = rec.get("phone") or rec.get("telephone") or rec.get("whatsapp") or ""
-                            if not b_name: continue
-                            k = f"{re.sub(r'[^a-z0-9]', '', b_name.lower())}_{re.sub(r'[^0-9]', '', b_phone)}"
-                            if k not in seen_lead_keys:
-                                seen_lead_keys.add(k)
-                                all_leads.append({
-                                    "title": b_name,
-                                    "category": rec.get("category") or "General Services",
-                                    "province": rec.get("province") or "gauteng",
-                                    "city": rec.get("city") or "Johannesburg",
-                                    "location": rec.get("city") or "Johannesburg",
-                                    "address": rec.get("address") or f"{rec.get('city', 'Johannesburg')}, South Africa",
-                                    "phone": b_phone,
-                                    "whatsapp": rec.get("whatsapp") or b_phone,
-                                    "email": rec.get("email") or "",
-                                    "website": rec.get("website") or "",
-                                    "description": rec.get("description") or f"Verified business in {rec.get('city', 'Johannesburg')}, South Africa.",
-                                    "tradingHours": rec.get("trading_hours") or "Mon-Fri 08:00 - 17:00",
-                                    "servicesOffered": rec.get("services") or rec.get("category") or "Professional Services",
-                                    "isClaimed": False,
-                                    "isPremium": False,
-                                    "plan": "free"
-                                })
-                    except Exception:
-                        pass
-            except Exception as ve:
-                logger.debug(f"Vault dir scan note: {ve}")
+        all_leads = collect_all_harvested_leads()
 
         total_leads = len(all_leads)
         GLOBAL_BULK_SYNC["total_discovered"] = total_leads

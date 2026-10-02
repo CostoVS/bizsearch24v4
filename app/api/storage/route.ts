@@ -333,6 +333,88 @@ export async function GET(req: Request) {
     const totalAdsCount = allAds.length;
     const verifiedCount = allAds.filter((a: any) => a && a.verified).length;
 
+    const qParam = (url.searchParams.get('q') || '').toLowerCase().trim();
+    const catParam = (url.searchParams.get('category') || '').toLowerCase().trim();
+    const townParam = (url.searchParams.get('town') || '').toLowerCase().trim();
+    const provParam = (url.searchParams.get('province') || '').toLowerCase().trim();
+    const subParam = (url.searchParams.get('suburb') || '').toLowerCase().trim();
+
+    if (qParam || catParam || townParam || provParam || subParam) {
+      const filtered = allAds.filter((ad: any) => {
+        if (!ad) return false;
+        
+        // Province check
+        if (provParam) {
+          const adProv = (ad.province || '').toLowerCase();
+          const adProvName = (ad.provinceName || '').toLowerCase();
+          const provMatch = adProv === provParam || adProvName === provParam || adProv.includes(provParam) || provParam.includes(adProv);
+          const serviceProvMatch = ad.serviceAreas?.some((sa: any) => (sa.province || '').toLowerCase() === provParam || (sa.provinceName || '').toLowerCase() === provParam);
+          if (!provMatch && !serviceProvMatch && adProv !== 'national') return false;
+        }
+
+        // Town / City check
+        if (townParam) {
+          const adTown = (ad.town || ad.city || ad.location || '').toLowerCase();
+          const adSuburb = (ad.suburb || '').toLowerCase();
+          const adAddr = (ad.address || '').toLowerCase();
+          const townMatch = adTown === townParam || adSuburb === townParam || adTown.includes(townParam) || townParam.includes(adTown) || adAddr.includes(townParam);
+          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => (sa.town || '').toLowerCase() === townParam || (sa.suburb || '').toLowerCase() === townParam);
+          if (!townMatch && !serviceTownMatch) return false;
+        }
+
+        // Suburb check
+        if (subParam) {
+          const adSuburb = (ad.suburb || '').toLowerCase();
+          const adTown = (ad.town || ad.city || '').toLowerCase();
+          const adAddr = (ad.address || '').toLowerCase();
+          const subMatch = adSuburb === subParam || adSuburb.includes(subParam) || adTown.includes(subParam) || adAddr.includes(subParam);
+          const serviceSubMatch = ad.serviceAreas?.some((sa: any) => (sa.suburb || '').toLowerCase() === subParam);
+          if (!subMatch && !serviceSubMatch) return false;
+        }
+
+        // Category check
+        if (catParam) {
+          const adCat = (ad.category || '').toLowerCase();
+          const adCode = (ad.categoryCode || '').toLowerCase();
+          const adGroup = (ad.categoryGroup || '').toLowerCase();
+          const catMatch = adCat === catParam || adCat.includes(catParam) || catParam.includes(adCat) || adCode === catParam || adGroup.includes(catParam);
+          if (!catMatch) return false;
+        }
+
+        // Keyword query check
+        if (qParam) {
+          const title = (ad.title || '').toLowerCase();
+          const desc = (ad.description || '').toLowerCase();
+          const serv = (ad.servicesOffered || '').toLowerCase();
+          const cat = (ad.category || '').toLowerCase();
+          const code = (ad.categoryCode || '').toLowerCase();
+          const town = (ad.city || ad.town || ad.location || '').toLowerCase();
+          const sub = (ad.suburb || '').toLowerCase();
+          const prov = (ad.province || ad.provinceName || '').toLowerCase();
+          const kw = (ad.searchTags || (ad.keywords || []).join(' ')).toLowerCase();
+
+          const qMatch = title.includes(qParam) || desc.includes(qParam) || serv.includes(qParam) ||
+                         cat.includes(qParam) || code === qParam || town.includes(qParam) ||
+                         sub.includes(qParam) || prov.includes(qParam) || kw.includes(qParam);
+          if (!qMatch) return false;
+        }
+
+        return true;
+      });
+
+      return NextResponse.json({
+        ...baseData,
+        totalAdsCount: filtered.length,
+        verifiedCount: filtered.filter((a: any) => a && a.verified).length,
+        ads: filtered.slice(0, Math.min(1000, limitParam))
+      }, {
+        headers: {
+          'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
+          'X-Cache': 'RAM-FILTERED'
+        }
+      });
+    }
+
     if (!isFull) {
       // Return lightweight payload (< 30KB) for instant site loading
       const previewAds = allAds.slice(0, Math.min(500, limitParam));

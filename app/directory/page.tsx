@@ -86,21 +86,39 @@ function DirectoryContent() {
 
   useEffect(() => {
     setCurrentPage(1);
-    if (q || category || town || province || suburb) {
-            setIsLocalLoading(true);
-      const timer = setTimeout(() => {
+    setIsLocalLoading(true);
+
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (category) params.set('category', category);
+    if (town) params.set('town', town);
+    if (province) params.set('province', province);
+    if (suburb) params.set('suburb', suburb);
+
+    const queryString = params.toString();
+    const endpoint = queryString ? `/api/storage?${queryString}&limit=500` : '/api/storage?limit=500';
+
+    fetch(endpoint, { cache: 'default', headers: { Accept: 'application/json' } })
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.ads)) {
+          setAllAds(data.ads.filter((a: any) => a && a.isActive !== false));
+        }
+      })
+      .catch(err => {
+        console.error('Directory fetch error:', err);
+      })
+      .finally(() => {
         setIsLocalLoading(false);
-      }, 30);
+      });
 
-      const scrollTimer = setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 50);
+    const scrollTimer = setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
 
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(scrollTimer);
-      };
-    }
+    return () => {
+      clearTimeout(scrollTimer);
+    };
   }, [q, category, town, province, suburb]);
 
   useEffect(() => {
@@ -204,16 +222,51 @@ function DirectoryContent() {
       if (!isCatMatch) match = false;
     }
 
-    if (province && adProvinceSlug !== province && !isGlobalLocation) {
-      const hasProvService = ad.serviceAreas?.some((sa: any) => sa.province?.toLowerCase() === province);
-      if (!hasProvService) match = false;
+    if (province && !isGlobalLocation) {
+      const cleanProv = province.toLowerCase().trim();
+      const adProvSlug = (ad.province || '').toLowerCase().trim();
+      const adProvName = (ad.provinceName || '').toLowerCase().trim();
+      const matchesProv = adProvSlug === cleanProv || 
+                          adProvName === cleanProv || 
+                          adProvinceSlug === cleanProv ||
+                          cleanProv.includes(adProvSlug) ||
+                          adProvSlug.includes(cleanProv);
+      const hasProvService = ad.serviceAreas?.some((sa: any) => {
+        const saProv = (sa.province || '').toLowerCase().trim();
+        const saName = (sa.provinceName || '').toLowerCase().trim();
+        return saProv === cleanProv || saName === cleanProv || saProv.includes(cleanProv);
+      });
+      if (!matchesProv && !hasProvService) match = false;
     }
 
     if (town && !isGlobalLocation) {
-      const isTownInAdProvince = PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => t.toLowerCase() === town.toLowerCase());
+      const cleanTown = town.toLowerCase().trim();
+      const isTownInAdProvince = PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => t.toLowerCase() === cleanTown);
       const matchesProvinceWide = isAdProvinceWide && isTownInAdProvince;
-      const matchesSpecificTown = adTown === town.toLowerCase();
-      const hasTownService = ad.serviceAreas?.some((sa: any) => sa.town?.toLowerCase() === town.toLowerCase());
+
+      const adCityLower = (ad.city || "").toLowerCase().trim();
+      const adTownLower = (ad.town || "").toLowerCase().trim();
+      const adSuburbLower = (ad.suburb || "").toLowerCase().trim();
+      const adAddressLower = (ad.address || "").toLowerCase().trim();
+      const adLocLower = (ad.location || "").toLowerCase().trim();
+
+      const matchesSpecificTown = 
+        adTown === cleanTown ||
+        adCityLower === cleanTown ||
+        adTownLower === cleanTown ||
+        adSuburbLower === cleanTown ||
+        adLocLower === cleanTown ||
+        adCityLower.includes(cleanTown) ||
+        adSuburbLower.includes(cleanTown) ||
+        adAddressLower.includes(cleanTown) ||
+        adLocLower.includes(cleanTown);
+
+      const hasTownService = ad.serviceAreas?.some((sa: any) => 
+        (sa.town || "").toLowerCase().trim() === cleanTown ||
+        (sa.suburb || "").toLowerCase().trim() === cleanTown ||
+        (sa.town || "").toLowerCase().includes(cleanTown) ||
+        (sa.suburb || "").toLowerCase().includes(cleanTown)
+      );
       
       if (!matchesProvinceWide && !matchesSpecificTown && !hasTownService) {
         match = false;
@@ -221,12 +274,27 @@ function DirectoryContent() {
     }
     
     if (suburb) {
+      const targetSub = suburb.toLowerCase().trim();
       const adSuburb = (ad.suburb || '').toLowerCase().trim();
+      const adCity = (ad.city || '').toLowerCase().trim();
       const adDesc = (ad.description || '').toLowerCase().trim();
       const adAddr = (ad.address || '').toLowerCase().trim();
-      const targetSub = suburb.toLowerCase().trim();
-      const hasSubService = ad.serviceAreas?.some((sa: any) => (sa.suburb || '').toLowerCase().trim() === targetSub);
-      if (!isGlobalLocation && adSuburb !== targetSub && !adLoc.includes(targetSub) && !adDesc.includes(targetSub) && !adAddr.includes(targetSub) && !hasSubService) {
+      const adLoc = (ad.location || '').toLowerCase().trim();
+      const hasSubService = ad.serviceAreas?.some((sa: any) => {
+        const saSub = (sa.suburb || '').toLowerCase().trim();
+        const saTown = (sa.town || '').toLowerCase().trim();
+        return saSub === targetSub || saSub.includes(targetSub) || saTown === targetSub;
+      });
+      if (
+        !isGlobalLocation && 
+        adSuburb !== targetSub && 
+        !adSuburb.includes(targetSub) &&
+        !adCity.includes(targetSub) &&
+        !adLoc.includes(targetSub) && 
+        !adDesc.includes(targetSub) && 
+        !adAddr.includes(targetSub) && 
+        !hasSubService
+      ) {
         match = false;
       }
     }
