@@ -1,3 +1,5 @@
+import { enhanceAdMetadata } from './enhance-ad-metadata';
+
 export function isCustomerReviewOrGarbage(text?: string | null): boolean {
   if (!text) return true;
   const clean = text.trim();
@@ -182,7 +184,10 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
     copy.isVerified = false;
   }
 
-  return copy as T;
+  // 4. Enhance Metadata: Link Province, City/Town, Suburb, Category Code, Group, Keywords & Search Tags
+  const enhanced = enhanceAdMetadata(copy);
+
+  return enhanced as T;
 }
 
 export function cleanAdsArray(ads: any[]): any[] {

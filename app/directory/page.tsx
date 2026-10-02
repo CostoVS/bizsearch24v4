@@ -163,7 +163,12 @@ function DirectoryContent() {
       const titleMatch = ad.title?.toLowerCase().includes(lowerQ);
       const descMatch = ad.description?.toLowerCase().includes(lowerQ);
       const servMatch = ad.servicesOffered?.toLowerCase().includes(lowerQ);
-      const catMatch = ad.category?.toLowerCase().includes(lowerQ) || 
+      const codeMatch = ad.categoryCode?.toLowerCase() === lowerQ || ad.categoryCode?.toLowerCase().startsWith(lowerQ);
+      const groupMatch = ad.categoryGroup?.toLowerCase().includes(lowerQ) || ad.parentCategory?.toLowerCase().includes(lowerQ);
+      const kwMatch = ad.keywords?.some((k: string) => k.toLowerCase().includes(lowerQ)) || ad.searchTags?.toLowerCase().includes(lowerQ);
+
+      const catMatch = codeMatch || groupMatch || kwMatch ||
+                       ad.category?.toLowerCase().includes(lowerQ) || 
                        isSubcategoryOf(ad.category, lowerQ) ||
                        CATEGORIES_STRUCTURED.some(g => g.name.toLowerCase().includes(lowerQ) && isSubcategoryOf(ad.category, g.name));
       const townMatch = adTown.includes(lowerQ) || 
@@ -190,10 +195,12 @@ function DirectoryContent() {
     }
     
     // Admin Override: "All Categories" ads should show in any category search
-    if (category && ad.category.toLowerCase() !== "all categories") {
+    if (category && ad.category?.toLowerCase() !== "all categories") {
       const isCatMatch = isSubcategoryOf(ad.category, category) || 
-                         ad.category.toLowerCase().includes(category) || 
-                         category.includes(ad.category.toLowerCase());
+                         ad.category?.toLowerCase().includes(category) || 
+                         category.includes(ad.category?.toLowerCase() || '') ||
+                         (ad.categoryCode && (ad.categoryCode.toLowerCase() === category || category.includes(ad.categoryCode.toLowerCase()))) ||
+                         (ad.categoryGroup && (ad.categoryGroup.toLowerCase().includes(category) || category.includes(ad.categoryGroup.toLowerCase())));
       if (!isCatMatch) match = false;
     }
 
