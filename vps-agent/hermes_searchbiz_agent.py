@@ -9760,14 +9760,14 @@ def direct_db_insert_ad_batch(items: list) -> dict:
     }
 
 def collect_all_harvested_leads() -> list:
-    """Collects all harvested business leads across listings/, scraped_leads_vault/, SQLite hermes_data.db, and CSVs."""
+    """Collects all harvested business leads across memory, SQLite hermes_data.db, listings/, scraped_leads_vault/, and CSVs."""
     all_leads = []
     seen_lead_keys = set()
 
     def add_lead(b_name, b_cat, b_prov, b_city, b_suburb, b_addr, b_phone, b_whatsapp, b_email, b_web, b_desc, b_hours, b_services):
         if not b_name: return
         t_clean = re.sub(r'[^a-z0-9]', '', str(b_name).lower())
-        p_clean = re.sub(r'[^0-9]', '', str(b_phone or ''))
+        p_clean = re.sub(r'[^0-9]', '', str(b_phone or ''))[-9:] if len(re.sub(r'[^0-9]', '', str(b_phone or ''))) >= 7 else ""
         c_clean = re.sub(r'[^a-z0-9]', '', str(b_city or '').lower())
         k = f"{t_clean}_{p_clean}" if p_clean else f"{t_clean}_{c_clean}"
         if k in seen_lead_keys: return
@@ -9793,10 +9793,41 @@ def collect_all_harvested_leads() -> list:
             "plan": "free"
         })
 
-    # 1. Check SQLite databases for business_leads and scraped_vault_leads
-    sqlite_paths = ["hermes_data.db", "vps-agent/hermes_data.db", "public/hermes_data.db", "hermes_memory.db"]
+    # 1. Primary: Collect directly from VPS Stored Listings Engine (which aggregates tables & vault)
+    try:
+        stored_data = get_vps_stored_listings(query="", limit=500000)
+        for item in stored_data.get("leads", []):
+            add_lead(
+                item.get("name") or item.get("title"),
+                item.get("category"),
+                item.get("province"),
+                item.get("city"),
+                item.get("suburb"),
+                item.get("address"),
+                item.get("phone") or item.get("telephone"),
+                item.get("whatsapp"),
+                item.get("email"),
+                item.get("website"),
+                item.get("description"),
+                item.get("trading_hours"),
+                item.get("services") or item.get("services_offered")
+            )
+    except Exception as e:
+        logger.debug(f"get_vps_stored_listings direct collection note: {e}")
+
+    # 2. Check SQLite databases for business_leads and scraped_vault_leads (including DB_PATH)
+    sqlite_paths = [
+        DB_PATH,
+        "hermes_data.db", 
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes_data.db"),
+        "vps-agent/hermes_data.db", 
+        "public/hermes_data.db", 
+        "hermes_memory.db"
+    ]
+    seen_db_paths = set()
     for db_path in sqlite_paths:
-        if not os.path.exists(db_path): continue
+        if not db_path or db_path in seen_db_paths or not os.path.exists(db_path): continue
+        seen_db_paths.add(db_path)
         try:
             conn = sqlite3.connect(db_path)
             cur = conn.cursor()
@@ -9816,10 +9847,21 @@ def collect_all_harvested_leads() -> list:
         except Exception as dbe:
             logger.debug(f"SQLite collection note {db_path}: {dbe}")
 
-    # 2. Check listings/ directory recursively for JSON files
-    search_dirs = ["listings", "vps-agent/listings", "public/listings", "scraped_leads_vault", "vps-agent/scraped_leads_vault"]
+    # 3. Check listings/ and vault directories recursively for JSON files
+    search_dirs = [
+        LISTINGS_DIR,
+        VAULT_DIR,
+        LEADS_DIR,
+        "listings", 
+        "vps-agent/listings", 
+        "public/listings", 
+        "scraped_leads_vault", 
+        "vps-agent/scraped_leads_vault"
+    ]
+    seen_search_dirs = set()
     for s_dir in search_dirs:
-        if not os.path.exists(s_dir): continue
+        if not s_dir or s_dir in seen_search_dirs or not os.path.exists(s_dir): continue
+        seen_search_dirs.add(s_dir)
         for root, _, files in os.walk(s_dir):
             for fname in files:
                 if fname.endswith(".json"):
@@ -9863,7 +9905,7 @@ def collect_all_harvested_leads() -> list:
                     except Exception:
                         pass
 
-    # 3. Check CSV files in listings/
+    # 4. Check CSV files in listings/
     for s_dir in search_dirs:
         if not os.path.exists(s_dir): continue
         for root, _, files in os.walk(s_dir):
