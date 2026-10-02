@@ -298,7 +298,13 @@ async function revalidateCacheBackground(): Promise<void> {
 
 export async function GET(req: Request) {
   try {
+    const url = new URL(req.url);
+    const isFull = url.searchParams.get('full') === 'true';
+    const limitParam = parseInt(url.searchParams.get('limit') || '200', 10);
     const currentMtime = getDiskMtime();
+
+    let baseData: any = null;
+
     // 1. Ultra-fast in-memory cache hit (< 1ms) if disk has not changed
     if (
       globalRef.storageCache && 
@@ -306,42 +312,64 @@ export async function GET(req: Request) {
       globalRef.storageCache.ads.length > 0 &&
       globalRef.storageMtime === currentMtime
     ) {
-      return NextResponse.json(globalRef.storageCache, {
+      baseData = globalRef.storageCache;
+    } else {
+      // 2. Read local .data/db.json disk database directly
+      const localData = getLocalDataNoCache();
+      if (localData && Array.isArray(localData.ads) && localData.ads.length > 0) {
+        globalRef.storageCache = localData;
+        globalRef.storageMtime = currentMtime;
+        globalRef.storageCacheTime = Date.now();
+        baseData = localData;
+      } else {
+        const finalData = await loadAndReconcileData();
+        globalRef.storageCache = finalData;
+        globalRef.storageCacheTime = Date.now();
+        baseData = finalData;
+      }
+    }
+
+    const allAds = Array.isArray(baseData.ads) ? baseData.ads : [];
+    const totalAdsCount = allAds.length;
+    const verifiedCount = allAds.filter((a: any) => a && a.verified).length;
+
+    if (!isFull) {
+      // Return lightweight payload (< 30KB) for instant site loading
+      const previewAds = allAds.slice(0, Math.min(500, limitParam));
+      return NextResponse.json({
+        ...baseData,
+        totalAdsCount,
+        verifiedCount,
+        ads: previewAds
+      }, {
         headers: {
-          'Cache-Control': 'public, max-age=1, stale-while-revalidate=4',
-          'X-Cache': 'RAM-MEMORY-HIT'
+          'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
+          'X-Cache': 'RAM-FAST-PREVIEW'
         }
       });
     }
 
-    // 2. Read local .data/db.json disk database directly for zero-latency reflection of agent ads
-    const localData = getLocalDataNoCache();
-    if (localData && Array.isArray(localData.ads) && localData.ads.length > 0) {
-      globalRef.storageCache = localData;
-      globalRef.storageMtime = currentMtime;
-      globalRef.storageCacheTime = Date.now();
-      return NextResponse.json(localData, {
-        headers: {
-          'Cache-Control': 'public, max-age=1, stale-while-revalidate=4',
-          'X-Cache': 'FRESH-DISK-LIVE'
-        }
-      });
-    }
-
-    // Fallback to load and reconcile database
-    const finalData = await loadAndReconcileData();
-    globalRef.storageCache = finalData;
-    globalRef.storageCacheTime = Date.now();
-
-    return NextResponse.json(finalData, {
+    return NextResponse.json({
+      ...baseData,
+      totalAdsCount,
+      verifiedCount
+    }, {
       headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'X-Cache': 'RECONCILED'
+        'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
+        'X-Cache': 'RAM-FULL'
       }
     });
+
   } catch (error: any) {
     console.error("GET /api/storage failed:", error);
-    return NextResponse.json(getLocalDataNoCache(), { 
+    const fallback = getLocalDataNoCache();
+    const fallbackAds = Array.isArray(fallback.ads) ? fallback.ads : [];
+    return NextResponse.json({
+      ...fallback,
+      totalAdsCount: fallbackAds.length,
+      verifiedCount: fallbackAds.filter((a: any) => a && a.verified).length,
+      ads: fallbackAds.slice(0, 200)
+    }, { 
       status: 200, 
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'

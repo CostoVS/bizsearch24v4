@@ -269,6 +269,30 @@ let _memStoredAds: any[] | null = null;
 let _memStoredAdsRaw: string | null = null;
 let _activeFetchAdsPromise: Promise<any[]> | null = null;
 
+export function getTotalAdsCount(): number {
+  if (typeof window !== "undefined") {
+    const storedCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
+    if (storedCount) {
+      const parsed = parseInt(storedCount, 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  const ads = getStoredAds();
+  return ads.length;
+}
+
+export function getVerifiedAdsCount(): number {
+  if (typeof window !== "undefined") {
+    const storedCount = safeLocalStorage.getItem("searchbiz_verified_count");
+    if (storedCount) {
+      const parsed = parseInt(storedCount, 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  const ads = getStoredAds();
+  return ads.filter(a => a.verified).length;
+}
+
 // Unified global advertisements client register with localStorage persistence
 export function getStoredAds(): any[] {
   if (typeof window === "undefined") {
@@ -331,6 +355,13 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         // Filter out deleted ads from the server list & clean review garbage
         const cleanedServerAds = cleanAdsArray(serverAds);
         const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
+
+        if (data.totalAdsCount !== undefined) {
+          safeLocalStorage.setItem("searchbiz_total_ads_count", String(data.totalAdsCount));
+        }
+        if (data.verifiedCount !== undefined) {
+          safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
+        }
 
         const serialized = JSON.stringify(finalAds);
         safeLocalStorage.setItem("searchbiz_all_ads", serialized);

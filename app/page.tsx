@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import Image from "next/image";
-import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds } from "@/lib/data";
+import { PROVINCES, CATEGORIES, getStoredAds, saveStoredAds, deleteAd, safeLocalStorage, fetchAndStoreAds, getTotalAdsCount, getVerifiedAdsCount } from "@/lib/data";
 import { isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 import { Search, MapPin, BadgeCheck, Star, Briefcase, Zap, Sparkles, Edit, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -103,14 +103,14 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-8 sm:gap-12 mb-10 border-b border-emerald-900/60 pb-10">
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-white mb-1">
-                    {loading ? <span className="animate-pulse opacity-50">...</span> : ads.length}
+                    {loading ? <span className="animate-pulse opacity-50">...</span> : getTotalAdsCount().toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Companies</div>
                 </div>
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-emerald-400 mb-1">
-                    {loading ? <span className="animate-pulse opacity-50">...</span> : ads.filter(a => a.verified).length}
+                    {loading ? <span className="animate-pulse opacity-50">...</span> : (getVerifiedAdsCount() || ads.filter(a => a.verified).length).toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Approved & Active</div>
                 </div>

@@ -199,6 +199,132 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
 }
 
 /**
+ * Bulk Create Ads with High-Speed Multi-Key Deduplication
+ */
+export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
+  success: boolean;
+  addedCount: number;
+  skippedDuplicatesCount: number;
+  totalActiveAds: number;
+}> {
+  if (!Array.isArray(items) || items.length === 0) {
+    const dbData = readServerDb();
+    return {
+      success: true,
+      addedCount: 0,
+      skippedDuplicatesCount: 0,
+      totalActiveAds: Array.isArray(dbData.ads) ? dbData.ads.length : 0
+    };
+  }
+
+  const dbData = readServerDb();
+  const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
+
+  // Build high-speed lookup set for existing ads to guarantee zero duplicates
+  const existingKeys = new Set<string>();
+  for (const a of currentAds) {
+    if (!a) continue;
+    const titleNorm = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const phoneNorm = (a.phone || '').replace(/[^0-9]/g, '');
+    const townNorm = (a.city || a.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (titleNorm && phoneNorm) {
+      existingKeys.add(`${titleNorm}_${phoneNorm}`);
+    }
+    if (titleNorm && townNorm) {
+      existingKeys.add(`${titleNorm}_${townNorm}`);
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  let addedCount = 0;
+  let skippedDuplicatesCount = 0;
+  const newAdsToAppend: any[] = [];
+
+  for (const item of items) {
+    if (!item || !item.title || !item.title.trim()) continue;
+
+    const titleNorm = item.title.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const phoneNorm = (item.phone || '').replace(/[^0-9]/g, '');
+    const town = item.city || item.location || 'Johannesburg';
+    const townNorm = town.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const key1 = `${titleNorm}_${phoneNorm}`;
+    const key2 = `${titleNorm}_${townNorm}`;
+
+    if ((phoneNorm && existingKeys.has(key1)) || (townNorm && existingKeys.has(key2))) {
+      skippedDuplicatesCount++;
+      continue;
+    }
+
+    // Mark key as seen so duplicates within the input batch are also caught
+    if (phoneNorm) existingKeys.add(key1);
+    if (townNorm) existingKeys.add(key2);
+
+    const province = normalizeProvinceSlug(item.province);
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const adId = `ad-agent-${Date.now()}-${randomSuffix}-${addedCount}`;
+
+    const defaultDescription = item.description && item.description.trim().length >= 10
+      ? item.description.trim()
+      : `${item.title.trim()} offers professional ${item.category || 'business'} services in ${town}, ${province.toUpperCase()}. Contact us today.`;
+
+    const isFree = item.isClaimed === false || item.plan === 'free' || item.isPremium === false || !item.plan;
+    const isClaimed = item.isClaimed === true;
+    const isPremium = item.isPremium === true;
+
+    const newAd = {
+      id: adId,
+      userId: 'agent-bot',
+      isActive: true,
+      title: item.title.trim(),
+      category: item.category ? item.category.trim() : 'General Services',
+      location: town.toLowerCase(),
+      city: town,
+      province: province,
+      suburb: item.suburb ? item.suburb.trim() : '',
+      serviceAreas: [],
+      description: defaultDescription,
+      tradingHours: isFree ? (item.tradingHours || 'Contact business for operating hours') : (item.tradingHours || 'Mon-Fri: 08:00 - 17:00'),
+      servicesOffered: item.servicesOffered || item.category || 'Professional Services',
+      preferredContact: isFree ? 'Phone' : (item.preferredContact || (item.whatsapp ? 'WhatsApp' : 'Phone')),
+      showCallOption: true,
+      verified: false,
+      isPremium: isPremium,
+      isSponsor: isFree ? false : (item.isSponsor || false),
+      isClaimed: isClaimed,
+      plan: isPremium ? 'PREMIUM' : 'free',
+      source: 'agent_bot',
+      image: isFree ? '' : (item.image || ''),
+      images: isFree ? [] : ((item as any).images || []),
+      address: item.address ? item.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
+      phone: item.phone ? item.phone.trim() : '',
+      whatsapp: isFree ? '' : (item.whatsapp ? item.whatsapp.trim() : (item.phone ? item.phone.trim() : '')),
+      email: isFree ? '' : (item.email ? item.email.trim() : ''),
+      website: isFree ? '' : (item.website ? item.website.trim() : ''),
+      price: item.price !== undefined ? item.price : undefined,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    newAdsToAppend.push(newAd);
+    addedCount++;
+  }
+
+  if (addedCount > 0) {
+    const updatedAds = cleanAdsArray([...newAdsToAppend, ...currentAds]);
+    dbData.ads = updatedAds;
+    writeServerDb(dbData);
+  }
+
+  return {
+    success: true,
+    addedCount,
+    skippedDuplicatesCount,
+    totalActiveAds: Array.isArray(dbData.ads) ? dbData.ads.length : 0
+  };
+}
+
+/**
  * Remove an ad by ID or search term (moves to Recycle Bin by default)
  */
 export async function deleteBotAd(
