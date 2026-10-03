@@ -70,7 +70,10 @@
         "business"
       ],
       "searchTags": "11.7 11 full service restaurants food dining kwazulu-natal umkomaas 4170 the lazy moose restaurant lodge 57 strathcona drive local business",
-      "slug": "full-service-restaurants-umkomaas-kwazulu-natal-ad-agent-1790958533287-0"
+      "slug": "full-service-restaurants-umkomaas-kwazulu-natal-ad-agent-1790958533287-0",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-1",
@@ -141,7 +144,10 @@
         "business"
       ],
       "searchTags": "7.1 7 art music schools education training kwazulu-natal umkomaas 4170 dlambula primary school kwazulu natal south africa local business",
-      "slug": "art-music-schools-umkomaas-kwazulu-natal-ad-agent-1790958533287-1"
+      "slug": "art-music-schools-umkomaas-kwazulu-natal-ad-agent-1790958533287-1",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-2",
@@ -206,7 +212,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 motor spares coast shops local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-2"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-2",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-3",
@@ -278,7 +287,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 south coast spares engine rebuilders industrial park scottburgh cylinder heads gaskets local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-3"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-3",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-4",
@@ -351,7 +363,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal scottburgh 4180 supa quick tyre auto spares cnr scott williamson st fitment tyres exhausts local",
-      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-4"
+      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-4",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-5",
@@ -424,7 +439,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal park rynie 4182 auto spares scrap first street industrial area umkomaas used parts yard local",
-      "slug": "general-services-park-rynie-kwazulu-natal-ad-agent-1790958533287-5"
+      "slug": "general-services-park-rynie-kwazulu-natal-ad-agent-1790958533287-5",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-6",
@@ -500,7 +518,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal park rynie 4182 tyre mart brake spares south coast old main road umkomaas tyres brakes shocks batteries local",
-      "slug": "general-services-park-rynie-kwazulu-natal-ad-agent-1790958533287-6"
+      "slug": "general-services-park-rynie-kwazulu-natal-ad-agent-1790958533287-6",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-7",
@@ -572,7 +593,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal scottburgh 4180 midas umkomaas shop bramley centre scott street motor spares tools accessories local",
-      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-7"
+      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-7",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-8",
@@ -646,7 +670,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal scottburgh 4180 autozone south coast corner arbuthnot cordiner st umkomaas car parts batteries oils filters local",
-      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-8"
+      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-8",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-9",
@@ -718,7 +745,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal scottburgh 4180 auto spares accessories 32 scott street umkomaas area automotive parts tools local",
-      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-9"
+      "slug": "general-services-scottburgh-kwazulu-natal-ad-agent-1790958533287-9",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-10",
@@ -789,7 +819,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 south coast auto electrical spares main road ilfracombe starters alternators local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-10"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-10",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-11",
@@ -857,7 +890,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 fitment mechanical spares centre maclean street car local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-11"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-11",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-12",
@@ -926,7 +962,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 craigieburn auto parts spares lotus drive automotive replacement local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-12"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-12",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-13",
@@ -997,7 +1036,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 panel beaters spares 12 bisset street auto body parts replacement local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-13"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-13",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-14",
@@ -1069,7 +1111,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 boss auto spares shop civic centre court road parts car accessories local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-14"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-14",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     },
     {
       "id": "ad-agent-1790958533287-15",
@@ -1140,7 +1185,10 @@
         "local"
       ],
       "searchTags": "20.1 20 general services business kwazulu-natal umkomaas 4170 sams motor spares auto electrical main road craigieburn parts accessories local",
-      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-15"
+      "slug": "general-services-umkomaas-kwazulu-natal-ad-agent-1790958533287-15",
+      "isApproved": false,
+      "status": "pending",
+      "approvalStatus": "pending"
     }
   ],
   "banners": [],

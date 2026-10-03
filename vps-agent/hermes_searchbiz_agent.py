@@ -9573,6 +9573,9 @@ def direct_db_insert_ad(payload: dict) -> dict:
             "showCallOption": True,
             "verified": False if is_free else payload.get("verified", True),
             "isPremium": False if is_free else payload.get("isPremium", True),
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "isSponsor": False,
             "isClaimed": False if is_free else payload.get("isClaimed", True),
             "plan": "free" if is_free else payload.get("plan", "PREMIUM"),
@@ -9723,6 +9726,9 @@ def direct_db_insert_ad_batch(items: list) -> dict:
             "showCallOption": True,
             "verified": False,
             "isPremium": False,
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "isSponsor": False,
             "isClaimed": False,
             "plan": "free",
@@ -9790,6 +9796,9 @@ def collect_all_harvested_leads() -> list:
             "servicesOffered": str(b_services or b_cat or "Professional Services").strip(),
             "isClaimed": False,
             "isPremium": False,
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "plan": "free"
         })
 
@@ -9856,7 +9865,11 @@ def collect_all_harvested_leads() -> list:
         "vps-agent/listings", 
         "public/listings", 
         "scraped_leads_vault", 
-        "vps-agent/scraped_leads_vault"
+        "vps-agent/scraped_leads_vault",
+        "/tmp",
+        "data",
+        ".data",
+        "."
     ]
     seen_search_dirs = set()
     for s_dir in search_dirs:
@@ -9983,11 +9996,11 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             GLOBAL_BULK_SYNC["is_running"] = False
             return
 
-        batch_size = 100
+        batch_size = 2000
         batches = [all_leads[i:i + batch_size] for i in range(0, total_leads, batch_size)]
         GLOBAL_BULK_SYNC["total_batches"] = len(batches)
 
-        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (100 per batch).\n🚀 Launching high-speed batch upload stream to SearchBiz...")
+        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (up to 2,000 per batch).\n🚀 Launching ultra-high-speed batch upload stream to SearchBiz...")
 
         for b_idx, batch_items in enumerate(batches, 1):
             if not GLOBAL_BULK_SYNC["is_running"]:

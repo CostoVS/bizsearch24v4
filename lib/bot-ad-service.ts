@@ -35,22 +35,38 @@ export interface BotAdPayload {
 }
 
 export function readServerDb(): any {
-  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
+  const candidatePaths = [JSON_PATH, PERSIST_PATH];
+  let bestData: any = null;
+  let bestTime = -1;
+  let bestCount = -1;
+
+  for (const targetPath of candidatePaths) {
     try {
       if (fs.existsSync(targetPath)) {
         const fileContent = fs.readFileSync(targetPath, 'utf-8');
         const data = JSON.parse(fileContent);
         if (data && typeof data === 'object') {
-          data.ads = Array.isArray(data.ads) ? data.ads : [];
-          data.trashAds = Array.isArray(data.trashAds) ? data.trashAds : [];
-          data.deletedAds = Array.isArray(data.deletedAds) ? data.deletedAds : [];
-          return data;
+          const adsCount = Array.isArray(data.ads) ? data.ads.length : 0;
+          const updated = Number(data.updatedAt) || 0;
+          if (!bestData || adsCount > bestCount || (adsCount === bestCount && updated > bestTime)) {
+            bestData = data;
+            bestTime = updated;
+            bestCount = adsCount;
+          }
         }
       }
     } catch (e) {
       console.error(`[BotAdService] Failed to read ${targetPath}:`, e);
     }
   }
+
+  if (bestData) {
+    bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
+    bestData.trashAds = Array.isArray(bestData.trashAds) ? bestData.trashAds : [];
+    bestData.deletedAds = Array.isArray(bestData.deletedAds) ? bestData.deletedAds : [];
+    return bestData;
+  }
+
   return { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now() };
 }
 
@@ -171,6 +187,9 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     showCallOption: true,
     verified: verified,
     isPremium: isPremium,
+    isApproved: false,
+    status: 'pending',
+    approvalStatus: 'pending',
     isSponsor: isFree ? false : (payload.isSponsor || false),
     isClaimed: isClaimed,
     plan: plan,
@@ -304,6 +323,9 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       showCallOption: true,
       verified: false,
       isPremium: isPremium,
+      isApproved: false,
+      status: 'pending',
+      approvalStatus: 'pending',
       isSponsor: isFree ? false : (item.isSponsor || false),
       isClaimed: isClaimed,
       plan: isPremium ? 'PREMIUM' : 'free',

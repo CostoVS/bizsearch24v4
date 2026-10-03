@@ -15,6 +15,7 @@ services:
       - DATABASE_URL=postgresql://sb_admin_secure_usr:Sb9_kL82_vX97_mQ41_zP30_rN@db:5432/searchbiz_db
     volumes:
       - ./.data:/app/.data
+      - ./data:/app/data
 
   db:
     image: postgres:15-alpine

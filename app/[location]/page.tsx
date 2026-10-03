@@ -77,15 +77,21 @@ async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
 
   if (slugs.length === 0 && ads.length === 0) {
     try {
-      const dbPath = path.join(process.cwd(), ".data", "db.json");
-      if (fs.existsSync(dbPath)) {
-        const dbFile = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-        slugs = dbFile.slugs || [];
-        ads = dbFile.ads || [];
-        
-        // Warm the global storage cache
-        globalRef.storageCache = dbFile;
-        globalRef.storageCacheTime = now;
+      const candidatePaths = [
+        path.join(process.cwd(), ".data", "db.json"),
+        path.join(process.cwd(), "data", "db.json")
+      ];
+      for (const targetPath of candidatePaths) {
+        if (fs.existsSync(targetPath)) {
+          const dbFile = JSON.parse(fs.readFileSync(targetPath, "utf-8"));
+          if (dbFile && typeof dbFile === 'object') {
+            slugs = dbFile.slugs || [];
+            ads = dbFile.ads || [];
+            globalRef.storageCache = dbFile;
+            globalRef.storageCacheTime = now;
+            break;
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to load custom slugs fallback in location page:", e);

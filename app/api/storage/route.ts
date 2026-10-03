@@ -43,24 +43,39 @@ if (globalRef.dbOfflineUntil === undefined) {
 }
 
 function getLocalDataNoCache() {
-  const candidatePaths = [PERSIST_PATH, JSON_PATH];
+  const candidatePaths = [JSON_PATH, PERSIST_PATH];
+  let bestData: any = null;
+  let bestTime = -1;
+  let bestCount = -1;
+
   for (const targetPath of candidatePaths) {
     try {
       if (fs.existsSync(targetPath)) {
         const fileContent = fs.readFileSync(targetPath, 'utf-8');
         const data = JSON.parse(fileContent);
         if (data && typeof data === 'object') {
-          data.updatedAt = data.updatedAt || 0;
-          if (Array.isArray(data.ads)) {
-            data.ads = cleanAdsArray(data.ads);
+          const adsCount = Array.isArray(data.ads) ? data.ads.length : 0;
+          const updated = Number(data.updatedAt) || 0;
+          if (!bestData || adsCount > bestCount || (adsCount === bestCount && updated > bestTime)) {
+            bestData = data;
+            bestTime = updated;
+            bestCount = adsCount;
           }
-          return data;
         }
       }
     } catch (e) {
       console.error(`Failed to read json data from ${targetPath}:`, e);
     }
   }
+
+  if (bestData) {
+    bestData.updatedAt = bestData.updatedAt || 0;
+    if (Array.isArray(bestData.ads)) {
+      bestData.ads = cleanAdsArray(bestData.ads);
+    }
+    return bestData;
+  }
+
   return { 
     ads: [], 
     banners: [],
@@ -353,11 +368,22 @@ export async function GET(req: Request) {
     const provParam = (url.searchParams.get('province') || '').toLowerCase().trim();
     const subParam = (url.searchParams.get('suburb') || '').toLowerCase().trim();
     const addrParam = (url.searchParams.get('address') || '').toLowerCase().trim();
+    const statusParam = (url.searchParams.get('status') || '').toLowerCase().trim();
+    const approvedOnly = url.searchParams.get('approvedOnly') === 'true';
+    const pendingOnly = url.searchParams.get('pendingOnly') === 'true';
 
-    if (qParam || catParam || townParam || provParam || subParam || addrParam) {
+    if (qParam || catParam || townParam || provParam || subParam || addrParam || statusParam || approvedOnly || pendingOnly) {
       const filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
         
+        // Approval status check
+        if (approvedOnly && ad.isApproved !== true && ad.status !== 'approved') return false;
+        if (pendingOnly && (ad.isApproved === true || ad.status === 'approved')) return false;
+        if (statusParam) {
+          const currentStatus = (ad.status || (ad.isApproved ? 'approved' : 'pending')).toLowerCase();
+          if (currentStatus !== statusParam) return false;
+        }
+
         const adAddr = (ad.address || '').toLowerCase();
         const adProv = (ad.province || '').toLowerCase();
         const adProvName = (ad.provinceName || '').toLowerCase();

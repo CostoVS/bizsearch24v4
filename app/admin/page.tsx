@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
 import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner, getTrashAds, restoreAdFromTrash, permanentlyDeleteAdFromTrash, emptyTrashPermanently } from "@/lib/data";
-import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, MapPin, MessageSquare, Phone, BellRing, Undo2, RotateCcw, ArchiveRestore, History } from "lucide-react";
+import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, CheckCircle2, MapPin, MessageSquare, Phone, BellRing, Undo2, RotateCcw, ArchiveRestore, History } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
@@ -196,7 +196,7 @@ export default function AdminDashboard() {
   const [adSearchCity, setAdSearchCity] = useState("");
   const [adSearchCategory, setAdSearchCategory] = useState("all");
   const [adSourceFilter, setAdSourceFilter] = useState<"all" | "preference" | "csv">("all");
-  const [adTypeFilter, setAdTypeFilter] = useState<"all" | "free" | "premium" | "sponsor" | "claimed" | "unclaimed" | "remove" | "claimed_free">("all");
+  const [adTypeFilter, setAdTypeFilter] = useState<"all" | "pending_approval" | "approved" | "free" | "premium" | "sponsor" | "claimed" | "unclaimed" | "remove" | "claimed_free">("all");
   const [isSyncingAds, setIsSyncingAds] = useState(false);
   const [adPage, setAdPage] = useState(1);
   const ITEMS_PER_PAGE = 12;
@@ -807,6 +807,67 @@ export default function AdminDashboard() {
     console.log("Claim intention updated successfully!");
   };
 
+  const handleToggleApprove = (adId: string, approved: boolean) => {
+    const updated = ads.map(a => {
+      if (a.id === adId) {
+        return {
+          ...a,
+          isApproved: approved,
+          status: approved ? 'approved' : 'pending',
+          approvalStatus: approved ? 'approved' : 'pending',
+          verified: false
+        };
+      }
+      return a;
+    });
+    setAds(updated);
+    saveStoredAds(updated);
+  };
+
+  const handleBulkApproveSelected = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const updated = ads.map(a => {
+      if (idSet.has(a.id)) {
+        return {
+          ...a,
+          isApproved: true,
+          status: 'approved',
+          approvalStatus: 'approved'
+        };
+      }
+      return a;
+    });
+    setAds(updated);
+    saveStoredAds(updated);
+    setSelectedAdIds([]);
+    alert(`Successfully approved ${ids.length} listing(s)!`);
+  };
+
+  const handleApproveAllPending = () => {
+    const pendingAds = ads.filter(a => a.isApproved !== true && a.status !== 'approved');
+    if (pendingAds.length === 0) {
+      alert("All listings are already approved! No pending listings found.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to approve ALL ${pendingAds.length} pending listing(s)? They will become active and searchable across all locations and categories.`)) return;
+
+    const updated = ads.map(a => {
+      if (a.isApproved !== true && a.status !== 'approved') {
+        return {
+          ...a,
+          isApproved: true,
+          status: 'approved',
+          approvalStatus: 'approved'
+        };
+      }
+      return a;
+    });
+    setAds(updated);
+    saveStoredAds(updated);
+    alert(`Approved all ${pendingAds.length} pending listing(s)!`);
+  };
+
   const getFilteredAds = () => {
     return ads.filter(ad => {
       // 1. Search term filter (title, description, phone, address, servicesOffered, ownerDetails)
@@ -946,6 +1007,10 @@ export default function AdminDashboard() {
         if (ad.claimIntention !== "remove") return false;
       } else if (adTypeFilter === "claimed_free") {
         if (ad.isClaimed !== true || ad.claimIntention !== "free") return false;
+      } else if (adTypeFilter === "pending_approval") {
+        if (ad.isApproved === true || ad.status === 'approved') return false;
+      } else if (adTypeFilter === "approved") {
+        if (ad.isApproved !== true && ad.status !== 'approved') return false;
       }
 
       return true;
@@ -3590,6 +3655,9 @@ export default function AdminDashboard() {
                           isPremium: false,
                           isSponsor: false,
                           isClaimed: false,
+                          isApproved: false,
+                          status: "pending",
+                          approvalStatus: "pending",
                           isGoogleImport: true,
                           image: null,
                           createdAt: new Date().toISOString()
@@ -3597,7 +3665,7 @@ export default function AdminDashboard() {
                       }
                       const feedbackParts = [];
                       if (newAds.length > 0) {
-                        feedbackParts.push(`AI Core NLP Successfully indexed and sorted ${newAds.length} business listings!`);
+                        feedbackParts.push(`AI Core NLP Successfully indexed ${newAds.length} business listings! They are saved as Pending Approval. You can review and click 'Approve All' to publish them.`);
                       } else {
                         feedbackParts.push("No new listings were imported.");
                       }
@@ -3674,6 +3742,52 @@ export default function AdminDashboard() {
                </div>
             </div>
 
+            {/* Dynamic Pending Approval Alert Banner */}
+            {(() => {
+              const pendingListings = ads.filter(a => a.isApproved !== true && a.status !== 'approved');
+              if (pendingListings.length === 0) return null;
+              return (
+                <div className="mx-8 mt-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-xl shrink-0 shadow-md shadow-amber-500/20">
+                      ⏳
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
+                          Admin Authorization Required
+                        </span>
+                        <span className="text-xs font-bold text-amber-900 font-mono">
+                          {pendingListings.length} unapproved
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-900 text-base mt-0.5">
+                        {pendingListings.length} Listing{pendingListings.length > 1 ? 's' : ''} Pending Your Approval
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Nothing is approved or public until you authorize it. Click &quot;Approve All&quot; below or review listings individually.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
+                    <button
+                      onClick={handleApproveAllPending}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Approve All {pendingListings.length} Pending
+                    </button>
+                    <button
+                      onClick={() => setAdTypeFilter('pending_approval')}
+                      className="bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-950 text-xs font-bold px-4 py-3 rounded-xl transition cursor-pointer w-full sm:w-auto justify-center"
+                    >
+                      Filter Pending Only
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Real-time Administrative Controls & Multi-dimensional Search Engine */}
             <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-200 relative z-10 space-y-6" id="admin-search-engine">
               
@@ -3715,6 +3829,8 @@ export default function AdminDashboard() {
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "all", label: "All Tiers / States", color: "bg-slate-800 text-slate-50 hover:bg-slate-900", count: ads.length },
+                    { id: "pending_approval", label: "⏳ Pending Approval", color: "bg-amber-100 text-amber-950 hover:bg-amber-200 border border-amber-300 font-extrabold", count: ads.filter(a => a.isApproved !== true && a.status !== 'approved').length },
+                    { id: "approved", label: "✓ Approved by Admin", color: "bg-emerald-100 text-emerald-950 hover:bg-emerald-200 border border-emerald-300 font-extrabold", count: ads.filter(a => a.isApproved === true || a.status === 'approved').length },
                     { id: "free", label: "Basic Free Ads", color: "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100", count: ads.filter(a => !a.isPremium && !a.isSponsor).length },
                     { id: "premium", label: "Premium Verified", color: "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100", count: ads.filter(a => a.isPremium && !a.isSponsor).length },
                     { id: "sponsor", label: "Featured Sponsor", color: "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-100", count: ads.filter(a => a.isSponsor).length },
@@ -3860,6 +3976,13 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-2">
                         <button
+                          onClick={() => handleBulkApproveSelected(selectedAdIds)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-xl font-bold text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Approve Selected ({selectedAdIds.length})</span>
+                        </button>
+                        <button
                           onClick={() => {
                             setDeleteScope("selected");
                             setDeletePasswordInput("");
@@ -3937,6 +4060,11 @@ export default function AdminDashboard() {
                                    <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-1.5 mb-1">
                                         <span className="text-sm font-bold text-slate-900 truncate block max-w-[200px]">{ad.title}</span>
+                                        {ad.isApproved === true || ad.status === 'approved' ? (
+                                          <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-800 text-[8px] font-black rounded uppercase tracking-wider">Approved ✓</span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 text-[8px] font-black rounded uppercase tracking-wider">Pending Approval ⏳</span>
+                                        )}
                                         {ad.id?.startsWith("csv-") || ad.id?.startsWith("csv_") ? (
                                           <span className="px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-black rounded uppercase tracking-wider">CSV Upload</span>
                                         ) : (
@@ -4083,9 +4211,26 @@ export default function AdminDashboard() {
                                 </div>
                               </td>
                               <td className="px-8 py-5 whitespace-nowrap text-right">
-                                <div className="flex items-center justify-end">
-                                   <button onClick={() => setSelectedAd(ad)} className="text-slate-400 hover:text-emerald-600 p-2.5 transition active:scale-90" title="Edit Info"><Edit className="w-5 h-5" /></button>
-                                   <button onClick={() => removeAd(ad.id)} className="text-slate-400 hover:text-rose-600 p-2.5 transition active:scale-90" title="Purge Record"><Trash2 className="w-5 h-5" /></button>
+                                <div className="flex items-center justify-end gap-1.5">
+                                   {ad.isApproved === true || ad.status === 'approved' ? (
+                                     <button
+                                       onClick={() => handleToggleApprove(ad.id, false)}
+                                       className="px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-amber-800 bg-slate-100 hover:bg-amber-50 rounded-lg border border-slate-200 transition cursor-pointer"
+                                       title="Revoke approval status"
+                                     >
+                                       Revoke
+                                     </button>
+                                   ) : (
+                                     <button
+                                       onClick={() => handleToggleApprove(ad.id, true)}
+                                       className="px-3 py-1.5 text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition flex items-center gap-1 cursor-pointer"
+                                       title="Approve this listing now"
+                                     >
+                                       <Check className="w-3.5 h-3.5" /> Approve
+                                     </button>
+                                   )}
+                                   <button onClick={() => setSelectedAd(ad)} className="text-slate-400 hover:text-emerald-600 p-2 transition active:scale-90" title="Edit Info"><Edit className="w-4 h-4" /></button>
+                                   <button onClick={() => removeAd(ad.id)} className="text-slate-400 hover:text-rose-600 p-2 transition active:scale-90" title="Purge Record"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                               </td>
                             </tr>
