@@ -1423,8 +1423,21 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
                     const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="Website"], a.lcr4fd, a[href^="http"]:not([href*="google.com"])');
                     const website = webEl ? webEl.href : '';
 
-                    const textNodes = Array.from(card.querySelectorAll('div.W4Efsd, div[class*="fontBodyMedium"], span')).map(d => d.textContent.trim()).filter(Boolean);
+                    // Extract Category Subtitle / Place Classification from Google Maps card DOM
+                    let google_category = '';
+                    const w4efsd_divs = card.querySelectorAll('div.W4Efsd');
+                    if (w4efsd_divs.length > 0) {
+                        const firstLineSpans = Array.from(w4efsd_divs[0].querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
+                        for (const sp of firstLineSpans) {
+                            if (sp !== '·' && !/^\d(\.\d)?$/.test(sp) && !/^\([0-9,]+\)$/.test(sp) && sp.length > 2 && !sp.startsWith('R') && !sp.includes('Closed') && !sp.includes('Open') && !sp.includes('years in business')) {
+                                google_category = sp;
+                                break;
+                            }
+                        }
+                    }
+                    const allCardText = (card.innerText || card.textContent || '').slice(0, 500);
 
+                    const textNodes = Array.from(card.querySelectorAll('div.W4Efsd, div[class*="fontBodyMedium"], span')).map(d => d.textContent.trim()).filter(Boolean);
                     let phone = '';
                     let hours = '';
                     let addr = '';
@@ -1442,6 +1455,8 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
 
                     out.push({
                         name: name,
+                        google_category: google_category,
+                        card_text: allCardText,
                         rating: rating,
                         reviews_count: revs || '15',
                         website: website,
@@ -1455,8 +1470,26 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
             }""")
 
             browser.close()
+            # Strict Category Validation: Immediately discard any card that does not match category
+            clean_cards = []
+            for it in (cards_data or []):
+                bname = it.get("name", "").strip()
+                g_cat = it.get("google_category", "").strip()
+                c_text = it.get("card_text", "").strip()
+                is_match, reason = is_business_category_match(
+                    name=bname,
+                    raw_tags={},
+                    place_type=g_cat,
+                    target_category=category,
+                    card_text=c_text
+                )
+                if not is_match:
+                    logger.info(f"Playwright discarding unrelated Google Maps card '{bname}' (type: '{g_cat}'): {reason}")
+                    continue
+                clean_cards.append(it)
+            cards_data = clean_cards
             if cards_data:
-                logger.info(f"Playwright successfully extracted {len(cards_data)} listings from Google Maps!")
+                logger.info(f"Playwright successfully extracted {len(cards_data)} strictly verified listings from Google Maps!")
             return cards_data or []
     except Exception as e:
         logger.warning(f"Playwright stealth run encountered note: {e}")
@@ -1783,14 +1816,31 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
         send_telegram(chat_id, "🎭 <b>Playwright Stealth Chromium Activated:</b> Launching headless browser, navigating to Google Maps, and scrolling the results feed pane...")
         send_chat_action(chat_id, "typing")
         pw_items = scrape_google_maps_with_playwright(category, city, max_results=35)
+        clean_target_cat = match_searchbiz_category(category)
         for it in pw_items:
             bname = it.get("name", "").strip()
+            g_cat = it.get("google_category", "").strip()
+            c_text = it.get("card_text", "").strip()
+            # Double-check against target category: DISCARD ANY UNRELATED SCRAPES
+            is_match, reason = is_business_category_match(
+                name=bname,
+                raw_tags={},
+                place_type=g_cat,
+                target_category=category,
+                card_text=c_text
+            )
+            if not is_match:
+                logger.info(f"Stealth scraper discarding Google Maps result '{bname}' (type: '{g_cat}'): {reason}")
+                continue
+
             norm = re.sub(r'[^a-z0-9]', '', bname.lower())
             if norm and norm not in seen_names:
                 seen_names.add(norm)
                 businesses.append({
                     "name": bname,
-                    "category": category.title(),
+                    "category": clean_target_cat,
+                    "google_category": g_cat,
+                    "card_text": c_text,
                     "phone": it.get("phone", ""),
                     "telephone": it.get("phone", ""),
                     "email": "",
@@ -1831,25 +1881,15 @@ def scrape_stealth_google_maps(raw_query: str, chat_id: int, auto_upload_ads: bo
         lat, lon = "-30.206", "30.796"
 
     # Category matching helpers
-    is_spares_query = any(w in category.lower() for w in ["spare", "part", "auto", "car", "motor", "tyre", "tire", "battery", "mechanic"])
-    spares_keywords = ["spare", "part", "auto", "motor", "car", "mechanic", "tyre", "tire", "wheel", "battery", "clutch", "brake", "panel", "exhaust", "radiator", "workshop", "midas", "autozone"]
+    clean_target_cat = match_searchbiz_category(category)
 
-    # 2. Query OpenStreetMap Overpass with Bounding Box
+    # 2. Query OpenStreetMap Overpass with Targeted Category Query
     if bbox:
         try:
-            overpass_q = f"""
-[out:json][timeout:15];
-(
-  node["shop"]({bbox});
-  way["shop"]({bbox});
-  node["craft"]({bbox});
-  way["craft"]({bbox});
-);
-out center;
-"""
+            overpass_q = get_overpass_query_for_category(category, bbox)
             op_url = "https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(overpass_q)
             op_req = urllib.request.Request(op_url, headers={
-                "User-Agent": "SearchBizHermes/1.0",
+                "User-Agent": "SearchBizHermes/2.0",
                 "Accept": "application/json"
             })
             with urllib.request.urlopen(op_req, timeout=12) as resp:
@@ -1864,14 +1904,13 @@ out center;
                     if not norm_k or norm_k in seen_names:
                         continue
 
-                    raw_cat = tags.get("shop") or tags.get("craft") or tags.get("amenity") or tags.get("office") or category
-                    cat_display = raw_cat.replace("_", " ").title()
+                    raw_cat = tags.get("shop") or tags.get("craft") or tags.get("amenity") or tags.get("office") or ""
 
-                    # Strict category filtering for spares to avoid irrelevant supermarkets/fuel stations
-                    if is_spares_query:
-                        matches_spares = any(k in clean_bname.lower() or k in raw_cat.lower() for k in spares_keywords)
-                        if not matches_spares:
-                            continue
+                    # Strict category filtering: Discard any business not matching requested category!
+                    is_match, reason = is_business_category_match(clean_bname, tags, raw_cat, category)
+                    if not is_match:
+                        logger.info(f"Overpass discarding unrelated business '{clean_bname}' for category '{category}': {reason}")
+                        continue
 
                     phone = tags.get("phone") or tags.get("contact:phone") or tags.get("contact:mobile") or ""
                     hours = tags.get("opening_hours") or "Mon-Fri 08:00 - 17:00, Sat 08:00 - 13:00"
@@ -2294,7 +2333,13 @@ out center;
     # If only one is available, use that for contact. If NONE is available, DO NOT capture it - ignore that business!
     valid_businesses = []
     for b in businesses:
-        is_match, reason = is_business_category_match(b.get("name", ""), {}, "", category)
+        is_match, reason = is_business_category_match(
+            name=b.get("name", ""),
+            raw_tags=b.get("tags") or {},
+            place_type=b.get("google_category") or b.get("place_type") or "",
+            target_category=category,
+            card_text=b.get("card_text") or ""
+        )
         if not is_match:
             logger.info(f"Google Maps discarding unrelated business '{b.get('name')}' for '{category}': {reason}")
             continue
@@ -4380,22 +4425,16 @@ def get_categories_card(query: str = "") -> str:
 • <code>/categories [keyword]</code> (e.g. <code>/categories auto</code> or <code>/categories panel</code>)
 • <i>\"Scrape Google maps for category 1.1 auto body and repair shops in kzn and all suburbs\"</i>"""
 
-def send_cold_outreach_to_listings(chat_id: int, query: str = "", limit: int = 15) -> dict:
-    """
-    CRITICAL RULE: Hermes and Laya NEVER send cold outreach automatically during scraping.
-    Outreach is ONLY dispatched when explicitly commanded by the user in Telegram.
-    Accesses all business files in listings/ folder, excludes any already contacted companies in sent_listings/,
-    dispatches high-converting SearchBiz South Africa outreach emails from ai@searchbiz.co.za,
-    ALWAYS delivers a real-time copy/BCC to admin@searchbiz.co.za,
-    and automatically records every contacted company into the sent_listings/ folder to prevent duplicate contacts!
-    """
-DEFAULT_OUTREACH_SUBJECT = "Exclusive Verified Feature for {business_name} on SearchBiz South Africa"
+# ============================================================================
+# SearchBiz Autonomous Dynamic Outreach Template & Campaign Management Engine
+# ============================================================================
 
+DEFAULT_OUTREACH_SUBJECT = "Exclusive Verified Feature for {business_name} on SearchBiz South Africa"
 DEFAULT_OUTREACH_BODY = """Good day {business_name} Team,
 
 I noticed your business on Google Maps in {city}, {province} and wanted to reach out from SearchBiz South Africa (https://searchbiz.co.za).
 
-SearchBiz (https://searchbiz.co.za) is featuring top verified {category} businesses across South Africa.
+SearchBiz is featuring verified {category} businesses across South Africa. 
 
 We can set up your verified directory profile, plus unlimited smart static website hosting and domain-branded email accounts (@yourdomain.co.za) for only R199.00 / month.
 
@@ -4561,49 +4600,58 @@ def send_cold_outreach_to_listings(chat_id: int, query: str = "", limit: int = 5
                 rows = conn.execute("SELECT * FROM business_leads WHERE (LOWER(category) LIKE ? OR LOWER(province) LIKE ? OR LOWER(city) LIKE ?) AND status != 'contacted' LIMIT ?", (f"%{query.lower()}%", f"%{query.lower()}%", f"%{query.lower()}%", limit)).fetchall()
             else:
                 rows = conn.execute("SELECT * FROM business_leads WHERE status != 'contacted' LIMIT ?", (limit,)).fetchall()
-            if rows:
-                leads = [dict(r) for r in rows]
+            leads = [dict(r) for r in rows]
 
     if not leads:
         sent_info = get_sent_listings_summary()
-        msg = f"⚠️ <b>[Listings Outreach]</b> No uncontacted business files found matching <i>\"{query}\"</i>.\n\n"
+        msg = f"⚠️ <b>[Listings Outreach]</b> No uncontacted business files found matching <i>\"{html.escape(query or 'all')}\"</i>.\n\n"
         if sent_info.get("total_contacted", 0) > 0:
             msg += f"ℹ️ <i>({sent_info['total_contacted']} businesses in this search have already been contacted and are safely quarantined in <code>sent_listings/</code>!)</i>\n\n"
-        msg += "Tell Hermes or Layla: <i>\"scrape Google Maps for [category] in all 9 provinces\"</i> to populate new listings first!"
+        msg += "Tell Hermes or Layla: <i>\"scrape Google Maps for [category] in [city/province]\"</i> to populate new listings first!"
         send_telegram(chat_id, msg)
         return {"success": False, "count": 0, "message": "No uncontacted leads found"}
 
     leads_with_email = [l for l in leads if l.get("email") or l.get("found_email")]
     leads_with_phone = [l for l in leads if l.get("phone") or l.get("whatsapp") or l.get("found_whatsapp")]
 
-    send_telegram(chat_id, f"📬 <b>Initiating Explicitly Authorized Cold Outreach...</b>\n\n🎯 <b>Loaded Pending Businesses:</b> {len(leads)}\n✉️ <b>With Verified Emails:</b> {len(leads_with_email)}\n📱 <b>With Phone / WhatsApp:</b> {len(leads_with_phone)}\n📁 <b>Sent Quarantine:</b> All contacted leads moved to <code>sent_listings/</code>\n🔒 <b>Admin Dual-Delivery:</b> All sent messages copied to <b>{ADMIN_EMAIL}</b>\n⏳ <i>Dispatching batch outreach now...</i>")
+    send_telegram(chat_id, f"📬 <b>Initiating Explicitly Authorized Cold Outreach...</b>\n\n🎯 <b>Loaded Pending Businesses:</b> {len(leads)}\n✉️ <b>With Harvested Emails:</b> {len(leads_with_email)}\n📱 <b>With Phone / WhatsApp:</b> {len(leads_with_phone)}\n📁 <b>Sent Quarantine:</b> All contacted leads will be moved to <code>sent_listings/</code>\n🔒 <b>Admin Dual-Delivery:</b> All sent messages copied to <b>{ADMIN_EMAIL}</b>\n⏳ <i>Dispatching batch outreach now...</i>")
 
     dispatched = []
     whatsapp_links = []
 
     for idx, lead in enumerate(leads_with_email[:limit]):
-        bname = lead["name"]
+        bname = lead.get("name") or "Business Owner"
         bemail = lead.get("email") or lead.get("found_email")
-        bcat = lead.get("category", "")
-        bcity = lead.get("city", "")
+        bcity = lead.get("city") or "South Africa"
 
         subject, body_text, body_html, _ = render_outreach_message(lead)
 
         res = send_email_smtp(to_email=bemail, subject=subject, body_text=body_text, body_html=body_html, cc_admin=True)
         if res.get("success"):
             dispatched.append({"name": bname, "email": bemail, "city": bcity})
-            # Save into sent_listings/ folder and database to prevent duplicate outreach
             record_contacted_listing(lead, channel="email", subject=subject, details={"smtp_response": res})
+            # Update SQLite lead status
+            try:
+                with get_db() as conn:
+                    conn.execute("UPDATE business_leads SET status = 'contacted', updated_at = CURRENT_TIMESTAMP WHERE (name = ? OR found_email = ?)", (bname, bemail))
+                    conn.commit()
+            except Exception:
+                pass
 
-    for lead in leads_with_phone[:6]:
-        wa_url, _ = generate_whatsapp_pitch_url(lead)
-        whatsapp_links.append(f"• <a href='{wa_url}'>📱 Chat with <b>{html.escape(lead['name'])}</b> ({lead.get('city')})</a>")
+    for lead in leads_with_phone[:8]:
+        _, _, _, wa_pitch = render_outreach_message(lead)
+        raw_phone = lead.get("found_whatsapp") or lead.get("whatsapp") or lead.get("phone") or ""
+        norm_phone = normalize_sa_phone(raw_phone)
+        if norm_phone:
+            encoded_text = urllib.parse.quote(wa_pitch)
+            wa_url = f"https://wa.me/{norm_phone}?text={encoded_text}"
+            whatsapp_links.append(f"• <a href='{wa_url}'>📱 WhatsApp <b>{html.escape(lead.get('name', 'Business'))}</b> ({lead.get('city')}, {lead.get('province')})</a>")
 
     wa_block = "\n".join(whatsapp_links) if whatsapp_links else "• <i>No direct mobile numbers found in this batch</i>"
 
     summary_msg = f"""✅ <b>[Listings Cold Outreach Complete]</b>
 
-📁 <b>Source Records:</b> <code>listings/</code> + Database Leads
+📁 <b>Source Vault:</b> <code>listings/</code> & SQLite Lead DB
 📬 <b>Contacted Quarantine:</b> Safely recorded into <code>sent_listings/</code> (Zero Duplicate Contact Guarantee)
 🚀 <b>Emails Dispatched:</b> <b>{len(dispatched)}</b> businesses
 🔒 <b>Admin Dual-Delivery:</b> A real-time copy of every single email was sent to <b>{ADMIN_EMAIL}</b>
@@ -5008,7 +5056,7 @@ def execute_single_todo(todo_id: int, chat_id: int = 0) -> dict:
                 res = scrape_province_suburbs_pipeline(effective_chat_id, directive)
                 exec_result = f"Province Scrape Mission Executed. Generated CSV: {res.get('csv_filename', 'Consolidated.csv')}, Dispatched to email."
             else:
-                res = scrape_stealth_google_maps(effective_chat_id, directive)
+                res = scrape_stealth_google_maps(raw_query=directive, chat_id=effective_chat_id)
                 exec_result = f"Google Maps Scrape Completed. Total leads captured: {res.get('count', 0)}. Saved in listings/ folder."
 
         elif any(k in lower for k in ["dedup", "remove duplicate", "clean duplicate", "purge duplicate", "deduplicate"]):
@@ -5131,7 +5179,7 @@ def get_overpass_query_for_category(category: str, bbox: str) -> str:
     (hair salons, supermarkets, gas stations) from being harvested for automotive queries.
     """
     c_lower = category.lower()
-    
+
     # 0. Auto Scrap Yards, Salvage Yards, Junk Yards, Wreckers & Dismantlers (Group 1.21)
     if any(k in c_lower for k in ["scrap", "salvage", "junk", "wrecker", "dismantler", "breaker", "1.21"]):
         return f"""[out:json][timeout:15];
@@ -5150,28 +5198,32 @@ def get_overpass_query_for_category(category: str, bbox: str) -> str:
 out center 35;
 """
 
-    # 1. Automotive & Vehicles (Group 1: 1.1 to 1.9)
-    if any(k in c_lower for k in ["auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts", "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"]):
-        return f"""[out:json][timeout:15];
+    # 1. Spares & Auto Parts (Group 1.7)
+    if any(k in c_lower for k in ["spares", "spare", "auto part", "car part", "motor spares", "1.7"]):
+        return f"""[out:json][timeout:10];
 (
-  node["shop"="car_repair"]({bbox});
-  way["shop"="car_repair"]({bbox});
-  node["craft"="car_repair"]({bbox});
-  way["craft"="car_repair"]({bbox});
-  node["craft"="panelbeater"]({bbox});
-  way["craft"="panelbeater"]({bbox});
-  node["craft"="mechanic"]({bbox});
-  way["craft"="mechanic"]({bbox});
   node["shop"="car_parts"]({bbox});
   way["shop"="car_parts"]({bbox});
   node["shop"="tyres"]({bbox});
   way["shop"="tyres"]({bbox});
-  node["craft"="auto_body"]({bbox});
-  way["craft"="auto_body"]({bbox});
-  node["craft"="auto_electrical"]({bbox});
-  way["craft"="auto_electrical"]({bbox});
-  node["shop"="car"]({bbox});
-  way["shop"="car"]({bbox});
+);
+out center 35;
+"""
+
+    # 2. Tire Shops (Group 1.8)
+    if any(k in c_lower for k in ["tire", "tyre", "wheel", "fitment", "1.8"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="tyres"]({bbox});
+  way["shop"="tyres"]({bbox});
+);
+out center 35;
+"""
+
+    # 3. Car Wash (Group 1.2)
+    if any(k in c_lower for k in ["car wash", "cash wash", "auto wash", "carwash", "detailing", "detail", "valet", "1.2"]):
+        return f"""[out:json][timeout:15];
+(
   node["amenity"="car_wash"]({bbox});
   way["amenity"="car_wash"]({bbox});
   node["shop"="car_wash"]({bbox});
@@ -5192,20 +5244,84 @@ out center 35;
 out center 35;
 """
 
-    # 2. Building, Construction & Trades (Group 6)
-    if any(k in c_lower for k in ["plumb", "electr", "build", "construct", "carpent", "paint", "roof", "hardware", "contract", "6.1", "6.2", "6.3", "6.4", "6.5", "6.6"]):
+    # 4. Auto Dealerships (Group 1.4)
+    if any(k in c_lower for k in ["dealership", "dealers", "car sales", "used cars", "1.4"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="car"]({bbox});
+  way["shop"="car"]({bbox});
+);
+out center 35;
+"""
+
+    # 5. Auto Body, Panel Beaters & Repair Shops (Group 1.1)
+    if any(k in c_lower for k in ["auto", "car", "vehicle", "motor", "repair", "panel", "mechanic", "smash", "workshop", "1.1", "1.3", "1.5", "1.6", "1.9"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="car_repair"]({bbox});
+  way["shop"="car_repair"]({bbox});
+  node["craft"="car_repair"]({bbox});
+  way["craft"="car_repair"]({bbox});
+  node["craft"="panelbeater"]({bbox});
+  way["craft"="panelbeater"]({bbox});
+  node["craft"="mechanic"]({bbox});
+  way["craft"="mechanic"]({bbox});
+  node["craft"="auto_body"]({bbox});
+  way["craft"="auto_body"]({bbox});
+  node["craft"="auto_electrical"]({bbox});
+  way["craft"="auto_electrical"]({bbox});
+);
+out center 35;
+"""
+
+    # 6. Plumbing Services (Group 6.8)
+    if any(k in c_lower for k in ["plumb", "drain", "geyser", "6.8"]):
         return f"""[out:json][timeout:10];
 (
   node["craft"="plumber"]({bbox});
   way["craft"="plumber"]({bbox});
+);
+out center 35;
+"""
+
+    # 7. Electrical Contractors (Group 6.4)
+    if any(k in c_lower for k in ["electr", "electrician", "solar", "6.4"]):
+        return f"""[out:json][timeout:10];
+(
   node["craft"="electrician"]({bbox});
   way["craft"="electrician"]({bbox});
+);
+out center 35;
+"""
+
+    # 8. Roofing (Group 6.9)
+    if any(k in c_lower for k in ["roof", "waterproofing", "6.9"]):
+        return f"""[out:json][timeout:10];
+(
+  node["craft"="roofer"]({bbox});
+  way["craft"="roofer"]({bbox});
+);
+out center 35;
+"""
+
+    # 9. Other Building & Construction Trades (Group 6)
+    if any(k in c_lower for k in ["build", "construct", "carpent", "paint", "contract", "6.1", "6.2", "6.3", "6.5", "6.6", "6.7"]):
+        return f"""[out:json][timeout:10];
+(
   node["craft"="carpenter"]({bbox});
   way["craft"="carpenter"]({bbox});
   node["craft"="painter"]({bbox});
   way["craft"="painter"]({bbox});
   node["craft"="builder"]({bbox});
   way["craft"="builder"]({bbox});
+);
+out center 35;
+"""
+
+    # 10. Hardware Stores (Group 14.3)
+    if any(k in c_lower for k in ["hardware", "tools", "14.3"]):
+        return f"""[out:json][timeout:10];
+(
   node["shop"="hardware"]({bbox});
   way["shop"="hardware"]({bbox});
   node["shop"="trade"]({bbox});
@@ -5214,8 +5330,24 @@ out center 35;
 out center 35;
 """
 
-    # 3. Medical, Doctors, Health & Dental (Group 10)
-    if any(k in c_lower for k in ["doc", "dent", "medic", "health", "clinic", "pharm", "optom", "10.1", "10.2", "10.3", "10.4"]):
+    # 11. Beauty, Hair & Wellness (Group 2)
+    if any(k in c_lower for k in ["hair", "salon", "spa", "beauty", "nail", "barber", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7"]):
+        return f"""[out:json][timeout:10];
+(
+  node["shop"="hairdresser"]({bbox});
+  way["shop"="hairdresser"]({bbox});
+  node["shop"="beauty"]({bbox});
+  way["shop"="beauty"]({bbox});
+  node["shop"="massage"]({bbox});
+  way["shop"="massage"]({bbox});
+  node["amenity"="spa"]({bbox});
+  way["amenity"="spa"]({bbox});
+);
+out center 35;
+"""
+
+    # 12. Medical, Doctors, Health & Dental (Group 13)
+    if any(k in c_lower for k in ["doc", "dent", "medic", "health", "clinic", "pharm", "optom", "13.1", "13.2", "13.3", "13.6", "13.7", "13.9"]):
         return f"""[out:json][timeout:10];
 (
   node["amenity"="doctors"]({bbox});
@@ -5232,8 +5364,8 @@ out center 35;
 out center 35;
 """
 
-    # 4. Food, Dining & Restaurants (Group 7)
-    if any(k in c_lower for k in ["restaur", "food", "dining", "cafe", "baker", "butch", "fast food", "7.1", "7.2", "7.3", "7.4"]):
+    # 13. Food, Dining & Restaurants (Group 11)
+    if any(k in c_lower for k in ["restaur", "food", "dining", "cafe", "baker", "butch", "fast food", "11.1", "11.2", "11.4", "11.5", "11.7"]):
         return f"""[out:json][timeout:10];
 (
   node["amenity"="restaurant"]({bbox});
@@ -5250,24 +5382,8 @@ out center 35;
 out center 35;
 """
 
-    # 5. Beauty, Hair & Wellness (Group 3)
-    if any(k in c_lower for k in ["hair", "salon", "spa", "beauty", "nail", "barber", "3.1", "3.2", "3.3"]):
-        return f"""[out:json][timeout:10];
-(
-  node["shop"="hairdresser"]({bbox});
-  way["shop"="hairdresser"]({bbox});
-  node["shop"="beauty"]({bbox});
-  way["shop"="beauty"]({bbox});
-  node["shop"="massage"]({bbox});
-  way["shop"="massage"]({bbox});
-  node["amenity"="spa"]({bbox});
-  way["amenity"="spa"]({bbox});
-);
-out center 35;
-"""
-
-    # 6. Accommodation & Lodging (Group 17)
-    if any(k in c_lower for k in ["hotel", "lodge", "motel", "b&b", "guest house", "resort", "17.1", "17.2"]):
+    # 14. Accommodation & Lodging (Group 15)
+    if any(k in c_lower for k in ["hotel", "lodge", "motel", "b&b", "guest house", "resort", "15.1", "15.4", "15.5"]):
         return f"""[out:json][timeout:10];
 (
   node["tourism"="hotel"]({bbox});
@@ -5280,21 +5396,31 @@ out center 35;
 out center 35;
 """
 
-    # 7. Professional Services (Group 8 & 9)
-    if any(k in c_lower for k in ["law", "attorney", "legal", "account", "tax", "audit", "8.1", "8.2", "9.1", "9.2"]):
-        return f"""[out:json][timeout:12];
+    # 15. Professional Services (Group 3)
+    if any(k in c_lower for k in ["law", "attorney", "legal", "account", "tax", "audit", "3.1", "3.7", "3.10"]):
+        return f"""[out:json][timeout:10];
 (
   node["office"="lawyer"]({bbox});
   way["office"="lawyer"]({bbox});
   node["office"="accountant"]({bbox});
   way["office"="accountant"]({bbox});
-  node["office"="estate_agent"]({bbox});
-  way["office"="estate_agent"]({bbox});
 );
 out center 35;
 """
 
-    # 8. Cleaning & Pest Control (Group 4)
+    # 16. Real Estate (Group 17)
+    if any(k in c_lower for k in ["estate", "property", "properties", "real estate", "realtor", "17.1", "17.2", "17.3", "17.4"]):
+        return f"""[out:json][timeout:12];
+(
+  node["office"="estate_agent"]({bbox});
+  way["office"="estate_agent"]({bbox});
+  node["office"="property_management"]({bbox});
+  way["office"="property_management"]({bbox});
+);
+out center 35;
+"""
+
+    # 17. Cleaning & Pest Control (Group 4)
     if any(k in c_lower for k in ["clean", "cleaning", "pest", "laundry", "dry clean", "4.1", "4.2", "4.3", "4.4", "4.5"]):
         return f"""[out:json][timeout:12];
 (
@@ -5312,7 +5438,7 @@ out center 35;
 out center 35;
 """
 
-    # 9. Entertainment, Events & Weddings (Group 8)
+    # 18. Entertainment, Events & Weddings (Group 8)
     if any(k in c_lower for k in ["event", "decor", "wedding", "dj", "party", "photograph", "entertainment", "8.1", "8.2", "8.3", "8.4", "8.5"]):
         return f"""[out:json][timeout:12];
 (
@@ -5328,7 +5454,7 @@ out center 35;
 out center 35;
 """
 
-    # 10. Transportation, Couriers & Logistics (Group 20)
+    # 19. Transportation, Couriers & Logistics (Group 20)
     if any(k in c_lower for k in ["courier", "transport", "freight", "logistics", "moving", "removals", "shuttle", "20.1", "20.2", "20.3", "20.4"]):
         return f"""[out:json][timeout:12];
 (
@@ -5340,6 +5466,22 @@ out center 35;
   way["craft"="mover"]({bbox});
   node["name"~"Express|Courier|Transport|Logistics|Removals|Moving|Freight",i]({bbox});
   way["name"~"Express|Courier|Transport|Logistics|Removals|Moving|Freight",i]({bbox});
+);
+out center 35;
+"""
+
+    # 20. Sports, Fitness & Gyms (Group 19)
+    if any(k in c_lower for k in ["gym", "fitness", "crossfit", "sports", "yoga", "pilates", "martial", "19.1", "19.2", "19.3"]):
+        return f"""[out:json][timeout:12];
+(
+  node["leisure"="fitness_centre"]({bbox});
+  way["leisure"="fitness_centre"]({bbox});
+  node["leisure"="sports_centre"]({bbox});
+  way["leisure"="sports_centre"]({bbox});
+  node["shop"="sports"]({bbox});
+  way["shop"="sports"]({bbox});
+  node["name"~"Gym|Fitness|CrossFit|Sport|Yoga|Pilates",i]({bbox});
+  way["name"~"Gym|Fitness|CrossFit|Sport|Yoga|Pilates",i]({bbox});
 );
 out center 35;
 """
@@ -5365,119 +5507,287 @@ def is_business_category_match(
     name: str,
     raw_tags: dict = None,
     place_type: str = "",
-    target_category: str = ""
+    target_category: str = "",
+    card_text: str = ""
 ) -> Tuple[bool, str]:
     """
-    Strict Category Validation Engine:
-    Ensures that when scraping Google Maps or OpenStreetMap, the business genuinely
-    belongs to the requested category. If it's unrelated (e.g. Hair Salon, Supermarket,
-    Fuel Station, School when looking for Auto Body & Repair Shops), it is DISCARDED.
+    Strict Multi-Layer Category Validation Engine:
+    Ensures that when scraping Google Maps, Playwright DOM, or OpenStreetMap,
+    the business genuinely belongs to the requested category.
+    Completely DISCARDS non-matching businesses, unrelated places, and generic unverified names!
     """
     if not name:
         return False, "empty_name"
 
     clean_name = name.strip().lower()
-    target_cat = (target_category or "").strip().lower()
     raw_tags = raw_tags or {}
-    
-    # 1. Automotive & Vehicles Category Check (Group 1: 1.1 to 1.9)
-    is_auto_target = any(k in target_cat for k in [
-        "auto", "car", "vehicle", "motor", "repair", "panel", "spares", "parts",
-        "tire", "tyre", "towing", "wash", "dealership", "1.1", "1.2", "1.3", "1.4",
-        "1.5", "1.6", "1.7", "1.8", "1.9"
-    ])
-    
+    p_type = (place_type or "").strip().lower()
+    c_text = (card_text or "").strip().lower()
+    combined_desc = f"{clean_name} {p_type} {c_text}"
+    target_cat = (target_category or "").strip().lower()
+
+    tag_vals = [str(v).lower() for v in raw_tags.values()]
+    all_tag_str = " ".join(tag_vals)
+
+    # Detect high-level target intent using regex word boundaries to prevent substring collisions (e.g. 'car' in 'care')
+    is_school_target = bool(re.search(r'\b(school|schools|college|colleges|academy|academies|education|tutoring|daycare|preschool)\b', target_cat) or "7." in target_cat)
+    is_fuel_target = bool(re.search(r'\b(gas station|petrol|fuel|service station)\b', target_cat) or "12.3" in target_cat)
+    is_worship_target = bool(re.search(r'\b(church|churches|worship|mosque|mosques|temple|temples|religious)\b', target_cat) or "5.6" in target_cat)
+    is_grocery_target = bool(re.search(r'\b(supermarket|supermarkets|grocery|groceries|convenience|market|markets)\b', target_cat) or "12." in target_cat)
+    is_beauty_target = bool(re.search(r'\b(hair|salon|salons|barber|barbers|spa|spas|beauty|nail|nails)\b', target_cat) or "2." in target_cat)
+    is_food_target = bool(re.search(r'\b(restaur|restaurant|restaurants|cafe|cafes|food|dining|bakery|bakeries|pub|pubs|bar|bars)\b', target_cat) or "11." in target_cat)
+    is_auto_target = bool(re.search(r'\b(auto|car|cars|vehicle|vehicles|motor|motors|repair|repairs|panel|beater|beaters|spares|spare|parts|tire|tires|tyre|tyres|towing|tow|dealership|dealerships|mechanic|mechanics|workshop|workshops|wash|carwash|cash wash|detailing|detail|valet|autowash|autovalet)\b', target_cat) or any(k in target_cat for k in ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"]))
+    is_trade_target = bool(re.search(r'\b(plumb|plumber|plumbers|plumbing|electr|electric|electrician|electricians|build|builder|builders|building|construct|construction|carpent|carpenter|carpenters|paint|painter|painters|roof|roofer|roofers|roofing|contractor|contractors)\b', target_cat) or "6." in target_cat)
+    is_medical_target = bool(re.search(r'\b(doc|docs|doctor|doctors|dent|dental|dentist|dentists|medic|medical|clinic|clinics|pharm|pharmacy|pharmacies|optom|optometrist|health|hospital|hospitals)\b', target_cat) or "13." in target_cat)
+
+    # 1. School / Education Disqualifier
+    if not is_school_target:
+        if any(w in p_type for w in ["school", "primary school", "high school", "college", "university", "kindergarten"]):
+            return False, "disallowed_school_type"
+        if any(w in all_tag_str for w in ["school", "college", "university", "kindergarten"]):
+            return False, "disallowed_school_tag"
+        if re.search(r'\b(primary school|high school|secondary school|college|university|academy of learning|crèche|kindergarten)\b', clean_name):
+            return False, "disallowed_school_name"
+
+    # 2. Place of Worship Disqualifier
+    if not is_worship_target:
+        if any(w in p_type for w in ["church", "place of worship", "mosque", "temple", "synagogue"]):
+            return False, "disallowed_worship_type"
+        if any(w in all_tag_str for w in ["place_of_worship", "church", "mosque"]):
+            return False, "disallowed_worship_tag"
+        if re.search(r'\b(church|ministries|ministry|cathedral|mosque|temple|synagogue|parish)\b', clean_name):
+            return False, "disallowed_worship_name"
+
+    # 3. Fuel / Petrol Station Disqualifier
+    if not is_fuel_target:
+        if any(w in p_type for w in ["gas station", "petrol station", "fuel supplier", "gas_station"]):
+            return False, "disallowed_fuel_type"
+        if raw_tags.get("amenity") == "fuel":
+            return False, "disallowed_fuel_tag"
+        if re.search(r'\b(filling station|service station|caltex|engen|totalenergies|sasol|astron energy|shell garage|bp express)\b', clean_name):
+            return False, "disallowed_fuel_name"
+        if clean_name in ["shell", "bp", "engen", "sasol", "caltex", "astron energy", "total", "astron"]:
+            return False, "disallowed_fuel_brand"
+
+    # 4. Supermarket / Grocery Disqualifier
+    if not is_grocery_target:
+        if any(w in p_type for w in ["supermarket", "grocery store", "hypermarket", "convenience store"]):
+            return False, "disallowed_supermarket_type"
+        if raw_tags.get("shop") in ["supermarket", "convenience"]:
+            return False, "disallowed_supermarket_tag"
+        if re.search(r'\b(supermarket|hypermarket|pick n pay|shoprite|checkers|boxer superstores|usave|food lover\'s|woolworths food|spar express)\b', clean_name):
+            return False, "disallowed_supermarket_name"
+
+    # 5. Food & Restaurant Disqualifier
+    if not is_food_target:
+        if any(w in p_type for w in ["restaurant", "cafe", "fast food restaurant", "bar", "pub", "bistro"]):
+            return False, "disallowed_restaurant_type"
+        if raw_tags.get("amenity") in ["restaurant", "cafe", "fast_food", "pub", "bar"]:
+            return False, "disallowed_restaurant_tag"
+        if re.search(r'\b(restaurant|pizzeria|takeaway|kfc|mcdonald\'s|steers|wimpy|debonairs|fish & chips|bistro|tavern|bar & grill)\b', clean_name):
+            return False, "disallowed_restaurant_name"
+
+    # 6. Hair & Beauty Disqualifier
+    if not is_beauty_target:
+        if any(w in p_type for w in ["hair salon", "barber shop", "beauty salon", "nail salon", "day spa"]):
+            return False, "disallowed_beauty_type"
+        if raw_tags.get("shop") in ["hairdresser", "beauty", "massage"] or raw_tags.get("amenity") == "spa":
+            return False, "disallowed_beauty_tag"
+        if re.search(r'\b(hair salon|barbershop|nail studio|beauty spa|hair studio|lashes & nails)\b', clean_name):
+            return False, "disallowed_beauty_name"
+
+    # 7. Health & Medical Disqualifier
+    if not is_medical_target:
+        if any(w in p_type for w in ["pharmacy", "dentist", "doctor", "hospital", "medical clinic"]):
+            return False, "disallowed_medical_type"
+        if raw_tags.get("amenity") in ["pharmacy", "dentist", "doctors", "clinic", "hospital"]:
+            return False, "disallowed_medical_tag"
+        if re.search(r'\b(pharmacy|chemist|dispensary|dental practice|dr\.\s+[a-z]+|medical centre)\b', clean_name):
+            return False, "disallowed_medical_name"
+
+    # POSITIVE VALIDATION PER TARGET CATEGORY
+    # A. Automotive Target
     if is_auto_target:
-        # A. Disallowed OSM tags
-        disallowed_tags = {
-            "hairdresser", "beauty", "massage", "spa", "supermarket", "convenience",
-            "fuel", "clothes", "fashion", "shoes", "chemist", "pharmacy", "computer",
-            "electronics", "outdoor", "hunting", "furniture", "restaurant", "fast_food",
-            "cafe", "bar", "pub", "school", "college", "place_of_worship", "bank", "atm",
-            "florist", "bakery", "butcher", "doctor", "dentist", "optician", "jewelry",
-            "laundry", "dry_cleaning", "hotel", "guest_house", "motel"
-        }
-        for tag_k in ["shop", "craft", "amenity", "office", "tourism"]:
-            tag_val = (raw_tags.get(tag_k) or "").lower().strip()
-            if tag_val in disallowed_tags:
-                return False, f"disallowed_tag_{tag_val}"
+        is_spares_only = any(k in target_cat for k in ["spares", "parts", "accessories", "1.7"])
+        is_tyres_only = any(k in target_cat for k in ["tire", "tyre", "wheel", "1.8"])
+        is_wash_only = any(k in target_cat for k in ["wash", "detail", "valet", "1.2", "carwash", "autowash", "cash wash"])
+        is_scrap_only = any(k in target_cat for k in ["scrap", "salvage", "junk", "wrecker", "dismantler", "breaker", "1.21"])
+        is_dealer_only = any(k in target_cat for k in ["dealer", "dealership", "sales", "1.4"])
+        is_body_repair = any(k in target_cat for k in ["body", "repair", "panel", "mechanic", "smash", "workshop", "1.1"])
 
-        # B. Disallowed Google place types
-        disallowed_place_types = [
-            "hair_care", "beauty_salon", "spa", "supermarket", "grocery_or_supermarket",
-            "convenience_store", "gas_station", "clothing_store", "shoe_store", "pharmacy",
-            "restaurant", "meal_takeaway", "cafe", "bar", "school", "bank", "atm", "lodging"
-        ]
-        if any(pt in place_type.lower() for pt in disallowed_place_types):
-            return False, f"disallowed_place_type_{place_type}"
+        has_auto_tag = any(t in ["car_repair", "car_parts", "tyres", "car", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash", "car_detailing", "auto_detailing", "cleaning", "scrap_yard"] for t in tag_vals)
+        has_auto_ptype = any(pt in p_type for pt in ["auto", "car", "motor", "mechanic", "repair", "parts", "tire", "tyre", "wheel", "body shop", "towing", "wash", "car wash", "detail", "detailing", "valet", "dealership", "scrap", "salvage", "wrecker"])
 
-        # C. Strict Name Negative Keyword Filter (Word boundaries)
-        auto_negative_patterns = [
-            r'\bhair\b', r'\bspa\b', r'\bspas\b', r'\bsalon\b', r'\bsalons\b', r'\bbeauty\b',
-            r'\bnails?\b', r'\blashes\b', r'\bsupermarket\b', r'\bhyper\b', r'\bpick n pay\b',
-            r'\bshoprite\b', r'\bcheckers\b', r'\bspar\b', r'\bboxer\b', r'\busave\b',
-            r'\bfood lovers\b', r'\bmakro\b', r'\bwoolworths\b', r'\bwoollies\b',
-            r'\bfilling station\b', r'\bservice station\b', r'\bengen\b', r'\bshell\b',
-            r'\bbp\b', r'\btotalenergies\b', r'\bsasol\b', r'\bcaltex\b', r'\bastron\b',
-            r'\bcomputers?\b', r'\bpc\b', r'\blaptops?\b', r'\bcellular\b', r'\bcell phone\b',
-            r'\boutdoor centre\b', r'\bcamping\b', r'\bpharmacy\b', r'\bdispensary\b',
-            r'\bchemist\b', r'\bclinic\b', r'\bhospital\b', r'\bdentist\b', r'\bdental\b',
-            r'\bdoctors?\b', r'\bdr\.\b', r'\bschool\b', r'\bcollege\b', r'\bacademy\b',
-            r'\bchurch\b', r'\bministry\b', r'\btemple\b', r'\bmosque\b', r'\bhotels?\b',
-            r'\blodge\b', r'\binn\b', r'\bb&b\b', r'\bliquor\b', r'\bbottle store\b',
-            r'\btops\b', r'\btavern\b', r'\bpubs?\b', r'\bbars?\b', r'\brestaurant\b',
-            r'\bcafe\b', r'\bkfc\b', r'\bmcdonalds\b', r'\bsteers\b', r'\bwimpy\b',
-            r'\bdebonairs\b', r'\bpizza\b', r'\bclothing\b', r'\bfashion\b', r'\bboutique\b',
-            r'\bshoes?\b', r'\bfurniture\b', r'\bflorist\b', r'\boptometrist\b', r'\bfuneral\b'
+        auto_pos_kw = [
+            "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
+            "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
+            "brake", "suspension", "radiator", "gearbox", "diff", "dent", "chassis",
+            "bakkie", "tyre", "tire", "spares", "parts", "glasfit", "pg glass",
+            "midas", "autozone", "supa quick", "hi-q", "tiger wheel", "towing",
+            "wash", "carwash", "cash wash", "detailing", "detail", "valet", "autowash",
+            "autovalet", "spa", "polish", "polishing", "ceramic", "coating", "clean",
+            "scrap", "scrapyard", "scrap yard", "salvage", "salvage yard", "junk", "junkyard",
+            "junk yard", "wrecker", "wreckers", "dismantler", "breaker", "used parts"
         ]
-        
-        # Check override keywords (e.g. if name explicitly contains workshop, panelbeater, spares, car wash, detailing)
-        auto_override_patterns = [
-            r'\bpanel\s*beaters?\b', r'\bauto\s*body\b', r'\bsmash\s*repair\b',
-            r'\bspray\s*paint\w*\b', r'\bcar\s*repairs?\b', r'\bauto\s*repairs?\b',
-            r'\bmotor\s*repairs?\b', r'\bmechanics?\b', r'\bworkshop\b',
-            r'\bfitment\s*centre\b', r'\bauto\s*electrical\b', r'\bmotor\s*spares\b',
-            r'\bauto\s*spares\b', r'\bcar\s*parts\b', r'\btyres?\b', r'\btires?\b',
-            r'\bglasfit\b', r'\bpg\s*glass\b', r'\bexhaust\b', r'\bclutch\b', r'\bbrake\b',
-            r'\bcar\s*wash\b', r'\bcarwash\b', r'\bauto\s*wash\b', r'\bcash\s*wash\b',
-            r'\bdetailing\b', r'\bauto\s*detailing\b', r'\bcar\s*detailing\b',
-            r'\bvalet\b', r'\bauto\s*valet\b', r'\bcar\s*spa\b', r'\bauto\s*spa\b'
-        ]
-        has_override = any(re.search(pat, clean_name) for pat in auto_override_patterns)
-        
-        if not has_override:
-            for pat in auto_negative_patterns:
-                if re.search(pat, clean_name):
-                    return False, f"negative_keyword_{pat}"
+        has_auto_kw = any(re.search(rf'\b{re.escape(kw)}\b', combined_desc) for kw in auto_pos_kw)
 
-        # D. For strict 1.1 Auto Body & Repair Shops, ensure positive automotive indicator
-        if "1.1" in target_cat or "body" in target_cat or "repair" in target_cat:
-            tag_vals = [raw_tags.get(k, "").lower() for k in ["shop", "craft", "amenity"]]
-            is_auto_tag = any(t in ["car_repair", "car_parts", "car", "tyres", "auto_body", "panelbeater", "mechanic", "auto_electrical", "car_wash"] for t in tag_vals)
-            has_auto_name = any(k in clean_name for k in [
-                "auto", "car", "motor", "vehicle", "panel", "beater", "smash", "collision",
-                "spray", "paint", "mechanic", "workshop", "fitment", "exhaust", "clutch",
-                "brake", "suspension", "glasfit", "glass", "tyre", "tire", "spares",
-                "radiator", "gearbox", "diff", "dent", "chassis", "bakkie", "speed",
-                "garage", "service", "motors", "repairs", "performance", "diesel", "sound"
-            ])
-            if not (is_auto_tag or has_auto_name or has_override):
-                return False, "lacks_automotive_indicator"
+        if not (has_auto_tag or has_auto_ptype or has_auto_kw):
+            return False, "lacks_automotive_indicator"
+
+        # If strict 1.21 Auto Scrap Yards, Salvage & Wreckers
+        if is_scrap_only:
+            scrap_pos = [
+                "scrap", "scrapyard", "scrap yard", "salvage", "salvage yard", "junk", "junkyard", "junk yard",
+                "wrecker", "wreckers", "auto wrecker", "auto wreckers", "dismantler", "dismantlers",
+                "auto dismantler", "breaker", "breakers", "car breaker", "used parts", "second hand parts",
+                "scrap metal", "car scrap", "auto recycler", "parts recycler", "auto scrap"
+            ]
+            has_scrap_ptype = any(pt in p_type for pt in ["scrap", "salvage", "junk", "wrecker", "recycler", "parts", "auto", "car"])
+            has_scrap_tag = any(t in ["scrap_yard", "car_parts", "industrial"] for t in tag_vals) or "scrap" in all_tag_str
+            has_scrap_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in scrap_pos) or any(k in clean_name for k in ["scrap", "salvage", "junk", "wrecker", "dismantler", "breaker", "used spares"])
+            if not (has_scrap_ptype or has_scrap_tag or has_scrap_kw):
+                return False, "lacks_scrap_salvage_indicator"
+            return True, "valid_scrap_salvage_match"
+
+        # If strict 1.2 Car Wash & Detailing
+        if is_wash_only:
+            wash_pos = [
+                "wash", "carwash", "car wash", "cash wash", "detailing", "detail", "auto detailing", "car detailing",
+                "valet", "auto valet", "autowash", "auto wash", "clean", "polishing", "polish", "ceramic",
+                "ceramic coating", "steam wash", "mobile wash", "auto spa", "car spa", "sparkle", "gleam",
+                "shine", "gloss", "hand wash", "pressure wash", "waterless wash", "scratch repair", "paint protection", "tinting", "window tint"
+            ]
+            has_wash_ptype = any(pt in p_type for pt in ["wash", "car wash", "detail", "detailing", "valet", "cleaning", "auto", "car"])
+            has_wash_tag = any(t in ["car_wash", "car_detailing", "auto_detailing", "cleaning", "car_repair"] for t in tag_vals)
+            has_wash_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in wash_pos) or any(k in clean_name for k in ["wash", "carwash", "detail", "valet", "shine", "sparkle", "clean", "autospa", "carspa", "coating", "polish"])
+            if not (has_wash_ptype or has_wash_tag or has_wash_kw):
+                return False, "lacks_car_wash_indicator"
+            return True, "valid_car_wash_match"
+
+        # If strict 1.1 Auto Body & Repair Shops
+        if is_body_repair and not (is_spares_only or is_tyres_only or is_wash_only or is_dealer_only):
+            body_pos = [
+                "panel", "beater", "body", "smash", "collision", "spray", "paint", "dent",
+                "mechanic", "repair", "workshop", "auto electrical", "auto clinic", "engine",
+                "gearbox", "clutch", "brake", "suspension", "radiator", "exhaust", "chassis",
+                "fitment centre", "service centre", "motor clinic"
+            ]
+            has_body_ptype = any(pt in p_type for pt in ["repair", "body shop", "mechanic", "maintenance"])
+            has_body_tag = any(t in ["car_repair", "panelbeater", "mechanic", "auto_body", "auto_electrical"] for t in tag_vals)
+            has_body_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in body_pos)
+            if not (has_body_ptype or has_body_tag or has_body_kw):
+                return False, "lacks_auto_body_repair_indicator"
+
+        # If strict 1.7 Parts & Accessories
+        if is_spares_only:
+            spares_pos = ["spares", "parts", "replacement", "accessories", "batteries", "autozone", "midas", "scrap yard", "salvage"]
+            has_spares_ptype = "parts" in p_type or "battery" in p_type or "accessories" in p_type
+            has_spares_tag = "car_parts" in all_tag_str
+            has_spares_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in spares_pos)
+            if not (has_spares_ptype or has_spares_tag or has_spares_kw):
+                return False, "lacks_spares_indicator"
+
+        # If strict 1.8 Tire Shops
+        if is_tyres_only:
+            tyre_pos = ["tyre", "tire", "wheel", "fitment", "tread", "supa quick", "hi-q", "tiger wheel", "tyre mart", "dunlop", "bridgestone"]
+            has_tyre_ptype = "tire" in p_type or "tyre" in p_type or "wheel" in p_type
+            has_tyre_tag = "tyres" in all_tag_str
+            has_tyre_kw = any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in tyre_pos)
+            if not (has_tyre_ptype or has_tyre_tag or has_tyre_kw):
+                return False, "lacks_tire_indicator"
 
         return True, "valid_automotive_match"
 
-    # 2. General Non-Automotive Category Safety
-    if any(k in target_cat for k in ["hair", "salon", "spa", "beauty"]):
-        if any(k in clean_name for k in ["panel", "beater", "mechanic", "spares", "tyre", "scrap"]):
-            return False, "automotive_in_beauty_query"
+    # B. Construction & Trades (Plumbing, Electrical, etc.)
+    if is_trade_target:
+        if "plumb" in target_cat:
+            plumb_pos = ["plumber", "plumbing", "drain", "geyser", "leak detection", "pipe"]
+            if not (("plumber" in p_type) or ("plumber" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in plumb_pos)):
+                return False, "lacks_plumbing_indicator"
+            return True, "valid_plumbing_match"
+
+        if "electr" in target_cat:
+            elec_pos = ["electrician", "electrical", "wiring", "coc", "solar", "inverter"]
+            if not (("electrician" in p_type) or ("electrician" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in elec_pos)):
+                return False, "lacks_electrical_indicator"
+            return True, "valid_electrical_match"
+
+        if "roof" in target_cat:
+            roof_pos = ["roof", "roofing", "waterproofing", "gutters"]
+            if not (("roof" in p_type) or ("roofer" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in roof_pos)):
+                return False, "lacks_roofing_indicator"
+            return True, "valid_roofing_match"
+
+    # C. Beauty & Hair
+    if is_beauty_target:
+        beauty_pos = ["hair", "salon", "barber", "hairstylist", "braids", "beauty", "spa", "cosmetics", "nails", "massage", "lashes", "waxing"]
+        if not (any(pt in p_type for pt in ["hair", "salon", "barber", "beauty", "nail", "spa", "massage"]) or
+                any(t in all_tag_str for t in ["hairdresser", "beauty", "massage", "spa"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in beauty_pos)):
+            return False, "lacks_beauty_indicator"
         return True, "valid_beauty_match"
 
-    if any(k in target_cat for k in ["plumb", "electr", "carpenter", "roof"]):
-        if any(k in clean_name for k in ["hair", "spa", "supermarket", "petrol"]):
-            return False, "irrelevant_trade_query"
-        return True, "valid_trade_match"
+    # D. Food & Dining
+    if is_food_target:
+        food_pos = ["restaurant", "cafe", "coffee", "bistro", "bakery", "fast food", "takeaway", "grill", "pub", "bar", "tavern", "pizzeria", "burger", "kitchen"]
+        if not (any(pt in p_type for pt in ["restaurant", "cafe", "bar", "pub", "fast food", "bakery"]) or
+                any(t in all_tag_str for t in ["restaurant", "cafe", "fast_food", "bakery", "pub", "bar"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in food_pos)):
+            return False, "lacks_food_indicator"
+        return True, "valid_food_match"
 
-    return True, "default_match"
+    # E. Medical
+    if is_medical_target:
+        is_pharm_target = any(k in target_cat for k in ["pharm", "chemist", "dispensary", "13.7"])
+        is_dent_target = any(k in target_cat for k in ["dent", "dental", "dentist", "13.2"])
+        is_optom_target = any(k in target_cat for k in ["optom", "eye care", "13.6"])
+        is_doc_target = any(k in target_cat for k in ["doctor", "primary care", "gp", "family doctor", "13.9"])
+
+        if is_pharm_target:
+            pharm_pos = ["pharmacy", "chemist", "dispensary", "clicks", "dis-chem"]
+            has_pharm = ("pharmacy" in p_type) or ("pharmacy" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in pharm_pos)
+            if not has_pharm:
+                return False, "lacks_pharmacy_indicator"
+            return True, "valid_pharmacy_match"
+
+        if is_dent_target:
+            dent_pos = ["dentist", "dental", "orthodont", "teeth"]
+            has_dent = ("dentist" in p_type) or ("dentist" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in dent_pos)
+            if not has_dent:
+                return False, "lacks_dental_indicator"
+            return True, "valid_dental_match"
+
+        if is_optom_target:
+            optom_pos = ["optometrist", "optical", "eye care", "spectacles", "glasses"]
+            has_optom = ("optician" in p_type) or ("optician" in all_tag_str) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in optom_pos)
+            if not has_optom:
+                return False, "lacks_optometrist_indicator"
+            return True, "valid_optometrist_match"
+
+        if is_doc_target:
+            if any(pt in p_type for pt in ["pharmacy", "dentist"]) or any(t in all_tag_str for t in ["pharmacy", "dentist"]):
+                return False, "pharmacy_or_dental_in_doctor_query"
+            doc_pos = ["doctor", "dr", "dr.", "medical", "clinic", "gp", "general practitioner", "physician", "health centre"]
+            has_doc = any(pt in p_type for pt in ["doctor", "medical clinic", "general practitioner"]) or any(t in all_tag_str for t in ["doctors", "clinic"]) or any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in doc_pos)
+            if not has_doc:
+                return False, "lacks_doctor_indicator"
+            return True, "valid_doctor_match"
+
+        med_pos = ["doctor", "dr", "medical", "clinic", "dental", "dentist", "pharmacy", "chemist", "dispensary", "optometrist", "physio", "hospital", "healthcare"]
+        if not (any(pt in p_type for pt in ["doctor", "dentist", "pharmacy", "clinic", "hospital"]) or
+                any(t in all_tag_str for t in ["doctors", "dentist", "pharmacy", "clinic", "hospital", "optician"]) or
+                any(re.search(rf'\b{re.escape(k)}\b', combined_desc) for k in med_pos)):
+            return False, "lacks_medical_indicator"
+        return True, "valid_medical_match"
+
+    # General Fallback: requires at least one token from target category
+    clean_cat_tokens = [tok for tok in re.findall(r'[a-zA-Z]{4,}', target_cat) if tok not in ["services", "shops", "stores", "group", "category", "general"]]
+    if clean_cat_tokens:
+        has_generic_match = any(tok in combined_desc or tok in all_tag_str for tok in clean_cat_tokens)
+        if not has_generic_match:
+            return False, "lacks_category_indicator"
+
+    return True, "valid_category_match"
 
 def get_or_create_province_category_folder(province: str = "kwazulu-natal", category: str = "services") -> str:
     """
@@ -5718,19 +6028,30 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
 
 def purge_category_mismatches_vps(chat_id: int = 0) -> dict:
     """
-    Scans all stored business leads in SQLite and removes any leads that DO NOT MATCH
-    their assigned category (e.g. hair salons, supermarkets, gas stations assigned to auto repair).
+    Scans all stored business leads in SQLite and files in listings/ and scraped_leads_vault/.
+    Purges any leads, files, or folders that DO NOT MATCH their assigned category
+    or contain invalid non-category tags (e.g. 'Yes', 'Fuel', 'Amenity', 'Shop', schools/salons in auto).
     """
     init_memory_db()
     purged_ids = []
     purged_names = []
+    purged_files_count = 0
+    purged_folders_count = 0
+
     with get_db() as conn:
         conn.row_factory = sqlite3.Row
         leads = conn.execute("SELECT id, name, category FROM business_leads").fetchall()
         for r in leads:
             lid = r["id"]
             name = r["name"] or ""
-            cat = r["category"] or ""
+            cat = (r["category"] or "").strip()
+            
+            # Immediately purge invalid non-categories like Yes, Fuel, Amenity
+            if cat.lower() in ["yes", "fuel", "no", "amenity", "shop", "craft", "office"]:
+                purged_ids.append(lid)
+                purged_names.append(f"{name} (invalid_tag_{cat})")
+                continue
+
             is_match, reason = is_business_category_match(name, {}, "", cat)
             if not is_match:
                 purged_ids.append(lid)
@@ -5742,20 +6063,89 @@ def purge_category_mismatches_vps(chat_id: int = 0) -> dict:
             conn.execute(f"DELETE FROM scraped_vault_leads WHERE id IN ({placeholders})", purged_ids)
             conn.commit()
 
+    # Clean disk files and folders in listings/
+    if os.path.exists(LISTINGS_DIR):
+        for root, dirs, files in list(os.walk(LISTINGS_DIR, topdown=False)):
+            folder_name = os.path.basename(root).lower()
+            # If folder is an invalid tag like 'yes' or 'fuel', delete the entire folder
+            if folder_name in ["yes", "fuel", "amenity", "shop", "craft"]:
+                try:
+                    shutil.rmtree(root)
+                    purged_folders_count += 1
+                    purged_files_count += len(files)
+                    continue
+                except Exception:
+                    pass
+
+            for fn in files:
+                if fn.endswith(".json"):
+                    fp = os.path.join(root, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as jf:
+                            data = json.load(jf)
+                        bname = data.get("name") or data.get("business_name") or ""
+                        bcat = (data.get("category") or folder_name).strip()
+                        if bcat.lower() in ["yes", "fuel", "amenity", "shop", "craft"]:
+                            os.remove(fp)
+                            purged_files_count += 1
+                        elif bname:
+                            m, r = is_business_category_match(bname, {}, "", bcat)
+                            if not m:
+                                os.remove(fp)
+                                purged_files_count += 1
+                    except Exception:
+                        pass
+            # Remove empty directories
+            try:
+                if os.path.exists(root) and root != LISTINGS_DIR and not os.listdir(root):
+                    os.rmdir(root)
+            except Exception:
+                pass
+
+    # Clean disk files in scraped_leads_vault/
+    if os.path.exists(VAULT_LEADS_DIR):
+        for fn in os.listdir(VAULT_LEADS_DIR):
+            if fn.endswith(".json"):
+                fp = os.path.join(VAULT_LEADS_DIR, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8") as jf:
+                        data = json.load(jf)
+                    bname = data.get("name") or data.get("business_name") or ""
+                    bcat = (data.get("category") or "").strip()
+                    if bcat.lower() in ["yes", "fuel", "amenity", "shop", "craft"]:
+                        os.remove(fp)
+                        purged_files_count += 1
+                    elif bname and bcat:
+                        m, r = is_business_category_match(bname, {}, "", bcat)
+                        if not m:
+                            os.remove(fp)
+                            purged_files_count += 1
+                except Exception:
+                    pass
+
     report = f"""🧹 <b>[Category Mismatch Purge Complete]</b>
 
-🚫 <b>Irrelevant / Mismatched Leads Purged:</b> <b>{len(purged_ids)}</b>
-✅ <b>Strict Rule Enforced:</b> Only businesses strictly matching their requested category remain!
+🚫 <b>Database Leads Purged:</b> <b>{len(purged_ids)}</b>
+🗑️ <b>Invalid Dossiers/Files Deleted:</b> <b>{purged_files_count}</b>
+📂 <b>Mismatched Category Folders Purged:</b> <b>{purged_folders_count}</b>
+✅ <b>Strict Zero-Tolerance Rule:</b> Only businesses strictly matching their requested category remain!
 
 📋 <b>Purged Examples:</b>
 """ + "\n".join([f"• <s>{html.escape(n)}</s>" for n in purged_names[:10]]) + (f"\n• <i>...and {len(purged_ids) - 10} more</i>" if len(purged_ids) > 10 else "") + f"""
 
-👉 View clean inventory: <code>/listings</code>"""
+👉 View clean inventory: <code>/listings</code>
+👉 View organized folder hierarchy: <code>/folders</code>"""
 
     if chat_id:
         send_telegram(chat_id, report)
 
-    return {"success": True, "purged_count": len(purged_ids), "purged_names": purged_names}
+    return {
+        "success": True,
+        "purged_count": len(purged_ids),
+        "purged_names": purged_names,
+        "purged_files": purged_files_count,
+        "purged_folders": purged_folders_count
+    }
 
 def publish_listings_target(chat_id: int, target: str = "all", plan: str = "free") -> dict:
     """
@@ -6536,6 +6926,7 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
     send_telegram(chat_id, init_msg)
     send_chat_action(chat_id, "upload_document")
 
+    mission_start_time = time.time()
     total_scraped = 0
     total_ads_placed = 0
     consolidated_leads = []
@@ -6544,7 +6935,7 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
 
     reset_stop_flag()
 
-    for prov_info in provinces_to_scrape:
+    for prov_idx, prov_info in enumerate(provinces_to_scrape, 1):
         if check_stop_requested():
             logger.info("Emergency stop triggered! Breaking province loop.")
             send_telegram(chat_id, "🛑 <b>Scraper Stopped:</b> Province mission aborted by emergency stop command.")
@@ -6827,24 +7218,22 @@ ai@searchbiz.co.za | https://searchbiz.co.za"""
     caption_text = f"📊 <b>Consolidated Leads CSV:</b> <code>{csv_filename}</code>\n🔢 <b>Total Businesses:</b> {len(consolidated_leads)} verified\n🌐 <b>SearchBiz Free Ads:</b> {total_ads_placed} live\n📍 <b>Region:</b> {prov_display_names}\n📬 <b>Emailed To:</b> {target_delivery_email}"
     send_telegram_document(chat_id, csv_filename, csv_bytes, caption=caption_text)
 
-    # 9. Send Final Telegram Summary Card
-    sample_preview = "\n".join([f"• <b>{b['name']}</b> ({b.get('city', 'Durban')}) - 📞 <code>{b.get('phone')}</code>" for b in consolidated_leads[:8]])
-    if len(consolidated_leads) > 8:
-        sample_preview += f"\n• <i>...and {len(consolidated_leads) - 8} more verified businesses in the CSV file!</i>"
+    # 9. Send Final Telegram Summary Card with Total Time Taken
+    total_mission_duration = time.time() - mission_start_time
+    t_mins = int(total_mission_duration // 60)
+    t_secs = int(total_mission_duration % 60)
+    total_time_str = f"{t_mins}m {t_secs}s" if t_mins > 0 else f"{t_secs}s"
 
     summary_msg = f"""🏁 <b>Autonomous Extraction Mission Complete!</b>
 
 🎯 <b>Category:</b> <b>{category_display}</b>
-🇿🇦 <b>Region:</b> <b>{prov_display_names}</b>
-🏙️ <b>Towns Covered ({len(towns_visited)}):</b> <i>{', '.join(towns_visited[:12])}{'...' if len(towns_visited) > 12 else ''}</i>
+🇿🇦 <b>Region:</b> <b>{prov_display_names}</b> ({len(provinces_to_scrape)} Provinces)
+⏱️ <b>Total Execution Time:</b> <b>{total_time_str}</b>
 🔢 <b>Total Businesses Extracted:</b> <b>{len(consolidated_leads)}</b> (100% verified Phone/WhatsApp numbers)
-🌐 <b>SearchBiz Free Ads Published:</b> <b>{total_ads_placed}</b> (Free Unclaimed Ads placed live on searchbiz.co.za)
+🌐 <b>SearchBiz Free Ads Published:</b> <b>{total_ads_placed}</b> (Live on searchbiz.co.za)
 🛡️ <b>Deduplication:</b> Zero repeated towns or duplicate listings!
-📁 <b>Consolidated CSV File:</b> <code>listings/{provinces_to_scrape[0]['slug']}/{safe_cat_name}/{csv_filename}</code>
+📁 <b>Consolidated CSV File:</b> <code>{csv_filename}</code>
 📬 <b>Direct Email Delivery:</b> {'✅ Emailed to ' + target_delivery_email if email_delivered else '⚠️ Queued for retry to ' + target_delivery_email}
-
-📋 <b>Harvested Businesses Preview:</b>
-{sample_preview or '• <i>No businesses found matching query</i>'}
 
 👉 <b>Commands:</b>
 • <code>/listings</code> - Inspect organized listings directory
@@ -9069,6 +9458,10 @@ def match_searchbiz_category(raw_category: str) -> str:
         return "Motor Spares, Parts & Accessories"
     clean_cat = raw_category.strip().lower()
 
+    # Reject non-category noise tags from OpenStreetMap / scrapers
+    if clean_cat in ["yes", "no", "true", "false", "fuel", "shop", "craft", "amenity", "office", "tourism"]:
+        return "General Services"
+
     # 1. Match numeric index like "1.1", "6.8", "14.2", "20.6"
     num_match = re.search(r'\b(\d+\.\d+)\b', clean_cat)
     if num_match:
@@ -9095,10 +9488,10 @@ def match_searchbiz_category(raw_category: str) -> str:
                 return clean_sub
 
     # 4. Domain keyword heuristics
-    if any(k in clean_cat for k in ["wash", "detail", "valet", "carwash", "autowash", "cash wash", "auto valet", "car spa", "auto detailing", "car detailing"]):
-        return "Car Wash & Detailing"
     if any(k in clean_cat for k in ["spare", "part", "auto part", "car part", "motor spares"]):
         return "Motor Spares, Parts & Accessories"
+    if any(k in clean_cat for k in ["wash", "detail"]):
+        return "Car Wash & Detailing"
     if any(k in clean_cat for k in ["repair", "mechanic", "workshop", "auto body", "panel"]):
         return "Auto Body & Repair Shops"
     if any(k in clean_cat for k in ["tire", "tyre", "fitment"]):
@@ -9180,6 +9573,9 @@ def direct_db_insert_ad(payload: dict) -> dict:
             "showCallOption": True,
             "verified": False if is_free else payload.get("verified", True),
             "isPremium": False if is_free else payload.get("isPremium", True),
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "isSponsor": False,
             "isClaimed": False if is_free else payload.get("isClaimed", True),
             "plan": "free" if is_free else payload.get("plan", "PREMIUM"),
@@ -9330,6 +9726,9 @@ def direct_db_insert_ad_batch(items: list) -> dict:
             "showCallOption": True,
             "verified": False,
             "isPremium": False,
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "isSponsor": False,
             "isClaimed": False,
             "plan": "free",
@@ -9397,6 +9796,9 @@ def collect_all_harvested_leads() -> list:
             "servicesOffered": str(b_services or b_cat or "Professional Services").strip(),
             "isClaimed": False,
             "isPremium": False,
+            "isApproved": False,
+            "status": "pending",
+            "approvalStatus": "pending",
             "plan": "free"
         })
 
@@ -9463,7 +9865,11 @@ def collect_all_harvested_leads() -> list:
         "vps-agent/listings", 
         "public/listings", 
         "scraped_leads_vault", 
-        "vps-agent/scraped_leads_vault"
+        "vps-agent/scraped_leads_vault",
+        "/tmp",
+        "data",
+        ".data",
+        "."
     ]
     seen_search_dirs = set()
     for s_dir in search_dirs:
@@ -9574,7 +9980,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 ═══════════════════════════════════════════
 📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records across listings/ & databases...
 🛡️ <b>Deduplication Shield:</b> Syncing with SearchBiz index to prevent duplicate ads
-⚡ <b>High-Speed Bulk Uploads:</b> Batching 100 records per HTTP payload
+⚡ <b>High-Speed Bulk Uploads:</b> Batching up to 2,000 records per HTTP payload (Ultra-Fast Mode)
 📬 <b>Target Site:</b> https://searchbiz.co.za (0.03s Zero-Lag Mode)
 
 <i>Gathering harvested business records now...</i>"""
@@ -9590,11 +9996,11 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             GLOBAL_BULK_SYNC["is_running"] = False
             return
 
-        batch_size = 100
+        batch_size = 2000
         batches = [all_leads[i:i + batch_size] for i in range(0, total_leads, batch_size)]
         GLOBAL_BULK_SYNC["total_batches"] = len(batches)
 
-        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (100 per batch).\n🚀 Launching high-speed batch upload stream to SearchBiz...")
+        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (up to 2,000 per batch).\n🚀 Launching ultra-high-speed batch upload stream to SearchBiz...")
 
         for b_idx, batch_items in enumerate(batches, 1):
             if not GLOBAL_BULK_SYNC["is_running"]:
@@ -9912,32 +10318,21 @@ def fetch_live_searchbiz_knowledge(force_refresh: bool = False) -> dict:
     return _CACHED_SEARCHBIZ_KNOWLEDGE or {}
 
 def get_searchbiz_categories_card() -> str:
-    """Returns a focused, comprehensive breakdown of all 20 SearchBiz categories and 145 subcategories."""
-    return """📂 <b>SearchBiz South Africa — All 20 Official Directory Categories & Subcategories</b>
-🌐 <b>Directory:</b> <a href="https://searchbiz.co.za/directory">searchbiz.co.za/directory</a>
-
-• <b>1. AUTOMOTIVE & VEHICLES:</b> Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics
-• <b>2. BEAUTY & PERSONAL CARE:</b> Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare
-• <b>3. BUSINESS SERVICES:</b> Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage
-• <b>4. CLEANING & JANITORIAL:</b> Carpet & Upholstery Cleaning, Commercial & Office, Domestic Maid Services, Window Cleaning, High Pressure Washing
-• <b>5. COMMUNITY & PUBLIC:</b> Charities & NGOs, Churches & Worship, Community Centres, Emergency Services, Libraries, Police & Fire Stations
-• <b>6. CONSTRUCTION & TRADES:</b> Carpentry, Building Contractors, Electrical Contractors, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding & Metal
-• <b>7. EDUCATION & TRAINING:</b> Colleges & Tertiary, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools
-• <b>8. ENTERTAINMENT & RECREATION:</b> Amusement Parks, Bowling & Arcades, Cinemas & Theatres, Nightclubs, Sports Clubs & Stadiums
-• <b>9. EVENTS & WEDDINGS:</b> Catering Services, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues
-• <b>10. FINANCIAL SERVICES:</b> Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners
-• <b>11. FOOD & DINING:</b> Bakeries & Patisseries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Halal/Kosher, Restaurants & Fine Dining
-• <b>12. GROCERIES & MARKETS:</b> Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets
-• <b>13. HEALTH & MEDICAL:</b> Chiropractors, Dentists, General Practitioners (Doctors), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Veterinarians
-• <b>14. HOME & GARDEN:</b> Appliance Repairs, Blinds & Curtains, Furniture & Decor, Interior Design, Landscaping, Nurseries, Tree Felling
-• <b>15. INDUSTRIAL & MANUFACTURING:</b> Chemical & Plastic, Heavy Equipment Hire, Metal & Steel Fabrication, Packaging, Warehousing
-• <b>16. PETS & ANIMALS:</b> Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops
-• <b>17. PROFESSIONAL SERVICES:</b> Architecture & Town Planning, Audit & Assurance, Engineering Consultants, Notaries & Conveyancers, Quantity Surveyors
-• <b>18. REAL ESTATE:</b> Commercial Brokers, Estate Agents & Sales, Property Management, Rental Agencies, Valuation Surveyors
-• <b>19. RETAIL & SHOPPING:</b> Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery & Watches, Shopping Centres & Malls
-• <b>20. TRAVEL & TOURISM:</b> Bed & Breakfasts (B&Bs), Car Rental, Game Reserves & Safari Lodges, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators
-
-💡 <i>Ask me to find businesses in any category or say <code>/sweep_provinces [category]</code> to scrape leads nationwide!</i>"""
+    """Returns a focused, comprehensive breakdown of all 20 SearchBiz categories and 305 Google Business Profile aligned subcategories."""
+    lines = [
+        "📂 <b>SearchBiz South Africa — All 20 Official Directory Categories & 305 Specialized Subcategories</b>",
+        "🌐 <b>Directory:</b> <a href=\"https://searchbiz.co.za/directory\">searchbiz.co.za/directory</a>",
+        ""
+    ]
+    for group in CATEGORIES_145_TREE:
+        subs_sample = ", ".join(re.sub(r'^\d+(\.\d+)?\s*', '', s) for s in group["subcategories"][:10])
+        total_in_grp = len(group["subcategories"])
+        more_tag = f" (+{total_in_grp - 10} more)" if total_in_grp > 10 else ""
+        lines.append(f"• <b>{group['group']}:</b> {subs_sample}{more_tag}")
+    
+    lines.append("")
+    lines.append("💡 <i>Ask me to find businesses in any category or say <code>/sweep_provinces [category]</code> to scrape leads nationwide!</i>")
+    return "\n".join(lines)
 
 def get_searchbiz_provinces_card() -> str:
     """Returns a focused breakdown of all 9 South African provinces, major hubs, and postal code ranges."""
@@ -9961,49 +10356,41 @@ def get_searchbiz_provinces_and_categories_card() -> str:
     base_url = get_active_api_base()
     live_data = fetch_live_searchbiz_knowledge()
     active_ads_count = live_data.get("stats", {}).get("totalActiveAds", "Live")
+    total_subs = sum(len(g["subcategories"]) for g in CATEGORIES_145_TREE)
     
-    card = f"""🏛️ <b>SearchBiz South Africa — Official Directory Structure & Knowledge Tree</b>
-🌐 <b>Live Platform Link:</b> <a href="https://searchbiz.co.za">searchbiz.co.za</a> (API: <code>{base_url}</code>)
-📊 <b>Active Directory Listings:</b> <b>{active_ads_count}</b> Verified Businesses
-
-🇿🇦 <b>ALL 9 SOUTH AFRICAN PROVINCES & MAJOR HUBS:</b>
-1. <b>Eastern Cape:</b> Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega (Uitenhage), Jeffreys Bay, Queenstown (5000–6499)
-2. <b>Free State:</b> Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)
-3. <b>Gauteng:</b> Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto, Benoni, Boksburg, Kempton Park, Krugersdorp (0001–2199)
-4. <b>KwaZulu-Natal:</b> Durban (4001), Umkomaas (4170), Craigieburn, Ilfracombe, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg, Richards Bay, Port Shepstone, Margate, Umhlanga, Pinetown (2900–4499)
-5. <b>Limpopo:</b> Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina, Phalaborwa (0500–0999)
-6. <b>Mpumalanga:</b> Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton, Barberton, White River (1000–1399)
-7. <b>North West:</b> Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)
-8. <b>Northern Cape:</b> Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)
-9. <b>Western Cape:</b> Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville (6500–8099)
-
-📂 <b>ALL 20 NUMBERED CATEGORIES & 145 CHILD SUBCATEGORIES:</b>
-• <b>1. AUTOMOTIVE & VEHICLES:</b> Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares & Parts, Towing & Breakdown, Tyre Fitment, Mechanics
-• <b>2. BEAUTY & PERSONAL CARE:</b> Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare
-• <b>3. BUSINESS SERVICES:</b> Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Graphic & Web Design, HR, IT Support, Legal & Attorneys, Printing & Signage
-• <b>4. CLEANING & JANITORIAL:</b> Carpet & Upholstery Cleaning, Commercial & Office, Domestic Maid Services, Window Cleaning, High Pressure Washing
-• <b>5. COMMUNITY & PUBLIC:</b> Charities & NGOs, Churches & Worship, Community Centres, Emergency Services, Libraries, Police & Fire Stations
-• <b>6. CONSTRUCTION & TRADES:</b> Carpentry, Building Contractors, Electrical Contractors, Handyman, Painting, Plumbing Contractors, Roofing, Solar & Inverters, Welding & Metal
-• <b>7. EDUCATION & TRAINING:</b> Colleges & Tertiary, Daycare & Crèches, High Schools, Music & Art, Tutoring & Extra Lessons, Vocational Trade Schools
-• <b>8. ENTERTAINMENT & RECREATION:</b> Amusement Parks, Bowling & Arcades, Cinemas & Theatres, Nightclubs, Sports Clubs & Stadiums
-• <b>9. EVENTS & WEDDINGS:</b> Catering Services, DJs & Sound Hire, Event Planners, Party Hire, Photographers, Wedding Venues
-• <b>10. FINANCIAL SERVICES:</b> Accounting, Debt Review, Financial Advisory, Insurance Brokers, Micro Loans, Tax Practitioners
-• <b>11. FOOD & DINING:</b> Bakeries & Patisseries, Bars & Pubs, Cafes & Coffee Shops, Fast Food & Takeaways, Halal/Kosher, Restaurants & Fine Dining
-• <b>12. GROCERIES & MARKETS:</b> Butcheries, Farmers Markets, Fishmongers, Fruit & Veg, Bottle Stores, Supermarkets
-• <b>13. HEALTH & MEDICAL:</b> Chiropractors, Dentists, General Practitioners (Doctors), Hospitals & Clinics, Optometrists, Pharmacies, Psychologists, Veterinarians
-• <b>14. HOME & GARDEN:</b> Appliance Repairs, Blinds & Curtains, Furniture & Decor, Interior Design, Landscaping, Nurseries, Tree Felling
-• <b>15. INDUSTRIAL & MANUFACTURING:</b> Chemical & Plastic, Heavy Equipment Hire, Metal & Steel Fabrication, Packaging, Warehousing
-• <b>16. PETS & ANIMALS:</b> Animal Shelters, Dog Training, Pet Grooming, Kennels & Boarding, Pet Shops
-• <b>17. PROFESSIONAL SERVICES:</b> Architecture & Town Planning, Audit & Assurance, Engineering Consultants, Notaries & Conveyancers, Quantity Surveyors
-• <b>18. REAL ESTATE:</b> Commercial Brokers, Estate Agents & Sales, Property Management, Rental Agencies, Valuation Surveyors
-• <b>19. RETAIL & SHOPPING:</b> Bookshops, Clothing Boutiques, Electronics & Cellular, Jewellery & Watches, Shopping Centres & Malls
-• <b>20. TRAVEL & TOURISM:</b> Bed & Breakfasts (B&Bs), Car Rental, Game Reserves & Safari Lodges, Guest Houses, Hotels & Resorts, Shuttles, Tour Operators
-
-💎 <b>VERIFIED MEMBERSHIP TIERS & PRICING PLANS:</b>
-• <b>Free Unclaimed Listing (R0.00):</b> Discovered profile with Name, Phone, Address, Category (Website, Email & WhatsApp locked until upgraded).
-• <b>Base Premium Plan (R199.00 / month):</b> Unlimited static hosting, unlimited @yourbusiness.co.za emails, smart design assistance, verified badge, and 1 custom listing with ALL fields unlocked.
-• <b>Extras & Add-Ons:</b> <b>+R199.00 / mo</b> per extra listed ad | <b>.co.za Domain:</b> <b>R99.00 / year</b>."""
-    return card
+    lines = [
+        f"🏛️ <b>SearchBiz South Africa — Official Directory Structure & Knowledge Tree</b>",
+        f"🌐 <b>Live Platform Link:</b> <a href=\"https://searchbiz.co.za\">searchbiz.co.za</a> (API: <code>{base_url}</code>)",
+        f"📊 <b>Active Directory Listings:</b> <b>{active_ads_count}</b> Verified Businesses",
+        "",
+        "🇿🇦 <b>ALL 9 SOUTH AFRICAN PROVINCES & MAJOR HUBS:</b>",
+        "1. <b>Eastern Cape:</b> Gqeberha (Port Elizabeth 6001), East London, Mthatha, Makhanda (Grahamstown), Kariega (Uitenhage), Jeffreys Bay, Queenstown (5000–6499)",
+        "2. <b>Free State:</b> Bloemfontein (9301), Welkom, Sasolburg, Kroonstad, Bethlehem, Harrismith, Parys (9300–9999)",
+        "3. <b>Gauteng:</b> Johannesburg (2000), Pretoria (0001), Sandton, Randburg, Centurion, Midrand, Roodepoort, Soweto, Benoni, Boksburg, Kempton Park, Krugersdorp (0001–2199)",
+        "4. <b>KwaZulu-Natal:</b> Durban (4001), Umkomaas (4170), Craigieburn, Ilfracombe, Amanzimtoti, Scottburgh, Ballito, Pietermaritzburg, Richards Bay, Port Shepstone, Margate, Umhlanga, Pinetown (2900–4499)",
+        "5. <b>Limpopo:</b> Polokwane (0700), Tzaneen, Mokopane, Thohoyandou, Bela-Bela, Lephalale, Musina, Phalaborwa (0500–0999)",
+        "6. <b>Mpumalanga:</b> Mbombela / Nelspruit (1200), eMalahleni / Witbank, Middelburg, Secunda, Standerton, Barberton, White River (1000–1399)",
+        "7. <b>North West:</b> Rustenburg (0300), Mahikeng, Potchefstroom, Klerksdorp, Brits, Lichtenburg (2500–2899)",
+        "8. <b>Northern Cape:</b> Kimberley (8301), Upington, Springbok, De Aar, Kuruman, Kathu (8300–8999)",
+        "9. <b>Western Cape:</b> Cape Town (8001), Stellenbosch, Paarl, George, Mossel Bay, Hermanus, Knysna, Worcester, Somerset West, Bellville (6500–8099)",
+        "",
+        f"📂 <b>ALL 20 NUMBERED CATEGORIES & {total_subs} SPECIALIZED SUBCATEGORIES:</b>"
+    ]
+    
+    for group in CATEGORIES_145_TREE:
+        subs_sample = ", ".join(re.sub(r'^\d+(\.\d+)?\s*', '', s) for s in group["subcategories"][:8])
+        total_in_grp = len(group["subcategories"])
+        more_tag = f" (+{total_in_grp - 8} more)" if total_in_grp > 8 else ""
+        lines.append(f"• <b>{group['group']}:</b> {subs_sample}{more_tag}")
+        
+    lines.extend([
+        "",
+        "💎 <b>VERIFIED MEMBERSHIP TIERS & PRICING PLANS:</b>",
+        "• <b>Free Unclaimed Listing (R0.00):</b> Discovered profile with Name, Phone, Address, Category (Website, Email & WhatsApp locked until upgraded).",
+        "• <b>Base Premium Plan (R199.00 / month):</b> Unlimited static hosting, unlimited @yourbusiness.co.za emails, smart design assistance, verified badge, and 1 custom listing with ALL fields unlocked.",
+        "• <b>Extras & Add-Ons:</b> <b>+R199.00 / mo</b> per extra listed ad | <b>.co.za Domain:</b> <b>R99.00 / year</b>."
+    ])
+    return "\n".join(lines)
 
 def get_searchbiz_pricing_card() -> str:
     """Returns official SearchBiz South Africa pricing & membership plan breakdown."""
@@ -11648,27 +12035,27 @@ You run 24/7 on the founder's Contabo Linux VPS.
    - **Northern Cape**: Kimberley (8301), Upington (8801), Springbok (8240), De Aar (7000), Kuruman (8460), Kathu (8446). Postal range: 8300-8999.
    - **Western Cape**: Cape Town (8001), Stellenbosch (7600), Paarl (7646), George (6529), Mossel Bay (6500), Hermanus (7200), Knysna (6571), Worcester (6850), Somerset West (7130), Bellville (7530). Postal range: 6500-8099.
 
-5. ALL 20 SEARCHBIZ NUMBERED CATEGORIES & 145 CHILD CATEGORIES:
-   - 1. AUTOMOTIVE & VEHICLES (1.1 Auto Body & Repair Shops, 1.2 Auto Detailing & Car Wash, 1.3 Auto Electricians, 1.4 Auto Parts & Spares, 1.5 Car Dealerships & Sales, 1.6 Driving Schools, 1.7 Mechanics & Service Centres, 1.8 Panel Beaters, 1.9 Towing & Breakdown Services, 1.10 Tyre & Fitment Centres, 1.11 Vehicle Audio & Accessories)
-   - 2. BEAUTY & PERSONAL CARE (2.1 Barbershops, 2.2 Day Spas & Wellness, 2.3 Hair Salons, 2.4 Makeup Artists, 2.5 Massage Therapy, 2.6 Nail Salons, 2.7 Skincare & Esthetics, 2.8 Tattoos & Piercings)
-   - 3. BUSINESS SERVICES (3.1 Accounting & Bookkeeping, 3.2 Advertising & Marketing, 3.3 Business Consulting, 3.4 Graphic & Web Design, 3.5 Human Resources & Recruitment, 3.6 IT & Software Support, 3.7 Legal Services & Attorneys, 3.8 Logistics & Freight, 3.9 Printing & Signage, 3.10 Security & Armed Response, 3.11 Translation & Copywriting)
-   - 4. CLEANING & JANITORIAL (4.1 Carpet & Upholstery Cleaning, 4.2 Commercial & Office Cleaning, 4.3 Domestic & Maid Services, 4.4 High Pressure & Exterior Cleaning, 4.5 Pool Cleaning & Maintenance, 4.6 Window Cleaning)
-   - 5. COMMUNITY & PUBLIC (5.1 Charities & NGOs, 5.2 Churches & Places of Worship, 5.3 Community Centres, 5.4 Emergency Services, 5.5 Libraries & Information, 5.6 Police & Fire Stations, 5.7 Post Offices & Depots, 5.8 Public Parks & Gardens)
-   - 6. CONSTRUCTION & TRADES (6.1 Architects & Draughting, 6.2 Bricklaying & Masonry, 6.3 Building Contractors, 6.4 Carpentry & Joinery, 6.5 Electrical Contractors, 6.6 Fencing & Gates, 6.7 Flooring & Tiling, 6.8 Handyman Services, 6.9 Painting & Waterproofing, 6.10 Paving & Tarring, 6.11 Plumbing Contractors, 6.12 Roofing & Gutters, 6.13 Solar & Inverter Installations, 6.14 Welding & Metal Fabrication)
-   - 7. EDUCATION & TRAINING (7.1 Colleges & Tertiary Institutes, 7.2 Daycare & Crèches, 7.3 High Schools, 7.4 Music & Art Schools, 7.5 Primary Schools, 7.6 Special Needs Education, 7.7 Training & Short Courses, 7.8 Tutoring & Extra Lessons)
-   - 8. ENTERTAINMENT & RECREATION (8.1 Amusement & Theme Parks, 8.2 Bowling & Arcades, 8.3 Cinemas & Theatres, 8.4 Nightclubs & Lounges, 8.5 Sports Clubs & Stadiums)
-   - 9. EVENTS & WEDDINGS (9.1 Catering Services, 9.2 DJs & Sound Equipment Hire, 9.3 Event Planners & Coordinators, 9.4 Party Hire & Decor, 9.5 Photographers & Videographers, 9.6 Wedding Venues & Chapels)
-   - 10. FINANCIAL SERVICES (10.1 Asset Management & Wealth, 10.2 Debt Review & Counselling, 10.3 Financial Advisory & Planning, 10.4 Foreign Exchange Services, 10.5 Insurance Brokers, 10.6 Micro Loans & Personal Lending, 10.7 Tax Practitioners)
-   - 11. FOOD & DINING (11.1 Bakeries & Patisseries, 11.2 Bars & Pubs, 11.3 Cafes & Coffee Shops, 11.4 Fast Food & Takeaways, 11.5 Food Trucks & Mobile Bars, 11.6 Halal & Kosher Eateries, 11.7 Restaurants & Fine Dining)
-   - 12. GROCERIES & MARKETS (12.1 Butcheries & Meat Markets, 12.2 Farmers Markets, 12.3 Fishmongers & Seafood, 12.4 Fruit & Vegetable Markets, 12.5 Liquor Outlets & Bottle Stores, 12.6 Supermarkets & Convenience Stores)
-   - 13. HEALTH & MEDICAL (13.1 Chiropractors & Physios, 13.2 Dentists & Orthodontists, 13.3 General Practitioners (Doctors), 13.4 Hearing & Audiology, 13.5 Hospitals & Clinics, 13.6 Mental Health & Psychologists, 13.7 Optometrists & Eye Care, 13.8 Pharmacies & Chemists, 13.9 Specialist Physicians, 13.10 Veterinarians & Animal Hospitals)
-   - 14. HOME & GARDEN (14.1 Appliance Repairs, 14.2 Blinds & Curtains, 14.3 Furniture & Decor, 14.4 Interior Design & Staging, 14.5 Landscaping & Garden Care, 14.6 Nurseries & Garden Centres, 14.7 Tree Felling & Pruning)
-   - 15. INDUSTRIAL & MANUFACTURING (15.1 Chemical & Plastic Processing, 15.2 Heavy Equipment Hire, 15.3 Metal & Steel Fabrication, 15.4 Packaging Supplies, 15.5 Textile & Garment Manufacturing, 15.6 Warehousing & Storage Facilities)
-   - 16. PETS & ANIMALS (16.1 Animal Shelters & Adoption, 16.2 Dog Training & Behaviour, 16.3 Pet Grooming Parlours, 16.4 Pet Kennels & Boarding, 16.5 Pet Shops & Supplies)
-   - 17. PROFESSIONAL SERVICES (17.1 Architecture & Town Planning, 17.2 Audit & Assurance, 17.3 Engineering Consultants, 17.4 Notaries & Conveyancers, 17.5 Patent & Trademark Attorneys, 17.6 Quantity Surveyors)
-   - 18. REAL ESTATE (18.1 Commercial Property Brokers, 18.2 Estate Agents & Sales, 18.3 Property Management, 18.4 Rental Agencies, 18.5 Valuation Surveyors)
-   - 19. RETAIL & SHOPPING (19.1 Bookshops & Stationers, 19.2 Clothing & Fashion Boutiques, 19.3 Electronics & Cellular, 19.4 Jewellery & Watches, 19.5 Music & Musical Instruments, 19.6 Shopping Centres & Malls, 19.7 Sporting Goods & Outdoor)
-   - 20. TRAVEL & TOURISM (20.1 Backpackers & Hostels, 20.2 Bed & Breakfasts (B&Bs), 20.3 Car Rental Agencies, 20.4 Game Reserves & Safari Lodges, 20.5 Guest Houses & Lodges, 20.6 Hotels & Resorts, 20.7 Shuttle & Transfer Services, 20.8 Tour Operators & Guides, 20.9 Travel Agencies)
+5. ALL 20 SEARCHBIZ NUMBERED CATEGORIES & 305 SPECIALIZED GOOGLE BUSINESS PROFILE CATEGORIES:
+   - 1. AUTOMOTIVE & VEHICLES (Auto Body & Repair, Car Wash & Detailing, Dealerships, Motor Spares, Parts & Accessories, Towing & Breakdown, Auto Electrical, Windscreen Replacement, Brakes & Clutch, Gearbox & Transmission, Commercial Truck/Bus Repair, Used Cars & Auctions, Petrol Stations, Roadworthy Testing, Car Audio Fitment, Marine & Boat Dealers, Trailers & Caravans)
+   - 2. BEAUTY & PERSONAL CARE (Barbershops, Day Spas & Wellness, Hair Salons, Makeup Artists, Massage Therapy, Nail Salons, Skincare & Estheticians, Tattoos & Piercings, Hair Extensions & Braiding, Medical Spas & Aesthetic Clinics, Microblading, Laser Hair Removal, Holistic Wellness, Weight Loss & Slimming)
+   - 3. BUSINESS SERVICES (Accounting & Bookkeeping, Advertising & Marketing, Business Consulting, Co-Working, Employment & Staffing, IT Support & Telecoms, Legal & Law Firms, Office Equipment, Printing & Graphic Design, Tax Preparation, Security Guard & Armed Response, Web Design & Digital Agencies, Architects, Engineering Consultants, Signage, Notaries, Private Detectives, Debt Collection, Waste Management & Recycling, Call Centres & BPO)
+   - 4. CLEANING & JANITORIAL (Carpet & Upholstery Cleaning, Commercial & Office Cleaning, Disaster Restoration, Dry Cleaning & Laundry, Residential House Cleaning, Window Cleaning, Pressure Washing & Jetting, Roof & Gutter Cleaning, Air Vent & Chimney Cleaning, Septic Tank & Sanitation, Industrial Degreasing, Deep Cleaning & Move-In/Move-Out)
+   - 5. COMMUNITY & PUBLIC (Fire & Police Stations, Libraries & Community Centres, Non-Profit Organisations, Post Offices & Shipping, Public Utilities, Churches & Places of Worship, Funeral Homes & Cremations, Animal Shelters & Pet Rescue, Government & Municipal Offices, Embassies & Consulates, Botanical Gardens & Nature Reserves, Youth & Civic Centres)
+   - 6. CONSTRUCTION & TRADES (Carpentry & Woodworking, Concrete & Masonry, Demolition, Electrical Contractors, General Contractors, HVAC Cooling & Heating, Painting & Wallpapering, Plumbing Services, Roofing & Siding, Solar Energy & Backup Power, Boreholes & Irrigation, Fencing & Automated Gates, Flooring & Tiling, Waterproofing & Damp Proofing, Glazing, Ceilings & Drywall, Steel Construction & Welding, Scaffolding Hire, Kitchen & Bathroom Renovations)
+   - 7. EDUCATION & TRAINING (Art & Music Schools, Colleges & Universities, Daycare & Preschools, Driving Schools, Language & Tutoring, Primary & High Schools, Vocational & Trade Schools, Flight Schools & Aviation, Cosmetology Academies, Special Needs Schools, IT & Coding Bootcamps, Culinary & Hospitality Academies, Distance Learning, Sports Academies)
+   - 8. ENTERTAINMENT & RECREATION (Amusement Parks & Arcades, Bowling & Skating, Casinos, Concert Halls, Festivals, Cinemas, Museums & Art Galleries, Nightclubs, Game Lodges & Safaris, Zoos & Reptile Parks, Escape Rooms & Paintball, Go-Kart Tracks, Theatres & Performing Arts, Water Parks & Adventure Centres)
+   - 9. EVENTS & WEDDINGS (Bridal Shops, Catering Services, DJs & Live Entertainment, Event Planners, Party Supply Rentals, Photography & Videography, Venues & Banquet Halls, AV Stage & Lighting Hire, Florists & Wedding Floral Design, Photo Booth Hire, Wedding Invitations, Event Security, Mobile Bars)
+   - 10. FINANCIAL SERVICES (Banks & Credit Unions, Insurance Agents & Brokers, Loans & Financing, Mortgage Brokers, Wealth Management & Advisors, Forex & Currency Exchange, Pawn Shops & Collateral Loans, Financial Planning & Retirement, Debt Counselling & Debt Review, Stockbrokers & Venture Capital, Micro-Finance)
+   - 11. FOOD & DINING (Bakeries & Desserts, Bars & Pubs, Breweries & Wineries, Cafes & Coffee Shops, Fast Food & Drive-Thrus, Food Trucks, Full-Service Restaurants, Juice Bars, Steakhouses & Braai / BBQ, Pizzerias & Italian, Seafood, Asian & Sushi, Ice Cream Parlours, Halal & Kosher Dining, Delis, Buffets)
+   - 12. GROCERIES & MARKETS (Convenience Stores, Farmers Markets, Gas Station Markets, Health & Organic Food, Liquor & Bottle Stores, Supermarkets, Butcheries & Biltong Shops, Fishmongers & Seafood Markets, Fresh Produce & Farm Stalls, Spice & Specialty Food Stores, Wholesale Cash & Carry, Asian & International Supermarkets)
+   - 13. HEALTH & MEDICAL (Chiropractors, Dental Clinics, Hospitals & Emergency Rooms, Medical Labs, Mental Health & Counselling, Optometrists, Pharmacies, Physical Therapy, General Practitioners (GPs), Veterinary Clinics & Animal Hospitals, Physiotherapists & Biokineticists, Pediatricians, Gynaecologists & Maternity, Dermatologists, Orthodontists, Audiologists, Homeopathy & Alternative Medicine, Occupational Therapy, Ambulance & Paramedics, Podiatrists, Dietitians)
+   - 14. HOME & GARDEN (Appliance Repair, Handyman Services, Hardware & Tool Rental, Interior Design, Landscaping & Lawn Care, Locksmiths, Pest Control, Pool Maintenance & Construction, Tree Felling & Pruning, Home Security & CCTV, Solar & Inverter Backup, Water Tanks & Rainwater Harvesting, Blinds & Shutters, Kitchen Cupboards, Plant Nurseries, Upholstery Restoration, Garage Doors & Gate Automation, Flooring Stores)
+   - 15. HOTELS & TRAVEL (Bed & Breakfasts (B&Bs), Campgrounds & Caravan Parks, Hostels & Backpackers, Hotels & Motels, Resorts & Luxury Lodges, Travel Agencies & Tour Guides, Guest Houses & Country Inns, Safari Lodges & Bush Camps, Self-Catering Cottages & Apartments, Airport Transfers & Chauffeurs, Visa & Passport Consultancies, Boat Cruises & Charters)
+   - 16. MANUFACTURING & INDUSTRIAL (Chemical & Plastics, Electronics Manufacturing, Food & Beverage Production, Heavy Machinery & Earthmoving, Metal Fabrication, Textile Mills, Wholesale Distributors, Agricultural Machinery, Packaging & Boxes, Mining & Drilling Equipment, Timber & Sawmills, CNC Machining & Toolmaking, Plastic Moulding, Steel Foundries & Scrap Metal, Equipment Maintenance)
+   - 17. REAL ESTATE & HOUSING (Apartments & Flat Rentals, Commercial Real Estate Brokers, Property Management, Real Estate Agencies, Moving & Removal Companies, Storage Facilities, Student Accommodation, Body Corporate Management, Property Valuers & Appraisers, Holiday Rentals, Land Surveyors, Conveyancers & Property Lawyers)
+   - 18. RETAIL SHOPPING (Bookstores, Clothing & Apparel, Electronics & Computers, Flower Shops, Furniture & Home Goods, Jewellery & Watches, Pet Shops, Sporting Goods, Toy & Hobby Shops, Cellular & Phone Repairs, Antique Stores, Pawn & Thrift Shops, Vape & Tobacconists, Fabric & Sewing, Hardware & Building Materials, Musical Instruments, Baby & Maternity, Cosmetics, Art Supplies, Outdoor & Camping Gear)
+   - 19. SPORTS & FITNESS (Bicycle Shops & Workshop, Golf Courses & Country Clubs, Gyms & Fitness Centres, Martial Arts & Boxing, Personal Training, Swimming Pools, Yoga & Pilates, Tennis & Padel Clubs, Dance Studios, Scuba & Surfing Clubs, Rock Climbing Gyms, Sports Academies, Horse Riding Schools, Crossfit Boxes)
+   - 20. TRANSPORTATION & LOGISTICS (Airport Shuttles, Courier & Express Delivery, Freight & Cargo Shipping, Public Transit & Buses, Taxi & Ride-Share, Warehousing, Breakdown & Towing Services, Long-Distance Freight Haulage, Vehicle Tracking & Fleet Telematics, Marine Shipping, Moving Services, Cold Chain & Refrigerated Transport)
 
 6. GOOGLE MAPS SCRAPING & DEDICATED VAULT PIPELINE:
    - When told to scrape Google Maps for categories and provinces and place as free unclaimed ads:

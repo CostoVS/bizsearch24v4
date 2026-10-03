@@ -373,6 +373,21 @@ export async function GET(req: Request) {
     const pendingOnly = url.searchParams.get('pendingOnly') === 'true';
 
     if (qParam || catParam || townParam || provParam || subParam || addrParam || statusParam || approvedOnly || pendingOnly) {
+      const STOP_WORDS = new Set(['in', 'at', 'near', 'the', 'and', 'or', 'for', 'of', 'to', 'a', 'an', 'on', 'by', 'with', '&']);
+      const PROV_ACRONYMS: Record<string, string> = {
+        'kzn': 'kwazulu-natal',
+        'gp': 'gauteng',
+        'wc': 'western-cape',
+        'ec': 'eastern-cape',
+        'fs': 'free-state',
+        'lp': 'limpopo',
+        'mp': 'mpumalanga',
+        'nw': 'north-west',
+        'nc': 'northern-cape'
+      };
+
+      const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
       const filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
         
@@ -392,44 +407,82 @@ export async function GET(req: Request) {
         const adCat = (ad.category || '').toLowerCase();
         const adCode = (ad.categoryCode || '').toLowerCase();
         const adGroup = (ad.categoryGroup || '').toLowerCase();
+        const adPhone = (ad.phone || '').replace(/[^0-9]/g, '');
 
         // Address check
         if (addrParam) {
-          if (!adAddr.includes(addrParam) && !addrParam.includes(adAddr) && !adTown.includes(addrParam) && !adSuburb.includes(addrParam)) {
+          const nAddr = norm(addrParam);
+          if (
+            !norm(adAddr).includes(nAddr) && 
+            !nAddr.includes(norm(adAddr)) && 
+            !norm(adTown).includes(nAddr) && 
+            !norm(adSuburb).includes(nAddr)
+          ) {
             return false;
           }
         }
         
         // Province check
         if (provParam) {
-          const provMatch = adProv === provParam || adProvName === provParam || adProv.includes(provParam) || provParam.includes(adProv);
-          const serviceProvMatch = ad.serviceAreas?.some((sa: any) => (sa.province || '').toLowerCase() === provParam || (sa.provinceName || '').toLowerCase() === provParam);
+          const targetProv = PROV_ACRONYMS[provParam] || provParam;
+          const nTarget = norm(targetProv);
+          const provMatch = adProv === targetProv || 
+                            norm(adProv) === nTarget || 
+                            norm(adProvName) === nTarget || 
+                            norm(adProv).includes(nTarget) || 
+                            nTarget.includes(norm(adProv));
+          const serviceProvMatch = ad.serviceAreas?.some((sa: any) => {
+            const sp = (sa.province || '').toLowerCase();
+            const spn = (sa.provinceName || '').toLowerCase();
+            return sp === targetProv || norm(sp) === nTarget || norm(spn) === nTarget || norm(sp).includes(nTarget);
+          });
           if (!provMatch && !serviceProvMatch && adProv !== 'national') return false;
         }
 
-        // Town / City check
+        // Town / City / Area check
         if (townParam) {
-          const townMatch = adTown === townParam || adSuburb === townParam || adTown.includes(townParam) || townParam.includes(adTown) || 
-                            adAddr.includes(townParam) || adProv === townParam || adProv.includes(townParam) || townParam.includes(adProv);
-          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => 
-            (sa.town || '').toLowerCase() === townParam || 
-            (sa.suburb || '').toLowerCase() === townParam ||
-            (sa.province || '').toLowerCase() === townParam
-          );
+          const nTown = norm(townParam);
+          const townMatch = norm(adTown) === nTown || 
+                            norm(adSuburb) === nTown || 
+                            norm(adTown).includes(nTown) || 
+                            nTown.includes(norm(adTown)) || 
+                            norm(adAddr).includes(nTown) || 
+                            norm(adProv) === nTown || 
+                            norm(adProv).includes(nTown);
+          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => {
+            const st = norm(sa.town || '');
+            const ss = norm(sa.suburb || '');
+            const sp = norm(sa.province || '');
+            return st === nTown || ss === nTown || st.includes(nTown) || ss.includes(nTown) || sp === nTown;
+          });
           if (!townMatch && !serviceTownMatch && adProv !== 'national') return false;
         }
 
-        // Suburb check
+        // Suburb / Area check
         if (subParam) {
-          const subMatch = adSuburb === subParam || adSuburb.includes(subParam) || adTown.includes(subParam) || adAddr.includes(subParam);
-          const serviceSubMatch = ad.serviceAreas?.some((sa: any) => (sa.suburb || '').toLowerCase() === subParam);
+          const nSub = norm(subParam);
+          const subMatch = norm(adSuburb) === nSub || 
+                           norm(adSuburb).includes(nSub) || 
+                           norm(adTown).includes(nSub) || 
+                           norm(adAddr).includes(nSub);
+          const serviceSubMatch = ad.serviceAreas?.some((sa: any) => {
+            const ss = norm(sa.suburb || '');
+            const st = norm(sa.town || '');
+            return ss === nSub || ss.includes(nSub) || st === nSub;
+          });
           if (!subMatch && !serviceSubMatch && adProv !== 'national') return false;
         }
 
         // Category check
         if (catParam) {
-          const catMatch = adCat === catParam || adCat.includes(catParam) || catParam.includes(adCat) || 
-                          adCode === catParam || adCode.startsWith(catParam) || adGroup.includes(catParam) || catParam.includes(adGroup);
+          const nCat = norm(catParam);
+          const catMatch = norm(adCat) === nCat || 
+                          norm(adCat).includes(nCat) || 
+                          nCat.includes(norm(adCat)) || 
+                          norm(adCode) === nCat || 
+                          norm(adCode).startsWith(nCat) || 
+                          norm(adGroup).includes(nCat) || 
+                          nCat.includes(norm(adGroup));
           if (!catMatch) return false;
         }
 
@@ -440,9 +493,12 @@ export async function GET(req: Request) {
           const serv = (ad.servicesOffered || '').toLowerCase();
           const kw = (ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
 
-          const combinedText = `${title} ${desc} ${serv} ${adCat} ${adCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw}`;
-          const qWords = qParam.split(/\s+/).filter(Boolean);
-          const allWordsMatch = qWords.every((w: string) => combinedText.includes(w));
+          const combinedText = `${title} ${desc} ${serv} ${adCat} ${adCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw} ${adPhone}`.toLowerCase();
+          const rawTokens = qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+          const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
+          const searchTokens = meaningfulTokens.length > 0 ? meaningfulTokens : rawTokens;
+
+          const allWordsMatch = searchTokens.every((w: string) => combinedText.includes(w));
           if (!allWordsMatch) return false;
         }
 

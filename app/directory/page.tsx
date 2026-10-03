@@ -9,7 +9,7 @@ import { motion } from 'motion/react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { SearchBar } from '@/components/search-bar';
-import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { VerificationBadge, PremiumBadge } from '@/components/ui-extras';
 import AdDetailModal from '@/components/ad-detail-modal';
 import { AdDescription } from '@/components/ad-description';
@@ -40,8 +40,15 @@ function DirectoryContent() {
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(24);
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  const isAdVisible = useCallback((a: any) => {
+    if (!a || a.isActive === false) return false;
+    if (!isAdmin && a.isApproved !== true && a.status !== 'approved') return false;
+    return true;
+  }, [isAdmin]);
 
   const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
 
@@ -106,7 +113,7 @@ function DirectoryContent() {
       .then(data => {
         if (!isCurrent) return;
         if (data && Array.isArray(data.ads)) {
-          const validAds = data.ads.filter((a: any) => a && a.isActive !== false);
+          const validAds = data.ads.filter(isAdVisible);
           setServerFilteredAds(validAds);
           setAllAds(validAds);
         }
@@ -128,13 +135,13 @@ function DirectoryContent() {
       isCurrent = false;
       clearTimeout(scrollTimer);
     };
-  }, [q, category, town, province, suburb]);
+  }, [q, category, town, province, suburb, isAdmin]);
 
   useEffect(() => {
     // Only load generic background cache if there are NO active search filters
     if (hasFilters) return;
 
-    const cached = getStoredAds().filter((a: any) => a.isActive !== false);
+    const cached = getStoredAds().filter(isAdVisible);
     if (cached.length > 0) {
       setAllAds(prev => (prev.length === 0 ? cached : prev));
     }
@@ -142,13 +149,13 @@ function DirectoryContent() {
     // Force a fresh fetch from server immediately on mount to solve sync lag
     fetchAndStoreAds().then(freshAds => {
       if (freshAds && freshAds.length > 0 && !hasFilters) {
-        setAllAds(freshAds.filter((a: any) => a.isActive !== false));
+        setAllAds(freshAds.filter(isAdVisible));
       }
     });
 
     const handleUpdate = () => {
       if (!hasFilters) {
-        const fresh = getStoredAds().filter((a: any) => a.isActive !== false);
+        const fresh = getStoredAds().filter(isAdVisible);
         if (fresh.length > 0) {
           setAllAds(fresh);
         }
@@ -156,7 +163,7 @@ function DirectoryContent() {
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (!hasFilters && (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads")) {
-        const fresh = getStoredAds().filter((a: any) => a.isActive !== false);
+        const fresh = getStoredAds().filter(isAdVisible);
         if (fresh.length > 0) {
           setAllAds(fresh);
         }
@@ -168,9 +175,10 @@ function DirectoryContent() {
       window.removeEventListener("searchbiz_ads_updated", handleUpdate);
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, [hasFilters]);
+  }, [hasFilters, isAdmin]);
 
   const filteredResults = allAds.filter(ad => {
+    if (!isAdVisible(ad)) return false;
     let match = true;
     
     // We only have strict location at the moment mapped to 'ad.location' which maps to town or full string.
@@ -327,7 +335,7 @@ function DirectoryContent() {
   });
 
   const results = sortAdsWithPositions(hasFilters && serverFilteredAds !== null ? serverFilteredAds : filteredResults);
-  const paginatedResults = results.slice((currentPage - 1) * 12, currentPage * 12);
+  const paginatedResults = pageSize >= 999999 ? results : results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -565,17 +573,60 @@ function DirectoryContent() {
         </div>
       ) : (
         <>
+          {/* Display Controls & Stats */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-bold text-slate-700">
+              Showing <span className="text-emerald-700 font-extrabold">{results.length}</span> verified listing{results.length === 1 ? '' : 's'}
+              {hasFilters && <span className="text-slate-500 font-normal"> matching your search criteria</span>}
+            </span>
+
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-500 font-medium mr-1">Show per page:</span>
+              {[12, 24, 48, 100].map(sz => (
+                <button
+                  key={sz}
+                  onClick={() => {
+                    setPageSize(sz);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    pageSize === sz 
+                      ? 'bg-emerald-600 text-white shadow-sm' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {sz}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  setPageSize(999999);
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 rounded-lg font-black transition ${
+                  pageSize >= 999999 
+                    ? 'bg-emerald-700 text-white shadow-sm' 
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                All ({results.length})
+              </button>
+            </div>
+          </div>
+
           {/* Top Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={results.length}
-            pageSize={12}
-            onPageChange={(page) => {
-              setCurrentPage(page);
-              resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
-          />
+          {pageSize < 999999 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={results.length}
+              pageSize={pageSize}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {paginatedResults.map(ad => {
@@ -714,16 +765,18 @@ function DirectoryContent() {
           </div>
 
           {/* Bottom Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={results.length}
-            pageSize={12}
-            onPageChange={(page) => {
-              setCurrentPage(page);
-              resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
-          />
+          {pageSize < 999999 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={results.length}
+              pageSize={pageSize}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
+          )}
         </>
       )}
 

@@ -39,6 +39,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
   const [filteredAds, setFilteredAds] = useState<Ad[]>(propAds && propAds.length > 0 ? propAds : []);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(24);
   const listingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
         return currentAds.filter(ad => {
           if (!ad) return false;
           if ((ad as any).isActive === false) return false;
+          if ((ad as any).isApproved === false || (ad as any).status === 'pending') return false;
 
           const adLoc = (ad.location || "").toLowerCase().trim();
           const adCity = ((ad as any).city || "").toLowerCase().trim();
@@ -145,7 +147,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
 
   // Sort them so Positions ("top", "middle", "bottom") and standard Priority are honored
   const sortedAds = sortAdsWithPositions(filteredAds);
-  const paginatedAds = sortedAds.slice((currentPage - 1) * 12, currentPage * 12);
+  const paginatedAds = pageSize >= 999999 ? sortedAds : sortedAds.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div ref={listingsRef} className="w-full">
@@ -158,17 +160,59 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
         </div>
       ) : (
         <>
+          {/* Display Controls & Stats */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-bold text-slate-700">
+              Showing <span className="text-emerald-700 font-extrabold">{sortedAds.length}</span> verified listing{sortedAds.length === 1 ? '' : 's'} in <span className="text-slate-900 font-extrabold capitalize">{properName}</span>
+            </span>
+
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-500 font-medium mr-1">Show per page:</span>
+              {[12, 24, 48, 100].map(sz => (
+                <button
+                  key={sz}
+                  onClick={() => {
+                    setPageSize(sz);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    pageSize === sz 
+                      ? 'bg-emerald-600 text-white shadow-sm' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {sz}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  setPageSize(999999);
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 rounded-lg font-black transition ${
+                  pageSize >= 999999 
+                    ? 'bg-emerald-700 text-white shadow-sm' 
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                All ({sortedAds.length})
+              </button>
+            </div>
+          </div>
+
           {/* Top Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={sortedAds.length}
-            pageSize={12}
-            onPageChange={(page) => {
-              setCurrentPage(page);
-              listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
-          />
+          {pageSize < 999999 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedAds.length}
+              pageSize={pageSize}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mb-6 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {paginatedAds.map(ad => {
@@ -300,16 +344,18 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           </div>
 
           {/* Bottom Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalItems={sortedAds.length}
-            pageSize={12}
-            onPageChange={(page) => {
-              setCurrentPage(page);
-              listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
-          />
+          {pageSize < 999999 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedAds.length}
+              pageSize={pageSize}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                listingsRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="mt-8 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm"
+            />
+          )}
         </>
       )}
 

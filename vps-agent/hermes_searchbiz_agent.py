@@ -9980,7 +9980,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 ═══════════════════════════════════════════
 📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records across listings/ & databases...
 🛡️ <b>Deduplication Shield:</b> Syncing with SearchBiz index to prevent duplicate ads
-⚡ <b>High-Speed Bulk Uploads:</b> Batching 100 records per HTTP payload
+⚡ <b>High-Speed Bulk Uploads:</b> Batching up to 2,000 records per HTTP payload (Ultra-Fast Mode)
 📬 <b>Target Site:</b> https://searchbiz.co.za (0.03s Zero-Lag Mode)
 
 <i>Gathering harvested business records now...</i>"""
