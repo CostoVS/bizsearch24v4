@@ -46,7 +46,7 @@ function DirectoryContent() {
 
   const isAdVisible = useCallback((a: any) => {
     if (!a || a.isActive === false) return false;
-    if (!isAdmin && a.isApproved !== true && a.status !== 'approved') return false;
+    if (a.isApproved === false && a.status === 'pending' && !isAdmin) return false;
     return true;
   }, [isAdmin]);
 
