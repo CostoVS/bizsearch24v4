@@ -647,11 +647,11 @@ def get_active_api_base() -> str:
     env_url = os.getenv("SEARCHBIZ_API_URL", "").rstrip("/")
     candidates = [
         env_url,
-        "https://searchbiz.co.za",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:3005",
         "http://localhost:3000",
-        "http://localhost:3005"
+        "http://127.0.0.1:3005",
+        "http://localhost:3005",
+        "https://searchbiz.co.za"
     ]
 
     browser_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -9650,24 +9650,49 @@ GLOBAL_BULK_SYNC = {
 }
 
 def direct_db_insert_ad_batch(items: list) -> dict:
-    """High-speed Python fallback that reads .data/db.json, deduplicates and appends new ads directly."""
-    db_json_path = os.path.join(os.getcwd(), ".data", "db.json")
-    if not os.path.exists(os.path.dirname(db_json_path)):
-        os.makedirs(os.path.dirname(db_json_path), exist_ok=True)
+    """High-speed Python fallback that reads .data/db.json across all SearchBiz paths, deduplicates and appends new ads directly."""
+    candidate_db_paths = [
+        os.path.join(os.getcwd(), ".data", "db.json"),
+        os.path.join(os.getcwd(), "data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "db.json"),
+        "/var/www/searchbiz/.data/db.json",
+        "/var/www/searchbiz/data/db.json",
+        "/root/searchbiz/.data/db.json",
+        "/root/searchbiz/data/db.json",
+        "/opt/searchbiz/.data/db.json",
+        "/opt/searchbiz/data/db.json",
+        "/.data/db.json",
+        "/data/db.json"
+    ]
 
+    target_paths = []
+    for p in candidate_db_paths:
+        if os.path.exists(p) or os.path.exists(os.path.dirname(p)):
+            if p not in target_paths:
+                target_paths.append(p)
+
+    if not target_paths:
+        target_paths = [os.path.join(os.getcwd(), ".data", "db.json")]
+
+    primary_path = target_paths[0]
     existing_ads = []
     existing_data = {}
-    if os.path.exists(db_json_path):
-        try:
-            with open(db_json_path, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-                if isinstance(existing_data, dict):
-                    existing_ads = existing_data.get("ads", [])
-                else:
-                    existing_data = {}
-        except Exception:
-            existing_ads = []
-            existing_data = {}
+    
+    for p in target_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and isinstance(data.get("ads"), list):
+                        if len(data.get("ads", [])) > len(existing_ads):
+                            existing_ads = data["ads"]
+                            existing_data = data
+                            primary_path = p
+            except Exception:
+                pass
 
     existing_keys = set()
     for a in existing_ads:
@@ -9753,11 +9778,13 @@ def direct_db_insert_ad_batch(items: list) -> dict:
             "ads": combined_ads,
             "updatedAt": int(time.time() * 1000)
         }
-        try:
-            with open(db_json_path, "w", encoding="utf-8") as f:
-                json.dump(data_out, f, indent=2, ensure_ascii=False)
-        except Exception as we:
-            logger.debug(f"direct_db_insert_ad_batch write error: {we}")
+        for p in target_paths:
+            try:
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(data_out, f, indent=2, ensure_ascii=False)
+            except Exception as we:
+                logger.debug(f"direct_db_insert_ad_batch write error for {p}: {we}")
 
     return {
         "success": True,
@@ -9980,7 +10007,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 ═══════════════════════════════════════════
 📥 <b>Scanning Scraped Vault & Memory:</b> Discovering all harvested business records across listings/ & databases...
 🛡️ <b>Deduplication Shield:</b> Syncing with SearchBiz index to prevent duplicate ads
-⚡ <b>High-Speed Bulk Uploads:</b> Batching up to 2,000 records per HTTP payload (Ultra-Fast Mode)
+⚡ <b>High-Speed Bulk Uploads:</b> Batching 500 records per HTTP payload (Fast Stream Mode)
 📬 <b>Target Site:</b> https://searchbiz.co.za (0.03s Zero-Lag Mode)
 
 <i>Gathering harvested business records now...</i>"""
@@ -9996,11 +10023,11 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             GLOBAL_BULK_SYNC["is_running"] = False
             return
 
-        batch_size = 2000
+        batch_size = 500
         batches = [all_leads[i:i + batch_size] for i in range(0, total_leads, batch_size)]
         GLOBAL_BULK_SYNC["total_batches"] = len(batches)
 
-        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (up to 2,000 per batch).\n🚀 Launching ultra-high-speed batch upload stream to SearchBiz...")
+        send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} harvested records</b> across {len(batches)} batch payloads (500 per batch).\n🚀 Launching ultra-high-speed batch upload stream to SearchBiz...")
 
         for b_idx, batch_items in enumerate(batches, 1):
             if not GLOBAL_BULK_SYNC["is_running"]:
