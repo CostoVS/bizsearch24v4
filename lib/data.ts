@@ -267,14 +267,60 @@ export function saveTrashAds(trash: any[]): void {
 // In-memory cache to prevent repetitive JSON.parse and localStorage reads on every render
 let _memStoredAds: any[] | null = null;
 let _memStoredAdsRaw: string | null = null;
+let _memCategoryCounts: Record<string, number> | null = null;
+let _memCategoryCountsRaw: string | null = null;
 let _activeFetchAdsPromise: Promise<any[]> | null = null;
+
+export function saveCategoryAdsCounts(counts: Record<string, number> | undefined | null): void {
+  if (typeof window === "undefined" || !counts || typeof counts !== "object") return;
+  try {
+    const raw = JSON.stringify(counts);
+    _memCategoryCounts = counts;
+    _memCategoryCountsRaw = raw;
+    safeLocalStorage.setItem("searchbiz_category_counts", raw);
+  } catch (e) {}
+}
+
+export function getCategoryAdsCounts(): Record<string, number> {
+  if (typeof window !== "undefined") {
+    const raw = safeLocalStorage.getItem("searchbiz_category_counts");
+    if (raw) {
+      if (_memCategoryCounts && _memCategoryCountsRaw === raw) {
+        return _memCategoryCounts;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          _memCategoryCounts = parsed;
+          _memCategoryCountsRaw = raw;
+          return parsed;
+        }
+      } catch (e) {}
+    }
+  }
+  return _memCategoryCounts || {};
+}
+
+export function getCountForCategory(counts: Record<string, number>, catNameOrCode: string): number {
+  if (!counts || !catNameOrCode) return 0;
+  const trimmed = catNameOrCode.trim();
+  if (counts[trimmed] !== undefined) return counts[trimmed];
+  const lower = trimmed.toLowerCase();
+  if (counts[lower] !== undefined) return counts[lower];
+  const clean = stripCategoryNumber(trimmed);
+  if (clean && counts[clean] !== undefined) return counts[clean];
+  if (clean && counts[clean.toLowerCase()] !== undefined) return counts[clean.toLowerCase()];
+  const code = getCategoryCode(trimmed);
+  if (code && counts[code] !== undefined) return counts[code];
+  return 0;
+}
 
 export function getTotalAdsCount(): number {
   if (typeof window !== "undefined") {
     const storedCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
     if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
     }
   }
   const ads = getStoredAds();
@@ -370,6 +416,9 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         if (verCnt !== undefined) {
           safeLocalStorage.setItem("searchbiz_verified_count", String(verCnt));
         }
+        if (data.adminStats?.byCategory) {
+          saveCategoryAdsCounts(data.adminStats.byCategory);
+        }
 
         const currentLocal = getStoredAds();
         // Protect local ads if server returned empty due to sync lag
@@ -459,6 +508,15 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
         
         if (r.ok) {
           const res = await r.json();
+          if (typeof res.totalAdsCount === "number") {
+            safeLocalStorage.setItem("searchbiz_total_ads_count", String(res.totalAdsCount));
+          }
+          if (typeof res.verifiedCount === "number") {
+            safeLocalStorage.setItem("searchbiz_verified_count", String(res.verifiedCount));
+          }
+          if (res.adminStats?.byCategory) {
+            saveCategoryAdsCounts(res.adminStats.byCategory);
+          }
           if (res.data && Array.isArray(res.data.ads)) {
             _memStoredAds = res.data.ads;
             const resSlice = res.data.ads.length > 500 ? res.data.ads.slice(0, 500) : res.data.ads;
@@ -503,6 +561,48 @@ export function deleteAd(id: string, permanent: boolean = true): void {
   _memStoredAdsRaw = JSON.stringify(updated);
   safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(updated));
 
+  // Optimistically decrement total and category count immediately before server round-trip
+  if (targetAd) {
+    const prevTotal = getTotalAdsCount();
+    if (prevTotal > 0) {
+      safeLocalStorage.setItem("searchbiz_total_ads_count", String(Math.max(0, prevTotal - 1)));
+    }
+    const currentCounts = { ...getCategoryAdsCounts() };
+    const rawCat = String(targetAd.category || "").trim();
+    if (rawCat) {
+      const cleanCat = stripCategoryNumber(rawCat);
+      const keysToDec = new Set<string>([rawCat, rawCat.toLowerCase(), cleanCat, cleanCat.toLowerCase()]);
+      if (targetAd.categoryCode) keysToDec.add(String(targetAd.categoryCode));
+      if (targetAd.categoryGroup) {
+        keysToDec.add(String(targetAd.categoryGroup));
+        keysToDec.add(String(targetAd.categoryGroup).toLowerCase());
+      }
+      CATEGORIES_STRUCTURED.forEach(g => {
+        if (isSubcategoryOf(rawCat, g.name)) {
+          keysToDec.add(g.name);
+          keysToDec.add(g.cleanName);
+          keysToDec.add(g.name.toLowerCase());
+          keysToDec.add(g.cleanName.toLowerCase());
+          g.items.forEach(it => {
+            if (it.name.toLowerCase() === cleanCat.toLowerCase() || it.fullName.toLowerCase() === rawCat.toLowerCase()) {
+              keysToDec.add(it.id);
+              keysToDec.add(it.name);
+              keysToDec.add(it.fullName);
+              keysToDec.add(it.name.toLowerCase());
+              keysToDec.add(it.fullName.toLowerCase());
+            }
+          });
+        }
+      });
+      keysToDec.forEach(k => {
+        if (k && typeof currentCounts[k] === "number" && currentCounts[k] > 0) {
+          currentCounts[k] = Math.max(0, currentCounts[k] - 1);
+        }
+      });
+      saveCategoryAdsCounts(currentCounts);
+    }
+  }
+
   let updatedTrash = getTrashAds();
   let updatedDeleted = getDeletedAdIds();
 
@@ -524,7 +624,7 @@ export function deleteAd(id: string, permanent: boolean = true): void {
   window.dispatchEvent(new CustomEvent("searchbiz_ads_updated", { detail: { deletedId: id, permanent } }));
   window.dispatchEvent(new CustomEvent("searchbiz_trash_updated"));
 
-  // Tell server to purge or move to trash
+  // Tell server to purge or move to trash and sync exact server category counts
   fetch('/api/storage', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
@@ -536,7 +636,23 @@ export function deleteAd(id: string, permanent: boolean = true): void {
        permanentDelete: permanent,
        permanentDeletedIds: permanent ? [id] : []
      })
-  }).catch(err => {
+  })
+  .then(r => r.ok ? r.json() : null)
+  .then(res => {
+    if (res) {
+      if (typeof res.totalAdsCount === "number") {
+        safeLocalStorage.setItem("searchbiz_total_ads_count", String(res.totalAdsCount));
+      }
+      if (typeof res.verifiedCount === "number") {
+        safeLocalStorage.setItem("searchbiz_verified_count", String(res.verifiedCount));
+      }
+      if (res.adminStats?.byCategory) {
+        saveCategoryAdsCounts(res.adminStats.byCategory);
+      }
+      window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+    }
+  })
+  .catch(err => {
     console.error("Storage delete API sync error:", err);
   });
 }

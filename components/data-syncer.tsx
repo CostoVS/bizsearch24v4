@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from 'react';
-import { safeLocalStorage, cleanAdsArray } from '@/lib/data';
+import { safeLocalStorage, cleanAdsArray, saveCategoryAdsCounts } from '@/lib/data';
 
 export function DataSyncer() {
   useEffect(() => {
@@ -22,6 +22,9 @@ export function DataSyncer() {
             }
             if (verCnt !== undefined) {
               safeLocalStorage.setItem("searchbiz_verified_count", String(verCnt));
+            }
+            if (data.adminStats?.byCategory) {
+              saveCategoryAdsCounts(data.adminStats.byCategory);
             }
 
             // 1. Ads sync

@@ -6,7 +6,41 @@ import fs from 'fs';
 import path from 'path';
 import { cleanAdsArray } from '@/lib/clean-ad';
 import { resolveAdGeographyAndCategory } from '@/lib/ad-normalizer';
-import { isSubcategoryOf } from '@/lib/categories';
+import { isSubcategoryOf, CATEGORIES_STRUCTURED, stripCategoryNumber } from '@/lib/categories';
+
+interface CatIndexEntry {
+  keys: string[];
+}
+
+const CATEGORY_INDEX_MAP = new Map<string, CatIndexEntry>();
+for (const group of CATEGORIES_STRUCTURED) {
+  const groupKeys = Array.from(new Set([
+    group.name,
+    group.cleanName,
+    group.name.toLowerCase(),
+    group.cleanName.toLowerCase(),
+    `group_${group.code}`
+  ]));
+  const gEntry: CatIndexEntry = { keys: groupKeys };
+  CATEGORY_INDEX_MAP.set(group.name.toLowerCase().trim(), gEntry);
+  CATEGORY_INDEX_MAP.set(group.cleanName.toLowerCase().trim(), gEntry);
+  CATEGORY_INDEX_MAP.set(group.code, gEntry);
+
+  for (const item of group.items) {
+    const itemKeys = Array.from(new Set([
+      ...groupKeys,
+      item.fullName,
+      item.name,
+      item.id,
+      item.fullName.toLowerCase(),
+      item.name.toLowerCase()
+    ]));
+    const iEntry: CatIndexEntry = { keys: itemKeys };
+    CATEGORY_INDEX_MAP.set(item.id.toLowerCase().trim(), iEntry);
+    CATEGORY_INDEX_MAP.set(item.name.toLowerCase().trim(), iEntry);
+    CATEGORY_INDEX_MAP.set(item.fullName.toLowerCase().trim(), iEntry);
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -349,6 +383,7 @@ function isBotOrCsvListing(a: any): boolean {
 function getAdminStats(allAds: any[], cacheKey: number) {
   if (
     globalRef.adminStatsCache &&
+    globalRef.adminStatsCacheVersion === 2 &&
     globalRef.adminStatsCacheKey === cacheKey &&
     globalRef.adminStatsCacheLen === allAds.length
   ) {
@@ -410,8 +445,38 @@ function getAdminStats(allAds: any[], cacheKey: number) {
     const prov = (a.province || 'gauteng').toLowerCase();
     byProvince[prov] = (byProvince[prov] || 0) + 1;
 
-    const cat = a.category || 'Other';
-    byCategory[cat] = (byCategory[cat] || 0) + 1;
+    if (a.isActive !== false) {
+      const rawCat = String(a.category || 'Other').trim();
+      const lowerRaw = rawCat.toLowerCase();
+      const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
+      const catCode = String(a.categoryCode || '').toLowerCase().trim();
+
+      const matched =
+        (catCode ? CATEGORY_INDEX_MAP.get(catCode) : undefined) ||
+        CATEGORY_INDEX_MAP.get(lowerRaw) ||
+        CATEGORY_INDEX_MAP.get(cleanCat) ||
+        (a.categoryGroup ? CATEGORY_INDEX_MAP.get(String(a.categoryGroup).toLowerCase().trim()) : undefined);
+
+      if (matched) {
+        const keys = matched.keys;
+        for (let k = 0; k < keys.length; k++) {
+          const key = keys[k];
+          byCategory[key] = (byCategory[key] || 0) + 1;
+        }
+      } else {
+        byCategory[rawCat] = (byCategory[rawCat] || 0) + 1;
+        if (lowerRaw !== rawCat) {
+          byCategory[lowerRaw] = (byCategory[lowerRaw] || 0) + 1;
+        }
+        if (rawCat !== 'Other' && lowerRaw !== 'other') {
+          byCategory['Other'] = (byCategory['Other'] || 0) + 1;
+          byCategory['other'] = (byCategory['other'] || 0) + 1;
+        } else {
+          byCategory['Other'] = byCategory[rawCat];
+          byCategory['other'] = byCategory[rawCat];
+        }
+      }
+    }
   }
 
   const stats = {
@@ -434,6 +499,7 @@ function getAdminStats(allAds: any[], cacheKey: number) {
   };
 
   globalRef.adminStatsCache = stats;
+  globalRef.adminStatsCacheVersion = 2;
   globalRef.adminStatsCacheKey = cacheKey;
   globalRef.adminStatsCacheLen = allAds.length;
   return stats;
@@ -861,7 +927,9 @@ export async function POST(req: Request) {
             shouldDelete = p === targetProv || p.includes(targetProv);
           } else if (scope === 'category' && targetCat) {
             const c = (a.category || '').toLowerCase();
-            shouldDelete = c === targetCat || c.includes(targetCat);
+            const cleanTarget = stripCategoryNumber(targetCat).toLowerCase().trim();
+            const cleanAdCat = stripCategoryNumber(c).toLowerCase().trim();
+            shouldDelete = c === targetCat || cleanAdCat === cleanTarget || isSubcategoryOf(a.category || '', targetCat);
           }
           if (shouldDelete) {
             purgedIds.push(a.id);

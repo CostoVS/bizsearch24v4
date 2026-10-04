@@ -24,7 +24,14 @@ import {
   stripCategoryNumber, 
   getCategoryCode 
 } from '@/lib/categories';
-import { PROVINCES, getStoredAds } from '@/lib/data';
+import {
+  PROVINCES,
+  getCategoryAdsCounts,
+  saveCategoryAdsCounts,
+  getCountForCategory,
+  getTotalAdsCount,
+  safeLocalStorage
+} from '@/lib/data';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function CategoriesClient() {
@@ -34,7 +41,7 @@ export default function CategoriesClient() {
   const [adCategoryCounts, setAdCategoryCounts] = useState<Record<string, number>>({});
   const [allAdsCount, setAllAdsCount] = useState(0);
 
-  // Initialize all groups as expanded by default
+  // Initialize all groups as expanded by default and sync live category ad counts
   useEffect(() => {
     const initialExpanded: Record<string, boolean> = {};
     CATEGORIES_STRUCTURED.forEach(g => {
@@ -52,47 +59,54 @@ export default function CategoriesClient() {
       } catch (e) {}
     }
 
-    // Calculate listing counts for categories
-    if (typeof window !== 'undefined') {
+    const syncLocalCounts = () => {
+      setAdCategoryCounts(getCategoryAdsCounts());
+      setAllAdsCount(getTotalAdsCount());
+    };
+
+    const fetchServerCounts = async () => {
       try {
-        const stored = getStoredAds().filter((a: any) => a.isActive !== false);
-        setAllAdsCount(stored.length);
-        
-        const counts: Record<string, number> = {};
-        stored.forEach((ad: any) => {
-          const rawCat = (ad.category || '').toLowerCase().trim();
-          const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
-          const catCode = getCategoryCode(rawCat);
-
-          if (rawCat) {
-            counts[rawCat] = (counts[rawCat] || 0) + 1;
-            if (cleanCat && cleanCat !== rawCat) {
-              counts[cleanCat] = (counts[cleanCat] || 0) + 1;
-            }
-            
-            // Also count towards matching parent groups
-            CATEGORIES_STRUCTURED.forEach(g => {
-              const gName = g.name.toLowerCase().trim();
-              const gClean = g.cleanName.toLowerCase().trim();
-              const gCode = g.code;
-
-              const isGroupMatch = rawCat === gName || cleanCat === gClean || (catCode && catCode === gCode);
-              const isSubMatch = g.subcategories.some(s => {
-                const sClean = stripCategoryNumber(s).toLowerCase().trim();
-                return s.toLowerCase().trim() === rawCat || sClean === cleanCat || (catCode && getCategoryCode(s) === catCode);
-              });
-
-              if (isGroupMatch || isSubMatch) {
-                counts[g.name] = (counts[g.name] || 0) + 1;
-              }
-            });
-          }
-        });
-        setAdCategoryCounts(counts);
+        const res = await fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.adminStats?.byCategory) {
+          saveCategoryAdsCounts(data.adminStats.byCategory);
+          setAdCategoryCounts(data.adminStats.byCategory);
+        }
+        const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
+        if (typeof liveTotal === 'number') {
+          safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
+          setAllAdsCount(liveTotal);
+        }
       } catch (e) {
-        console.error('Failed to compute category counts:', e);
+        console.error('Failed to fetch live category counts:', e);
       }
-    }
+    };
+
+    syncLocalCounts();
+    fetchServerCounts();
+
+    const handleAdsUpdated = () => {
+      syncLocalCounts();
+      fetchServerCounts();
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === 'searchbiz_category_counts' ||
+        e.key === 'searchbiz_total_ads_count' ||
+        e.key === 'searchbiz_all_ads' ||
+        e.key === 'searchbiz_deleted_ads'
+      ) {
+        syncLocalCounts();
+      }
+    };
+
+    window.addEventListener('searchbiz_ads_updated', handleAdsUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('searchbiz_ads_updated', handleAdsUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const totalSubcategoriesCount = useMemo(() => {
@@ -202,7 +216,7 @@ export default function CategoriesClient() {
               </div>
               <div className="text-center px-3">
                 <div className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
-                  {allAdsCount > 0 ? allAdsCount : '1000s'}
+                  {allAdsCount.toLocaleString()}
                 </div>
                 <div className="text-[10px] sm:text-xs text-slate-400 uppercase font-semibold tracking-wider">
                   Active Listings
@@ -367,7 +381,7 @@ export default function CategoriesClient() {
           <div className="space-y-8">
             {filteredCategories.map((group) => {
               const isExpanded = expandedGroups[group.name] ?? true;
-              const count = adCategoryCounts[group.name] || adCategoryCounts[group.cleanName] || 0;
+              const count = getCountForCategory(adCategoryCounts, group.name);
 
               return (
                 <div
@@ -396,11 +410,13 @@ export default function CategoriesClient() {
                           <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
                             {group.items.length} {group.items.length === 1 ? 'Subcategory' : 'Subcategories'}
                           </span>
-                          {count > 0 && (
-                            <span className="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200">
-                              {count} {count === 1 ? 'Listing' : 'Listings'}
-                            </span>
-                          )}
+                          <span className={`text-[11px] font-mono font-extrabold px-2.5 py-0.5 rounded-full border ${
+                            count > 0
+                              ? 'bg-amber-100 text-amber-800 border-amber-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}>
+                            {count.toLocaleString()} {count === 1 ? 'Ad' : 'Ads'}
+                          </span>
                         </div>
                         <p className="text-xs text-slate-500 font-medium mt-1">
                           Parent Category {group.id}: Find certified professionals and verified suppliers in {group.cleanName.toLowerCase()}.
@@ -415,7 +431,7 @@ export default function CategoriesClient() {
                         className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl transition shadow-sm"
                         title={`Search all ${group.name} listings`}
                       >
-                        <span>Search All {group.id}</span>
+                        <span>Search All {group.id} ({count.toLocaleString()})</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
 
@@ -442,8 +458,10 @@ export default function CategoriesClient() {
                       >
                         <div className="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 bg-white">
                           {group.items.map((item) => {
-                            const subCount = adCategoryCounts[item.fullName.toLowerCase().trim()] || 
-                                             adCategoryCounts[item.name.toLowerCase().trim()] || 0;
+                            const subCount =
+                              getCountForCategory(adCategoryCounts, item.fullName) ||
+                              getCountForCategory(adCategoryCounts, item.name) ||
+                              getCountForCategory(adCategoryCounts, item.id);
 
                             return (
                               <Link
@@ -461,14 +479,15 @@ export default function CategoriesClient() {
                                   </span>
                                 </div>
                                 
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {subCount > 0 ? (
-                                    <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
-                                      {subCount}
-                                    </span>
-                                  ) : (
-                                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition-transform group-hover:translate-x-0.5" />
-                                  )}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                                    subCount > 0
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
+                                      : 'bg-slate-200/70 text-slate-500'
+                                  }`}>
+                                    {subCount.toLocaleString()}
+                                  </span>
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition-transform group-hover:translate-x-0.5" />
                                 </div>
                               </Link>
                             );

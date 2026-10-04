@@ -21,7 +21,12 @@ import {
   getCategoryIcon, 
   stripCategoryNumber, 
   getCategoryCode,
-  isSubcategoryOf
+  isSubcategoryOf,
+  getCategoryAdsCounts,
+  saveCategoryAdsCounts,
+  getCountForCategory,
+  getTotalAdsCount,
+  safeLocalStorage
 } from '@/lib/data';
 import { 
   KZN_SUBURBS, 
@@ -68,6 +73,80 @@ function SearchBarForm() {
   const [townSearch, setTownSearch] = useState('');
   const [suburbSearch, setSuburbSearch] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
+
+  // Live category ad counts (synced with server when ads are added or removed)
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [totalAdsCount, setTotalAdsCount] = useState<number>(0);
+
+  useEffect(() => {
+    const syncFromLocal = () => {
+      setCategoryCounts(getCategoryAdsCounts());
+      setTotalAdsCount(getTotalAdsCount());
+    };
+
+    const fetchLiveCounts = async () => {
+      try {
+        const res = await fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.adminStats?.byCategory) {
+          saveCategoryAdsCounts(data.adminStats.byCategory);
+          setCategoryCounts(data.adminStats.byCategory);
+        }
+        const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
+        if (typeof liveTotal === 'number') {
+          safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
+          setTotalAdsCount(liveTotal);
+        }
+      } catch (e) {}
+    };
+
+    syncFromLocal();
+    fetchLiveCounts();
+
+    const handleAdsUpdated = () => {
+      syncFromLocal();
+      fetchLiveCounts();
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === 'searchbiz_category_counts' ||
+        e.key === 'searchbiz_total_ads_count' ||
+        e.key === 'searchbiz_all_ads' ||
+        e.key === 'searchbiz_deleted_ads'
+      ) {
+        syncFromLocal();
+      }
+    };
+
+    window.addEventListener('searchbiz_ads_updated', handleAdsUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('searchbiz_ads_updated', handleAdsUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  // Refresh live counts from server whenever user opens the Category dropdown
+  useEffect(() => {
+    if (openDropdown === 'category') {
+      fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (!data) return;
+          if (data.adminStats?.byCategory) {
+            saveCategoryAdsCounts(data.adminStats.byCategory);
+            setCategoryCounts(data.adminStats.byCategory);
+          }
+          const liveTotal = data.adminStats?.active ?? data.globalTotalAdsCount ?? data.totalAdsCount;
+          if (typeof liveTotal === 'number') {
+            safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
+            setTotalAdsCount(liveTotal);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [openDropdown]);
 
   // Click outside to close any open dropdown popover
   useEffect(() => {
@@ -662,24 +741,36 @@ function SearchBarForm() {
             {/* Quick Popular Chips */}
             <div className="mb-2.5 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
               <span className="text-[10px] font-bold uppercase text-slate-400 whitespace-nowrap mr-0.5">Popular:</span>
-              {POPULAR_CATEGORIES.map(pop => (
-                <button
-                  key={pop.name}
-                  type="button"
-                  onClick={() => {
-                    setCategory(pop.name);
-                    setCustomCategory('');
-                    setOpenDropdown(null);
-                  }}
-                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap transition border ${
-                    category === pop.name 
-                      ? 'bg-emerald-600 text-white border-emerald-600' 
-                      : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200/80 hover:border-emerald-300'
-                  }`}
-                >
-                  {pop.label}
-                </button>
-              ))}
+              {POPULAR_CATEGORIES.map(pop => {
+                const popCount = getCountForCategory(categoryCounts, pop.name);
+                return (
+                  <button
+                    key={pop.name}
+                    type="button"
+                    onClick={() => {
+                      setCategory(pop.name);
+                      setCustomCategory('');
+                      setOpenDropdown(null);
+                    }}
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap transition border flex items-center gap-1.5 ${
+                      category === pop.name 
+                        ? 'bg-emerald-600 text-white border-emerald-600' 
+                        : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200/80 hover:border-emerald-300'
+                    }`}
+                  >
+                    <span>{pop.label}</span>
+                    <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded-md font-extrabold ${
+                      category === pop.name
+                        ? 'bg-white/25 text-white'
+                        : popCount > 0
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-200/80 text-slate-500'
+                    }`}>
+                      {popCount.toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Live Search Input */}
@@ -711,21 +802,29 @@ function SearchBarForm() {
                   setCustomCategory('');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-3 py-2.5 rounded-xl font-bold flex items-center justify-between transition ${
+                className={`w-full text-left px-3 py-2.5 rounded-xl font-bold flex items-center justify-between gap-2 transition ${
                   !category ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-emerald-50 text-slate-800'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📂</span>
-                  <span>All Categories (Search Across Everything)</span>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="text-base shrink-0">📂</span>
+                  <span className="leading-snug">All Categories (Search Across Everything)</span>
                 </div>
-                {!category && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  <span className={`font-mono text-[11px] font-extrabold px-2 py-0.5 rounded-lg ${
+                    !category ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {totalAdsCount.toLocaleString()}
+                  </span>
+                  {!category && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                </div>
               </button>
 
               {/* Category Groups with Subcategories ALWAYS Visible */}
               {filteredCategoriesStructured.map((group) => {
                 const isGroupSelected = category === group.name;
                 const icon = group.icon;
+                const groupCount = getCountForCategory(categoryCounts, group.name);
 
                 return (
                   <div key={group.name} className="bg-slate-50/90 border border-slate-200/90 rounded-2xl overflow-hidden transition-all shadow-xs">
@@ -750,7 +849,18 @@ function SearchBarForm() {
                           <span className="text-base shrink-0">{icon}</span>
                           <span className="font-extrabold break-words leading-tight">{group.name}</span>
                         </div>
-                        {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0 ml-1.5" />}
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <span className={`font-mono text-[11px] font-extrabold px-2 py-0.5 rounded-lg border ${
+                            isGroupSelected
+                              ? 'bg-white/25 text-white border-white/30'
+                              : groupCount > 0
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : 'bg-white text-slate-500 border-slate-200'
+                          }`}>
+                            {groupCount.toLocaleString()}
+                          </span>
+                          {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0" />}
+                        </div>
                       </button>
                     </div>
 
@@ -758,6 +868,10 @@ function SearchBarForm() {
                     <div className="p-2.5 bg-white grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {group.items.map((item) => {
                         const isSubSelected = category === item.fullName || category === item.name;
+                        const itemCount =
+                          getCountForCategory(categoryCounts, item.fullName) ||
+                          getCountForCategory(categoryCounts, item.name) ||
+                          getCountForCategory(categoryCounts, item.id);
                         return (
                           <button
                             key={item.id}
@@ -767,7 +881,7 @@ function SearchBarForm() {
                               setCustomCategory('');
                               setOpenDropdown(null);
                             }}
-                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition min-w-0 border ${
+                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between gap-2 transition min-w-0 border ${
                               isSubSelected
                                 ? 'bg-emerald-600 text-white font-bold border-emerald-600 shadow-xs'
                                 : 'text-slate-800 hover:bg-emerald-50 hover:text-emerald-950 bg-slate-50/80 border-slate-200/60 hover:border-emerald-300'
@@ -781,7 +895,18 @@ function SearchBarForm() {
                               </span>
                               <span className="break-words leading-snug">{item.name}</span>
                             </div>
-                            {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1.5" />}
+                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                              <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                                isSubSelected
+                                  ? 'bg-white/25 text-white'
+                                  : itemCount > 0
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
+                                    : 'bg-slate-200/70 text-slate-500'
+                              }`}>
+                                {itemCount.toLocaleString()}
+                              </span>
+                              {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                            </div>
                           </button>
                         );
                       })}
@@ -797,12 +922,23 @@ function SearchBarForm() {
                   setCategory('Other');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-3 py-2 rounded-xl font-bold flex items-center justify-between transition ${
+                className={`w-full text-left px-3 py-2 rounded-xl font-bold flex items-center justify-between gap-2 transition ${
                   category === 'Other' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-emerald-50 text-slate-800'
                 }`}
               >
                 <span>Other / Custom Category (Specify)</span>
-                {category === 'Other' && <Check className="w-3.5 h-3.5 text-white" />}
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                    category === 'Other'
+                      ? 'bg-white/25 text-white'
+                      : getCountForCategory(categoryCounts, 'Other') > 0
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-200/80 text-slate-500'
+                  }`}>
+                    {getCountForCategory(categoryCounts, 'Other').toLocaleString()}
+                  </span>
+                  {category === 'Other' && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                </div>
               </button>
 
               {filteredCategoriesStructured.length === 0 && (

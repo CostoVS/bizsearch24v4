@@ -13,7 +13,7 @@ import AdDetailModal from "@/components/ad-detail-modal";
 import AdminDuplicateManager from "@/components/admin-duplicate-manager";
 import { formatWhatsAppLink } from "@/components/area-request-card";
 import { SA_PROVINCES, getPostalCodeForTown, findSuburbAndTown } from "@/lib/locations";
-import { CATEGORIES, CATEGORIES_STRUCTURED } from "@/lib/categories";
+import { CATEGORIES, CATEGORIES_STRUCTURED, stripCategoryNumber } from "@/lib/categories";
 import { cleanAd, cleanAdsArray, isCustomerReviewOrGarbage } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
 import { parseCsvLine, parseCsvText, parseCsvRowToRecord, ParsedCsvBusinessRecord } from "@/lib/csv-parser";
@@ -248,6 +248,9 @@ export default function AdminDashboard() {
         }
         if (data.adminStats) {
           setAdminStats(data.adminStats);
+          if (data.adminStats.byCategory) {
+            localStorage.setItem("searchbiz_category_counts", JSON.stringify(data.adminStats.byCategory));
+          }
         }
         return data;
       }
@@ -836,6 +839,9 @@ export default function AdminDashboard() {
         const data = await res.json();
         if (data.adminStats) {
           setAdminStats(data.adminStats);
+          if (data.adminStats.byCategory) {
+            localStorage.setItem("searchbiz_category_counts", JSON.stringify(data.adminStats.byCategory));
+          }
         }
         if (typeof data.globalTotalAdsCount === "number") {
           localStorage.setItem("searchbiz_total_ads_count", String(data.globalTotalAdsCount));
@@ -4049,12 +4055,15 @@ export default function AdminDashboard() {
                       onChange={(e) => setAdSearchProvince(e.target.value)}
                       className="w-full bg-slate-50 text-slate-800 rounded-xl px-3 py-2.5 text-xs border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold"
                     >
-                      <option value="all">All Provinces (RSA)</option>
-                      {SA_PROVINCES.map((prov) => (
-                        <option key={prov.slug} value={prov.slug}>
-                          {prov.name}
-                        </option>
-                      ))}
+                      <option value="all">All Provinces (RSA) ({(adminStats?.total ?? ads.length).toLocaleString()})</option>
+                      {SA_PROVINCES.map((prov) => {
+                        const pCnt = adminStats?.byProvince?.[prov.slug] ?? ads.filter(a => (a.province || "").toLowerCase() === prov.slug).length;
+                        return (
+                          <option key={prov.slug} value={prov.slug}>
+                            {prov.name} ({pCnt.toLocaleString()})
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -4078,12 +4087,18 @@ export default function AdminDashboard() {
                       onChange={(e) => setAdSearchCategory(e.target.value)}
                       className="w-full bg-slate-50 text-slate-800 rounded-xl px-3 py-2.5 text-xs border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold"
                     >
-                      <option value="all">All Service Categories</option>
-                      {Array.from(new Set([...CATEGORIES, ...ads.map(a => a.category).filter(Boolean)])).sort().map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
+                      <option value="all">All Service Categories ({(adminStats?.total ?? ads.length).toLocaleString()})</option>
+                      {Array.from(new Set([...CATEGORIES, ...ads.map(a => a.category).filter(Boolean)])).sort().map((cat) => {
+                        const cCnt =
+                          adminStats?.byCategory?.[cat] ??
+                          adminStats?.byCategory?.[stripCategoryNumber(cat)] ??
+                          ads.filter(a => a.category === cat).length;
+                        return (
+                          <option key={cat} value={cat}>
+                            {cat} ({cCnt.toLocaleString()})
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 </div>
