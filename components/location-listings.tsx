@@ -111,11 +111,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
       };
 
       const initialFiltered = performFilter(allListings);
-      if (initialFiltered.length > 0) {
-        setFilteredAds(initialFiltered);
-      } else if (propAds && propAds.length > 0) {
-        setFilteredAds(propAds);
-      }
+      setFilteredAds(initialFiltered);
 
       // Query server specifically for this location to ensure all ads show up without arbitrary cap
       const normLower = properName.toLowerCase().trim();
@@ -126,11 +122,9 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
       fetch(`/api/storage?${targetQuery}limit=all`, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
-          if (data && Array.isArray(data.ads) && data.ads.length > 0) {
+          if (data && Array.isArray(data.ads)) {
             const serverFiltered = performFilter(data.ads as Ad[]);
-            if (serverFiltered.length > 0) {
-              setFilteredAds(serverFiltered);
-            }
+            setFilteredAds(serverFiltered);
           }
         })
         .catch(() => {});

@@ -655,21 +655,39 @@ def get_active_api_base() -> str:
     ]
 
     browser_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    headers = {
+        "User-Agent": browser_ua,
+        "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}",
+        "x-api-key": SEARCHBIZ_BOT_SECRET,
+        "Accept": "application/json"
+    }
+
+    # SSL context ignoring verification errors for internal/self-signed VPS calls
+    ssl_ctx = None
+    try:
+        import ssl
+        ssl_ctx = ssl._create_unverified_context()
+    except Exception:
+        pass
 
     for base in candidates:
         if not base:
             continue
         try:
-            req = urllib.request.Request(
-                f"{base}/api/bot/ad?limit=1",
-                headers={
-                    "User-Agent": browser_ua,
-                    "Authorization": f"Bearer {SEARCHBIZ_BOT_SECRET}",
-                    "x-api-key": SEARCHBIZ_BOT_SECRET,
-                    "Accept": "application/json"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=8) as res:
+            # Try requests if available
+            try:
+                import requests
+                r = requests.get(f"{base}/api/bot/ad?limit=1", headers=headers, timeout=6, verify=False)
+                if r.status_code == 200:
+                    logger.info(f"Connected to live SearchBiz API at {base}")
+                    _CACHED_API_URL = base
+                    return base
+            except Exception:
+                pass
+
+            # Fallback to urllib with SSL context
+            req = urllib.request.Request(f"{base}/api/bot/ad?limit=1", headers=headers)
+            with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as res:
                 if res.status == 200:
                     logger.info(f"Connected to live SearchBiz API at {base}")
                     _CACHED_API_URL = base
@@ -9620,10 +9638,31 @@ def api_request(endpoint: str, method: str = "GET", payload: dict = None):
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
+    
+    # 1. First attempt with requests library (handles keep-alive, SSL bypass, JSON serialization)
+    try:
+        import requests
+        if method.upper() == "POST":
+            res = requests.post(url, json=payload, headers=headers, timeout=60, verify=False)
+        elif method.upper() == "DELETE":
+            res = requests.delete(url, json=payload, headers=headers, timeout=60, verify=False)
+        else:
+            res = requests.get(url, params=payload, headers=headers, timeout=60, verify=False)
+        return res.json()
+    except Exception as req_err:
+        logger.debug(f"requests library call note ({req_err}), attempting urllib fallback...")
+
+    # 2. Resilient fallback with standard library urllib + SSL context
+    try:
+        import ssl
+        ssl_ctx = ssl._create_unverified_context()
+    except Exception:
+        ssl_ctx = None
+
     try:
         data_bytes = json.dumps(payload).encode("utf-8") if payload else None
         req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         body = he.read().decode("utf-8")

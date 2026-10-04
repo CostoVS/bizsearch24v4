@@ -475,37 +475,53 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
   }
 }
 
-export function deleteAd(id: string): void {
-  if (typeof window === "undefined") return;
+export function deleteAd(id: string, permanent: boolean = true): void {
+  if (typeof window === "undefined" || !id) return;
   const current = getStoredAds();
   const targetAd = current.find(ad => ad.id === id);
   const updated = current.filter(ad => ad.id !== id);
   
-  // Add to trash list
-  const currentTrash = getTrashAds();
-  const alreadyInTrash = currentTrash.find(t => t.id === id);
-  const updatedTrash = alreadyInTrash 
-    ? currentTrash 
-    : (targetAd ? [{ ...targetAd, deletedAt: new Date().toISOString() }, ...currentTrash] : currentTrash);
-
-  // Update local
+  // In-memory cache update
+  _memStoredAds = updated;
+  _memStoredAdsRaw = JSON.stringify(updated);
   safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(updated));
-  safeLocalStorage.setItem("searchbiz_trash_ads", JSON.stringify(updatedTrash));
-  
-  window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+
+  let updatedTrash = getTrashAds();
+  let updatedDeleted = getDeletedAdIds();
+
+  if (permanent) {
+    if (!updatedDeleted.includes(id)) {
+      updatedDeleted = [...updatedDeleted, id];
+      safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(updatedDeleted));
+    }
+    updatedTrash = updatedTrash.filter(t => t && t.id !== id);
+    safeLocalStorage.setItem("searchbiz_trash_ads", JSON.stringify(updatedTrash));
+  } else {
+    const alreadyInTrash = updatedTrash.find(t => t.id === id);
+    if (!alreadyInTrash && targetAd) {
+      updatedTrash = [{ ...targetAd, deletedAt: new Date().toISOString() }, ...updatedTrash];
+      safeLocalStorage.setItem("searchbiz_trash_ads", JSON.stringify(updatedTrash));
+    }
+  }
+
+  window.dispatchEvent(new CustomEvent("searchbiz_ads_updated", { detail: { deletedId: id, permanent } }));
   window.dispatchEvent(new CustomEvent("searchbiz_trash_updated"));
 
-  // Tell server to move to trash
+  // Tell server to purge or move to trash
   fetch('/api/storage', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
      body: JSON.stringify({ 
        ads: updated,
        trashAds: updatedTrash,
+       deletedAds: updatedDeleted,
        deleteAdId: id,
-       permanentDelete: false
+       permanentDelete: permanent,
+       permanentDeletedIds: permanent ? [id] : []
      })
-  }).catch(console.error);
+  }).catch(err => {
+    console.error("Storage delete API sync error:", err);
+  });
 }
 
 export async function restoreAdFromTrash(id: string): Promise<{ success: boolean; ad?: any }> {

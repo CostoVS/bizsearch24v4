@@ -1,81 +1,6 @@
 {
   "ads": [
     {
-      "id": "ad-agent-1790958533287-0",
-      "userId": "agent-bot",
-      "isActive": true,
-      "title": "The Lazy Moose Restaurant & Lodge",
-      "category": "Full-Service Restaurants",
-      "location": "umkomaas",
-      "city": "Umkomaas",
-      "province": "kwazulu-natal",
-      "suburb": "",
-      "serviceAreas": [
-        {
-          "province": "kwazulu-natal",
-          "provinceName": "KwaZulu-Natal",
-          "town": "Umkomaas",
-          "suburb": "",
-          "postalCode": "4170"
-        }
-      ],
-      "description": "Local business in Umkomaas.",
-      "tradingHours": "Contact business for operating hours",
-      "servicesOffered": "Restaurant",
-      "preferredContact": "Phone",
-      "showCallOption": true,
-      "verified": false,
-      "isPremium": false,
-      "isSponsor": false,
-      "isClaimed": false,
-      "plan": "free",
-      "source": "agent_bot",
-      "image": "",
-      "images": [],
-      "address": "57, Strathcona Drive, Umkomaas",
-      "phone": "+27873538233",
-      "whatsapp": "+27873538233",
-      "email": "",
-      "website": "",
-      "createdAt": "2026-10-02T16:28:53.287010",
-      "updatedAt": "2026-10-02T16:28:53.287010",
-      "isVerified": false,
-      "provinceName": "KwaZulu-Natal",
-      "town": "Umkomaas",
-      "postalCode": "4170",
-      "categoryCode": "11.7",
-      "categoryGroup": "FOOD & DINING",
-      "parentCategory": "11. FOOD & DINING",
-      "categoryFullName": "11.7 Full-Service Restaurants",
-      "keywords": [
-        "11.7",
-        "11",
-        "full",
-        "service",
-        "restaurants",
-        "food",
-        "dining",
-        "kwazulu-natal",
-        "umkomaas",
-        "4170",
-        "the",
-        "lazy",
-        "moose",
-        "restaurant",
-        "lodge",
-        "57",
-        "strathcona",
-        "drive",
-        "local",
-        "business"
-      ],
-      "searchTags": "11.7 11 full service restaurants food dining kwazulu-natal umkomaas 4170 the lazy moose restaurant lodge 57 strathcona drive local business",
-      "slug": "full-service-restaurants-umkomaas-kwazulu-natal-ad-agent-1790958533287-0",
-      "isApproved": true,
-      "status": "approved",
-      "approvalStatus": "approved"
-    },
-    {
       "id": "ad-agent-1790958533287-1",
       "userId": "agent-bot",
       "isActive": true,
@@ -1193,5 +1118,8 @@
   ],
   "banners": [],
   "messages": [],
-  "updatedAt": 1790958533287
+  "updatedAt": 1790958533287,
+  "deletedAds": [
+    "ad-agent-1790958533287-0"
+  ]
 }

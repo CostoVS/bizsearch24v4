@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getStoredAds, saveStoredAds, deleteAd, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
+import { getStoredAds, saveStoredAds, deleteAd, getDeletedAdIds, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
 import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
 import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search, MessageSquare, AlertCircle, Compass, Send, CheckCircle2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
@@ -153,18 +153,28 @@ function DirectoryContent() {
       }
     });
 
-    const handleUpdate = () => {
+    const handleUpdate = (e: any) => {
+      const deletedId = e?.detail?.deletedId;
+      const deletedSet = new Set(getDeletedAdIds());
+      if (deletedId) deletedSet.add(deletedId);
+
+      // Instantly filter out deleted ad from both state caches
+      setAllAds((prev: any[]) => prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)));
+      setServerFilteredAds((prev: any[] | null) => prev ? prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)) : null);
+      setSelectedAd((prev: any) => (prev && deletedSet.has(prev.id) ? null : prev));
+
       if (!hasFilters) {
         const fresh = getStoredAds().filter(isAdVisible);
-        if (fresh.length > 0) {
-          setAllAds(fresh);
-        }
+        setAllAds(fresh);
       }
     };
     const handleStorageChange = (e: StorageEvent) => {
-      if (!hasFilters && (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads")) {
-        const fresh = getStoredAds().filter(isAdVisible);
-        if (fresh.length > 0) {
+      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
+        const deletedSet = new Set(getDeletedAdIds());
+        setAllAds((prev: any[]) => prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)));
+        setServerFilteredAds((prev: any[] | null) => prev ? prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)) : null);
+        if (!hasFilters) {
+          const fresh = getStoredAds().filter(isAdVisible);
           setAllAds(fresh);
         }
       }

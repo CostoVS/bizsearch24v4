@@ -437,7 +437,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
         `ADMIN ACTIONS WARNING: Are you sure you want to PERMANENTLY REMOVE AND PURGE "${ad.title}"?`,
       )
     ) {
-      deleteAd(ad.id);
+      deleteAd(ad.id, true);
       alert("Modified successfully. PURGED from all directories.");
       onClose();
     }
