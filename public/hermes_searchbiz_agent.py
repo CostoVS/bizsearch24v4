@@ -638,7 +638,7 @@ def scheduler_worker():
 # ============================================================================
 def get_active_api_base() -> str:
     """Finds the reachable SearchBiz endpoint dynamically.
-    Tests public domain (https://searchbiz.co.za), host-mapped port 3000, 3005, etc.
+    Tests host-mapped Docker port 3005, local port 3000, and public domain (https://searchbiz.co.za).
     """
     global _CACHED_API_URL
     if _CACHED_API_URL:
@@ -646,11 +646,11 @@ def get_active_api_base() -> str:
 
     env_url = os.getenv("SEARCHBIZ_API_URL", "").rstrip("/")
     candidates = [
-        env_url,
-        "http://127.0.0.1:3000",
-        "http://localhost:3000",
         "http://127.0.0.1:3005",
         "http://localhost:3005",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        env_url,
         "https://searchbiz.co.za"
     ]
 
@@ -677,7 +677,7 @@ def get_active_api_base() -> str:
             # Try requests if available
             try:
                 import requests
-                r = requests.get(f"{base}/api/bot/ad?limit=1", headers=headers, timeout=6, verify=False)
+                r = requests.get(f"{base}/api/bot/ad?limit=1", headers=headers, timeout=4, verify=False)
                 if r.status_code == 200:
                     logger.info(f"Connected to live SearchBiz API at {base}")
                     _CACHED_API_URL = base
@@ -687,7 +687,7 @@ def get_active_api_base() -> str:
 
             # Fallback to urllib with SSL context
             req = urllib.request.Request(f"{base}/api/bot/ad?limit=1", headers=headers)
-            with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as res:
+            with urllib.request.urlopen(req, timeout=4, context=ssl_ctx) as res:
                 if res.status == 200:
                     logger.info(f"Connected to live SearchBiz API at {base}")
                     _CACHED_API_URL = base
@@ -9691,6 +9691,8 @@ GLOBAL_BULK_SYNC = {
 def direct_db_insert_ad_batch(items: list) -> dict:
     """High-speed Python fallback that reads .data/db.json across all SearchBiz paths, deduplicates and appends new ads directly."""
     candidate_db_paths = [
+        "/home/thehightable/bizsearch24v4/.data/db.json",
+        "/home/thehightable/bizsearch24v4/data/db.json",
         os.path.join(os.getcwd(), ".data", "db.json"),
         os.path.join(os.getcwd(), "data", "db.json"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".data", "db.json"),
@@ -9703,9 +9705,20 @@ def direct_db_insert_ad_batch(items: list) -> dict:
         "/root/searchbiz/data/db.json",
         "/opt/searchbiz/.data/db.json",
         "/opt/searchbiz/data/db.json",
+        "/opt/hermes-searchbiz/.data/db.json",
+        "/opt/hermes-searchbiz/data/db.json",
         "/.data/db.json",
         "/data/db.json"
     ]
+
+    # Dynamic glob discovery across /home and /var/www
+    try:
+        import glob
+        for matched in glob.glob("/home/*/*search*/.data/db.json") + glob.glob("/home/*/*search*/data/db.json") + glob.glob("/var/www/*search*/.data/db.json"):
+            if matched not in candidate_db_paths:
+                candidate_db_paths.insert(0, matched)
+    except Exception:
+        pass
 
     target_paths = []
     for p in candidate_db_paths:
