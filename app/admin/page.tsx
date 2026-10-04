@@ -199,7 +199,63 @@ export default function AdminDashboard() {
   const [adTypeFilter, setAdTypeFilter] = useState<"all" | "pending_approval" | "approved" | "free" | "premium" | "sponsor" | "claimed" | "unclaimed" | "remove" | "claimed_free">("all");
   const [isSyncingAds, setIsSyncingAds] = useState(false);
   const [adPage, setAdPage] = useState(1);
-  const ITEMS_PER_PAGE = 12;
+  const ITEMS_PER_PAGE = 50;
+
+  // Server-backed Admin pagination & real-time full-database statistics (supports 1,000,000+ ads)
+  const [adminPageAds, setAdminPageAds] = useState<any[] | null>(null);
+  const [adminFilteredTotal, setAdminFilteredTotal] = useState<number | null>(null);
+  const [adminStats, setAdminStats] = useState<{
+    total: number;
+    active: number;
+    pendingApproval: number;
+    approved: number;
+    verified: number;
+    free: number;
+    premium: number;
+    sponsor: number;
+    claimed: number;
+    unclaimed: number;
+    remove: number;
+    claimedFree: number;
+    csvAndBot: number;
+    preference: number;
+    byProvince: Record<string, number>;
+    byCategory: Record<string, number>;
+  } | null>(null);
+
+  const refreshAdminServerAds = async (overridePage?: number) => {
+    try {
+      const targetPage = overridePage ?? adPage;
+      const params = new URLSearchParams();
+      params.set("includeInactive", "true");
+      params.set("page", String(targetPage));
+      params.set("pageSize", String(ITEMS_PER_PAGE));
+      if (adSearchTerm.trim()) params.set("q", adSearchTerm.trim());
+      if (adSearchProvince !== "all") params.set("province", adSearchProvince);
+      if (adSearchCity.trim()) params.set("town", adSearchCity.trim());
+      if (adSearchCategory !== "all") params.set("category", adSearchCategory);
+      if (adSourceFilter !== "all") params.set("source", adSourceFilter);
+      if (adTypeFilter !== "all") params.set("adType", adTypeFilter);
+
+      const res = await fetch(`/api/storage?${params.toString()}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.ads)) {
+          setAdminPageAds(data.ads);
+        }
+        if (typeof data.totalAdsCount === "number") {
+          setAdminFilteredTotal(data.totalAdsCount);
+        }
+        if (data.adminStats) {
+          setAdminStats(data.adminStats);
+        }
+        return data;
+      }
+    } catch (err) {
+      console.error("Failed to fetch admin server ads:", err);
+    }
+    return null;
+  };
 
   // Master Bulk Delete & Purge Control State
   const REQUIRED_DELETE_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_DELETE_PASSWORD || "Delete6604211989!?";
@@ -224,6 +280,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     setAdPage(1);
   }, [adSearchTerm, adSearchProvince, adSearchCity, adSearchCategory, adSourceFilter, adTypeFilter]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const timer = setTimeout(() => {
+      refreshAdminServerAds();
+    }, adSearchTerm || adSearchCity ? 180 : 0);
+    return () => clearTimeout(timer);
+  }, [activeTab, adPage, adSearchTerm, adSearchProvince, adSearchCity, adSearchCategory, adSourceFilter, adTypeFilter]);
 
   const handleAutoGenerateSEO = async () => {
     if (!slugCity.trim()) {
@@ -761,111 +825,161 @@ export default function AdminDashboard() {
     }
   };
 
+  const executeAdminAction = async (payload: Record<string, any>) => {
+    try {
+      const res = await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.adminStats) {
+          setAdminStats(data.adminStats);
+        }
+        if (typeof data.globalTotalAdsCount === "number") {
+          localStorage.setItem("searchbiz_total_ads_count", String(data.globalTotalAdsCount));
+        }
+        if (typeof data.globalVerifiedCount === "number") {
+          localStorage.setItem("searchbiz_verified_count", String(data.globalVerifiedCount));
+        }
+        await refreshAdminServerAds();
+        window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+        return data;
+      }
+    } catch (err) {
+      console.error("Admin action failed:", err);
+    }
+    return null;
+  };
+
   const removeAd = (id: string) => {
     if (confirm("Are you sure you want to remove this advertisement listing?")) {
       const updatedAds = ads.filter(a => a.id !== id);
       setAds(updatedAds);
+      if (adminPageAds) {
+        setAdminPageAds(adminPageAds.filter(a => a.id !== id));
+      }
 
       // Save to centralized database key
       deleteAd(id);
+      setTimeout(() => refreshAdminServerAds(), 250);
       console.log("Listing successfully removed and purged from server registers.");
     }
   };
 
   const toggleAdActive = (adId: string) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return { ...a, isActive: (a as any).isActive === false ? true : false };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
+    const target = (adminPageAds || ads).find(a => a.id === adId);
+    const nextActive = target ? (target as any).isActive === false : true;
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, isActive: nextActive } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates: { isActive: nextActive } });
   };
 
   const changeAdClaimStatus = (adId: string, isClaimed: boolean) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return { ...a, isClaimed };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
-    console.log("Claim status updated successfully!");
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, isClaimed } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates: { isClaimed } });
   };
 
   const changeAdClaimIntention = (adId: string, value: string) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return { ...a, claimIntention: value || null };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
-    console.log("Claim intention updated successfully!");
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, claimIntention: value || null } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates: { claimIntention: value || null } });
   };
 
-  const handleToggleApprove = (adId: string, approved: boolean) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return {
-          ...a,
-          isApproved: approved,
-          status: approved ? 'approved' : 'pending',
-          approvalStatus: approved ? 'approved' : 'pending',
-          verified: false
-        };
-      }
-      return a;
+  const handleToggleApprove = async (adId: string, approved: boolean) => {
+    const applyUpdate = (list: any[]) =>
+      list.map(a =>
+        a.id === adId
+          ? {
+              ...a,
+              isApproved: approved,
+              adminApproved: approved,
+              status: approved ? "approved" : "pending",
+              approvalStatus: approved ? "approved" : "pending",
+            }
+          : a
+      );
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    await executeAdminAction({
+      adminAction: "toggle_approve",
+      adId,
+      approved,
     });
-    setAds(updated);
-    saveStoredAds(updated);
   };
 
-  const handleBulkApproveSelected = (ids: string[]) => {
+  const handleBulkApproveSelected = async (ids: string[]) => {
     if (!ids || ids.length === 0) return;
     const idSet = new Set(ids);
-    const updated = ads.map(a => {
-      if (idSet.has(a.id)) {
-        return {
-          ...a,
-          isApproved: true,
-          status: 'approved',
-          approvalStatus: 'approved'
-        };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
+    const applyUpdate = (list: any[]) =>
+      list.map(a =>
+        idSet.has(a.id)
+          ? {
+              ...a,
+              isApproved: true,
+              adminApproved: true,
+              status: "approved",
+              approvalStatus: "approved",
+            }
+          : a
+      );
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
     setSelectedAdIds([]);
-    alert(`Successfully approved ${ids.length} listing(s)!`);
+    await executeAdminAction({
+      adminAction: "approve_selected",
+      adIds: ids,
+    });
+    alert(`Successfully approved ${ids.length.toLocaleString()} listing(s)!`);
   };
 
-  const handleApproveAllPending = () => {
-    const pendingAds = ads.filter(a => a.isApproved !== true && a.status !== 'approved');
-    if (pendingAds.length === 0) {
+  const handleApproveAllPending = async () => {
+    const pendingCount =
+      adminStats?.pendingApproval ??
+      ads.filter(a => a.adminApproved !== true && !a.verified && !a.isPremium && !a.isSponsor).length;
+    if (pendingCount === 0) {
       alert("All listings are already approved! No pending listings found.");
       return;
     }
-    if (!confirm(`Are you sure you want to approve ALL ${pendingAds.length} pending listing(s)? They will become active and searchable across all locations and categories.`)) return;
+    if (
+      !confirm(
+        `Are you sure you want to approve ALL ${pendingCount.toLocaleString()} pending listing(s) in the database?`
+      )
+    )
+      return;
 
-    const updated = ads.map(a => {
-      if (a.isApproved !== true && a.status !== 'approved') {
-        return {
-          ...a,
-          isApproved: true,
-          status: 'approved',
-          approvalStatus: 'approved'
-        };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
-    alert(`Approved all ${pendingAds.length} pending listing(s)!`);
+    setIsSyncingAds(true);
+    try {
+      await executeAdminAction({ adminAction: "approve_all_pending" });
+      alert(`Approved all ${pendingCount.toLocaleString()} pending listing(s)!`);
+    } finally {
+      setIsSyncingAds(false);
+    }
+  };
+
+  const handleResetAllUnverifiedToPending = async () => {
+    const totalApproved = adminStats?.approved ?? 0;
+    if (
+      !confirm(
+        `Reset all unverified / unclaimed listings back to Pending Approval status so you can review and approve them manually?`
+      )
+    )
+      return;
+    setIsSyncingAds(true);
+    try {
+      await executeAdminAction({ adminAction: "unapprove_all_unverified" });
+      alert(`All unverified listings (${totalApproved.toLocaleString()}) have been reset to Pending Approval.`);
+    } finally {
+      setIsSyncingAds(false);
+    }
   };
 
   const getFilteredAds = () => {
@@ -983,11 +1097,11 @@ export default function AdminDashboard() {
 
       // 5. Source filter: CSV Uploads vs Preference Ads
       if (adSourceFilter === "csv") {
-        if (!ad.id?.startsWith("csv_") && !ad.id?.startsWith("csv-")) {
+        if (!ad.id?.startsWith("csv_") && !ad.id?.startsWith("csv-") && !ad.id?.startsWith("ad-agent-")) {
           return false;
         }
       } else if (adSourceFilter === "preference") {
-        if (ad.id?.startsWith("csv_") || ad.id?.startsWith("csv-")) {
+        if (ad.id?.startsWith("csv_") || ad.id?.startsWith("csv-") || ad.id?.startsWith("ad-agent-")) {
           return false;
         }
       }
@@ -1008,19 +1122,48 @@ export default function AdminDashboard() {
       } else if (adTypeFilter === "claimed_free") {
         if (ad.isClaimed !== true || ad.claimIntention !== "free") return false;
       } else if (adTypeFilter === "pending_approval") {
-        if (ad.isApproved === true || ad.status === 'approved') return false;
+        if (ad.adminApproved === true || ad.verified === true || ad.isPremium === true || ad.isSponsor === true) return false;
       } else if (adTypeFilter === "approved") {
-        if (ad.isApproved !== true && ad.status !== 'approved') return false;
+        if (ad.adminApproved !== true && ad.verified !== true && ad.isPremium !== true && ad.isSponsor !== true) return false;
       }
 
       return true;
     });
   };
 
+  const getAdsToPurgeCount = (): number => {
+    if (adminStats) {
+      switch (deleteScope) {
+        case "all":
+          return adminStats.total;
+        case "province": {
+          const slug = deleteSelectedProvince.toLowerCase();
+          return adminStats.byProvince?.[slug] ?? 0;
+        }
+        case "category": {
+          const cat = deleteSelectedCategory.toLowerCase();
+          return adminStats.byCategory?.[cat] ?? 0;
+        }
+        case "csv":
+          return adminStats.csvAndBot;
+        case "unclaimed":
+          return adminStats.unclaimed;
+        case "filtered":
+          return adminFilteredTotal ?? getFilteredAds().length;
+        case "selected":
+          return selectedAdIds.length;
+        default:
+          return 0;
+      }
+    }
+    return getAdsToPurge().length;
+  };
+
   const getAdsToPurge = () => {
+    const sourceList = adminPageAds || ads;
     switch (deleteScope) {
       case "all":
-        return ads;
+        return sourceList;
       case "province": {
         const selectedProvObj = SA_PROVINCES.find(
           (p) => p.slug === deleteSelectedProvince || p.name.toLowerCase() === deleteSelectedProvince.toLowerCase()
@@ -1030,7 +1173,7 @@ export default function AdminDashboard() {
         const targetName = selectedProvObj.name.toLowerCase();
         const norm = (s: string) => s.replace(/[^a-z0-9]/g, "");
 
-        return ads.filter(ad => {
+        return sourceList.filter(ad => {
           const adProv = (ad.province || "").toLowerCase();
           const adLoc = (ad.location || "").toLowerCase();
           const adAddr = (ad.address || "").toLowerCase();
@@ -1068,7 +1211,7 @@ export default function AdminDashboard() {
       case "category": {
         const targetCat = deleteSelectedCategory.trim().toLowerCase();
         const normTarget = targetCat.replace(/[^a-z0-9]/g, "");
-        return ads.filter(ad => {
+        return sourceList.filter(ad => {
           const adCat = (ad.category || "").trim().toLowerCase();
           const adSubCat = (ad.subcategory || "").trim().toLowerCase();
           const normAdCat = adCat.replace(/[^a-z0-9]/g, "");
@@ -1080,13 +1223,13 @@ export default function AdminDashboard() {
         });
       }
       case "csv":
-        return ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-"));
+        return sourceList.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-") || a.id?.startsWith("ad-agent-"));
       case "unclaimed":
-        return ads.filter(a => a.isClaimed !== true && !a.verified);
+        return sourceList.filter(a => a.isClaimed !== true && !a.verified);
       case "filtered":
-        return getFilteredAds();
+        return adminPageAds || getFilteredAds();
       case "selected":
-        return ads.filter(a => selectedAdIds.includes(a.id));
+        return sourceList.filter(a => selectedAdIds.includes(a.id));
       default:
         return [];
     }
@@ -1103,22 +1246,35 @@ export default function AdminDashboard() {
       return;
     }
 
-    const targetedAds = getAdsToPurge();
-    if (targetedAds.length === 0) {
+    const purgeCount = getAdsToPurgeCount();
+    if (purgeCount === 0) {
       alert("No advertisements matched the selected deletion criteria.");
       return;
     }
 
-    const targetIds = targetedAds.map(a => a.id);
     setIsDeletingBulk(true);
     try {
-      const remaining = await purgeStoredAdsBulk(targetIds);
-      setAds(remaining);
-      setSelectedAdIds(prev => prev.filter(id => !targetIds.includes(id)));
+      const targetIds =
+        deleteScope === "selected"
+          ? selectedAdIds
+          : deleteScope === "filtered"
+          ? (adminPageAds || getFilteredAds()).map(a => a.id)
+          : [];
+      const res = await executeAdminAction({
+        adminAction: "bulk_purge",
+        scope: deleteScope,
+        province: deleteSelectedProvince,
+        category: deleteSelectedCategory,
+        adIds: targetIds,
+      });
+      setSelectedAdIds([]);
       setIsDeleteModalOpen(false);
       setDeletePasswordInput("");
       setDeletePasswordError("");
-      alert(`Operation Complete: Successfully deleted and purged ${targetIds.length} listing(s) from SearchBiz database. Remaining live ads: ${remaining.length}`);
+      const remainingCount = res?.globalTotalAdsCount ?? 0;
+      alert(
+        `Operation Complete: Successfully deleted and purged ${purgeCount.toLocaleString()} listing(s) from SearchBiz database. Remaining live ads: ${remainingCount.toLocaleString()}`
+      );
     } catch (e: any) {
       alert(`Error executing purge: ${e?.message || "Server issue occurred."}`);
     } finally {
@@ -1133,67 +1289,49 @@ export default function AdminDashboard() {
     const isBannerValue = value === "BANNER";
     const isVideoValue = value === "VIDEO";
 
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return {
-          ...a,
-          isPremium: isPremiumValue,
-          isSponsor: isSponsorValue,
-          isSpotlight: isSpotlightValue,
-          isBannerPlacement: isBannerValue,
-          isVideoPromo: isVideoValue,
-          verified: isPremiumValue
-        };
-      }
-      return a;
-    });
+    const updates = {
+      isPremium: isPremiumValue,
+      isSponsor: isSponsorValue,
+      isSpotlight: isSpotlightValue,
+      isBannerPlacement: isBannerValue,
+      isVideoPromo: isVideoValue,
+      verified: isPremiumValue,
+      adminApproved: isPremiumValue,
+      isApproved: isPremiumValue,
+    };
 
-    setAds(updated);
-
-    // Save to centralized database key
-    saveStoredAds(updated);
-    console.log("Ad tiering changed successfully!");
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, ...updates } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates });
   };
 
   const changeAdPosition = (adId: string, value: string) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return {
-          ...a,
-          fixedPosition: value
-        };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
-    console.log("Ad position changed successfully!");
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, fixedPosition: value } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates: { fixedPosition: value } });
   };
 
   const changeAdSectionTarget = (adId: string, value: string) => {
-    const updated = ads.map(a => {
-      if (a.id === adId) {
-        return {
-          ...a,
-          sectionTarget: value
-        };
-      }
-      return a;
-    });
-    setAds(updated);
-    saveStoredAds(updated);
-    console.log("Ad section target changed successfully!");
+    const applyUpdate = (list: any[]) =>
+      list.map(a => (a.id === adId ? { ...a, sectionTarget: value } : a));
+    setAds(prev => applyUpdate(prev));
+    if (adminPageAds) setAdminPageAds(prev => (prev ? applyUpdate(prev) : prev));
+    executeAdminAction({ adminAction: "update_ad_field", adId, updates: { sectionTarget: value } });
   };
 
   const renderAdPaginationControls = (position: "top" | "bottom") => {
-    const filtered = getFilteredAds();
-    const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+    const totalCount = adminFilteredTotal !== null ? adminFilteredTotal : getFilteredAds().length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
     const safePage = Math.min(Math.max(1, adPage), totalPages);
 
-    if (filtered.length === 0) return null;
+    if (totalCount === 0) return null;
 
     const startItem = (safePage - 1) * ITEMS_PER_PAGE + 1;
-    const endItem = Math.min(safePage * ITEMS_PER_PAGE, filtered.length);
+    const endItem = Math.min(safePage * ITEMS_PER_PAGE, totalCount);
 
     const pages = [];
     const maxPagesToShow = 5;
@@ -1213,10 +1351,10 @@ export default function AdminDashboard() {
       }`}>
         <div className="flex items-center gap-2 text-slate-600">
           <span className="font-semibold">
-            Showing <strong>{startItem}–{endItem}</strong> of <strong>{filtered.length}</strong> ads
+            Showing <strong>{startItem.toLocaleString()}–{endItem.toLocaleString()}</strong> of <strong>{totalCount.toLocaleString()}</strong> ads
           </span>
           <span className="text-slate-300">|</span>
-          <span className="font-bold text-slate-800">Page {safePage} of {totalPages}</span>
+          <span className="font-bold text-slate-800">Page {safePage.toLocaleString()} of {totalPages.toLocaleString()}</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -3277,7 +3415,13 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Active Ads</p>
-                <p className="text-3xl font-bold text-slate-900">{ads.length}</p>
+                <p className="text-3xl font-bold text-slate-900">{(adminStats?.total ?? ads.length).toLocaleString()}</p>
+                {adminStats && (
+                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                    <span className="text-emerald-600">{adminStats.approved.toLocaleString()} Approved</span> •{" "}
+                    <span className="text-amber-600">{adminStats.pendingApproval.toLocaleString()} Pending</span>
+                  </p>
+                )}
               </div>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center hover:border-amber-200 transition-colors">
@@ -3703,13 +3847,19 @@ export default function AdminDashboard() {
                    onClick={async () => {
                      setIsSyncingAds(true);
                      try {
-                       const fresh = await fetchAndStoreAds();
+                       const [fresh, serverData] = await Promise.all([
+                         fetchAndStoreAds(),
+                         refreshAdminServerAds(),
+                       ]);
                        if (fresh && Array.isArray(fresh) && fresh.length > 0) {
                          setAds(fresh);
-                         alert(`Synced successfully with server database! Live listing count: ${fresh.length}`);
-                       } else {
-                         alert("Database synced. Total ads: " + ads.length);
                        }
+                       const totalLive = serverData?.adminStats?.total ?? serverData?.globalTotalAdsCount ?? fresh?.length ?? ads.length;
+                       const approvedLive = serverData?.adminStats?.approved ?? 0;
+                       const pendingLive = serverData?.adminStats?.pendingApproval ?? 0;
+                       alert(
+                         `Synced successfully with server database! Total listings: ${totalLive.toLocaleString()} (${approvedLive.toLocaleString()} Approved, ${pendingLive.toLocaleString()} Pending Approval)`
+                       );
                      } catch (err: any) {
                        alert("Sync error: " + (err?.message || "Could not fetch central data"));
                      } finally {
@@ -3722,7 +3872,7 @@ export default function AdminDashboard() {
                    title="Force refresh listings from central cloud database"
                  >
                    <RefreshCw className={`w-4 h-4 ${isSyncingAds ? 'animate-spin text-emerald-600' : 'text-slate-600'}`} />
-                   <span>{isSyncingAds ? 'Syncing...' : `Sync DB (${ads.length})`}</span>
+                   <span>{isSyncingAds ? 'Syncing...' : `Sync DB (${(adminStats?.total ?? ads.length).toLocaleString()})`}</span>
                  </button>
                  <button
                    onClick={() => {
@@ -3744,8 +3894,11 @@ export default function AdminDashboard() {
 
             {/* Dynamic Pending Approval Alert Banner */}
             {(() => {
-              const pendingListings = ads.filter(a => a.isApproved !== true && a.status !== 'approved');
-              if (pendingListings.length === 0) return null;
+              const pendingCount =
+                adminStats?.pendingApproval ??
+                ads.filter(a => a.adminApproved !== true && !a.verified && !a.isPremium && !a.isSponsor).length;
+              const approvedCount = adminStats?.approved ?? 0;
+              if (pendingCount === 0 && approvedCount === 0) return null;
               return (
                 <div className="mx-8 mt-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3.5">
@@ -3753,36 +3906,52 @@ export default function AdminDashboard() {
                       ⏳
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
-                          Admin Authorization Required
+                          Admin Verification & Approval Control
                         </span>
                         <span className="text-xs font-bold text-amber-900 font-mono">
-                          {pendingListings.length} unapproved
+                          {pendingCount.toLocaleString()} unapproved • {approvedCount.toLocaleString()} approved
                         </span>
                       </div>
                       <h3 className="font-bold text-slate-900 text-base mt-0.5">
-                        {pendingListings.length} Listing{pendingListings.length > 1 ? 's' : ''} Pending Your Approval
+                        {pendingCount > 0
+                          ? `${pendingCount.toLocaleString()} Listing${pendingCount > 1 ? 's' : ''} Pending Your Verification & Approval`
+                          : `All ${approvedCount.toLocaleString()} Listings Approved by Admin`}
                       </h3>
                       <p className="text-xs text-slate-600 mt-0.5">
-                        Nothing is approved or public until you authorize it. Click &quot;Approve All&quot; below or review listings individually.
+                        Uploaded listings appear in the directory as Unverified until you approve them. Approve all in 1 click or review and approve individually below.
                       </p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
-                    <button
-                      onClick={handleApproveAllPending}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Approve All {pendingListings.length} Pending
-                    </button>
-                    <button
-                      onClick={() => setAdTypeFilter('pending_approval')}
-                      className="bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-950 text-xs font-bold px-4 py-3 rounded-xl transition cursor-pointer w-full sm:w-auto justify-center"
-                    >
-                      Filter Pending Only
-                    </button>
+                    {pendingCount > 0 && (
+                      <button
+                        onClick={handleApproveAllPending}
+                        disabled={isSyncingAds}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center disabled:opacity-60"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Approve All {pendingCount.toLocaleString()} Pending
+                      </button>
+                    )}
+                    {pendingCount > 0 && (
+                      <button
+                        onClick={() => setAdTypeFilter('pending_approval')}
+                        className="bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-950 text-xs font-bold px-4 py-3 rounded-xl transition cursor-pointer w-full sm:w-auto justify-center"
+                      >
+                        Filter Pending Only
+                      </button>
+                    )}
+                    {approvedCount > 0 && (
+                      <button
+                        onClick={handleResetAllUnverifiedToPending}
+                        disabled={isSyncingAds}
+                        className="bg-white hover:bg-rose-50 border border-slate-300 text-slate-700 hover:text-rose-700 text-xs font-bold px-4 py-3 rounded-xl transition cursor-pointer w-full sm:w-auto justify-center"
+                      >
+                        Reset Unverified to Pending
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -3802,21 +3971,21 @@ export default function AdminDashboard() {
                     onClick={() => { setAdSourceFilter("all"); }}
                     className={`px-4 py-3 rounded-2xl font-bold text-xs transition-all duration-200 flex items-center gap-2 ${adSourceFilter === "all" ? "bg-slate-950 text-white shadow-lg shadow-slate-900/10 scale-[1.02]" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"}`}
                   >
-                    All Ads Database ({ads.length})
+                    All Ads Database ({(adminStats?.total ?? ads.length).toLocaleString()})
                   </button>
                   <button
                     type="button"
                     onClick={() => { setAdSourceFilter("preference"); }}
                     className={`px-4 py-3 rounded-2xl font-bold text-xs transition-all duration-200 flex items-center gap-2 ${adSourceFilter === "preference" ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/10 scale-[1.02]" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"}`}
                   >
-                    Preferences / Manual Ads ({ads.filter(a => !a.id?.startsWith("csv_") && !a.id?.startsWith("csv-")).length})
+                    Preferences / Manual Ads ({(adminStats?.preference ?? ads.filter(a => !a.id?.startsWith("csv_") && !a.id?.startsWith("csv-") && !a.id?.startsWith("ad-agent-")).length).toLocaleString()})
                   </button>
                   <button
                     type="button"
                     onClick={() => { setAdSourceFilter("csv"); }}
                     className={`px-4 py-3 rounded-2xl font-bold text-xs transition-all duration-200 flex items-center gap-2 ${adSourceFilter === "csv" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10 scale-[1.02]" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"}`}
                   >
-                    Bulk CSV Uploaded Ads ({ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-")).length})
+                    Bulk CSV & Bot Uploaded Ads ({(adminStats?.csvAndBot ?? ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-") || a.id?.startsWith("ad-agent-")).length).toLocaleString()})
                   </button>
                 </div>
               </div>
@@ -3828,16 +3997,16 @@ export default function AdminDashboard() {
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { id: "all", label: "All Tiers / States", color: "bg-slate-800 text-slate-50 hover:bg-slate-900", count: ads.length },
-                    { id: "pending_approval", label: "⏳ Pending Approval", color: "bg-amber-100 text-amber-950 hover:bg-amber-200 border border-amber-300 font-extrabold", count: ads.filter(a => a.isApproved !== true && a.status !== 'approved').length },
-                    { id: "approved", label: "✓ Approved by Admin", color: "bg-emerald-100 text-emerald-950 hover:bg-emerald-200 border border-emerald-300 font-extrabold", count: ads.filter(a => a.isApproved === true || a.status === 'approved').length },
-                    { id: "free", label: "Basic Free Ads", color: "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100", count: ads.filter(a => !a.isPremium && !a.isSponsor).length },
-                    { id: "premium", label: "Premium Verified", color: "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100", count: ads.filter(a => a.isPremium && !a.isSponsor).length },
-                    { id: "sponsor", label: "Featured Sponsor", color: "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-100", count: ads.filter(a => a.isSponsor).length },
-                    { id: "claimed", label: "Claimed Listings", color: "bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-100", count: ads.filter(a => a.isClaimed === true).length },
-                    { id: "unclaimed", label: "Unclaimed Listings", color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300", count: ads.filter(a => a.isClaimed !== true && !a.verified).length },
-                    { id: "remove", label: "Removal Requests ⚠", color: "bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-100", count: ads.filter(a => a.claimIntention === "remove").length },
-                    { id: "claimed_free", label: "Claimed & Request Free", color: "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-100", count: ads.filter(a => a.isClaimed === true && a.claimIntention === "free").length },
+                    { id: "all", label: "All Tiers / States", color: "bg-slate-800 text-slate-50 hover:bg-slate-900", count: adminStats?.total ?? ads.length },
+                    { id: "pending_approval", label: "⏳ Pending Approval", color: "bg-amber-100 text-amber-950 hover:bg-amber-200 border border-amber-300 font-extrabold", count: adminStats?.pendingApproval ?? ads.filter(a => a.adminApproved !== true && !a.verified && !a.isPremium && !a.isSponsor).length },
+                    { id: "approved", label: "✓ Approved by Admin", color: "bg-emerald-100 text-emerald-950 hover:bg-emerald-200 border border-emerald-300 font-extrabold", count: adminStats?.approved ?? ads.filter(a => a.adminApproved === true || a.verified === true || a.isPremium === true || a.isSponsor === true).length },
+                    { id: "free", label: "Basic Free Ads", color: "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100", count: adminStats?.free ?? ads.filter(a => !a.isPremium && !a.isSponsor).length },
+                    { id: "premium", label: "Premium Verified", color: "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100", count: adminStats?.premium ?? ads.filter(a => a.isPremium && !a.isSponsor).length },
+                    { id: "sponsor", label: "Featured Sponsor", color: "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-100", count: adminStats?.sponsor ?? ads.filter(a => a.isSponsor).length },
+                    { id: "claimed", label: "Claimed Listings", color: "bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-100", count: adminStats?.claimed ?? ads.filter(a => a.isClaimed === true).length },
+                    { id: "unclaimed", label: "Unclaimed Listings", color: "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300", count: adminStats?.unclaimed ?? ads.filter(a => a.isClaimed !== true && !a.verified).length },
+                    { id: "remove", label: "Removal Requests ⚠", color: "bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-100", count: adminStats?.remove ?? ads.filter(a => a.claimIntention === "remove").length },
+                    { id: "claimed_free", label: "Claimed & Request Free", color: "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-100", count: adminStats?.claimedFree ?? ads.filter(a => a.isClaimed === true && a.claimIntention === "free").length },
                   ].map((btn) => (
                     <button
                       key={btn.id}
@@ -3845,7 +4014,7 @@ export default function AdminDashboard() {
                       onClick={() => setAdTypeFilter(btn.id as any)}
                       className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${adTypeFilter === btn.id ? "bg-slate-900 border border-slate-900 text-white shadow-sm scale-105" : btn.color}`}
                     >
-                      {btn.label} <span className="text-[10px] opacity-75 font-mono">({btn.count})</span>
+                      {btn.label} <span className="text-[10px] opacity-75 font-mono">({btn.count.toLocaleString()})</span>
                     </button>
                   ))}
                 </div>
@@ -3924,7 +4093,7 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between mt-3 text-xs bg-emerald-50 text-emerald-800 px-4 py-2.5 rounded-xl border border-emerald-100">
                     <div className="flex items-center gap-1.5 font-medium">
                       <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
-                      <span>Showing <strong>{getFilteredAds().length}</strong> filtered listings out of <strong>{ads.length}</strong> available records.</span>
+                      <span>Showing <strong>{(adminFilteredTotal ?? getFilteredAds().length).toLocaleString()}</strong> filtered listings out of <strong>{(adminStats?.total ?? ads.length).toLocaleString()}</strong> available records.</span>
                     </div>
                     <button
                       type="button"
@@ -3948,9 +4117,13 @@ export default function AdminDashboard() {
             {/* Table & Pagination Controls */}
             {(() => {
               const allFilteredAds = getFilteredAds();
-              const totalAdPages = Math.max(1, Math.ceil(allFilteredAds.length / ITEMS_PER_PAGE));
+              const totalCount = adminFilteredTotal !== null ? adminFilteredTotal : allFilteredAds.length;
+              const totalAdPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
               const currentAdPage = Math.min(Math.max(1, adPage), totalAdPages);
-              const paginatedAdsList = allFilteredAds.slice((currentAdPage - 1) * ITEMS_PER_PAGE, currentAdPage * ITEMS_PER_PAGE);
+              const paginatedAdsList =
+                adminPageAds !== null
+                  ? adminPageAds
+                  : allFilteredAds.slice((currentAdPage - 1) * ITEMS_PER_PAGE, currentAdPage * ITEMS_PER_PAGE);
 
               return (
                 <>
@@ -3966,12 +4139,12 @@ export default function AdminDashboard() {
                         </span>
                         <button
                           onClick={() => {
-                            const allFilteredIds = allFilteredAds.map(a => a.id);
-                            setSelectedAdIds(allFilteredIds);
+                            const pageIds = paginatedAdsList.map((a: any) => a.id);
+                            setSelectedAdIds(Array.from(new Set([...selectedAdIds, ...pageIds])));
                           }}
                           className="text-[11px] font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer ml-2"
                         >
-                          Select All {allFilteredAds.length} Filtered Listings
+                          Select All {paginatedAdsList.length} on Page
                         </button>
                       </div>
                       <div className="flex items-center gap-2">
@@ -4034,7 +4207,13 @@ export default function AdminDashboard() {
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
                         {paginatedAdsList.length > 0 ? (
-                          paginatedAdsList.map((ad: any) => (
+                          paginatedAdsList.map((ad: any) => {
+                            const isAdApprovedByAdmin =
+                              ad.adminApproved === true ||
+                              ad.verified === true ||
+                              ad.isPremium === true ||
+                              ad.isSponsor === true;
+                            return (
                             <tr key={ad.id} className={`hover:bg-slate-50/50 transition-colors ${selectedAdIds.includes(ad.id) ? "bg-rose-50/30" : ""}`}>
                               <td className="px-4 py-5 text-center">
                                 <input
@@ -4060,13 +4239,13 @@ export default function AdminDashboard() {
                                    <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-1.5 mb-1">
                                         <span className="text-sm font-bold text-slate-900 truncate block max-w-[200px]">{ad.title}</span>
-                                        {ad.isApproved === true || ad.status === 'approved' ? (
+                                        {isAdApprovedByAdmin ? (
                                           <span className="px-1.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-800 text-[8px] font-black rounded uppercase tracking-wider">Approved ✓</span>
                                         ) : (
                                           <span className="px-1.5 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 text-[8px] font-black rounded uppercase tracking-wider">Pending Approval ⏳</span>
                                         )}
-                                        {ad.id?.startsWith("csv-") || ad.id?.startsWith("csv_") ? (
-                                          <span className="px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-black rounded uppercase tracking-wider">CSV Upload</span>
+                                        {ad.id?.startsWith("csv-") || ad.id?.startsWith("csv_") || ad.id?.startsWith("ad-agent-") ? (
+                                          <span className="px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-black rounded uppercase tracking-wider">CSV / Bot Upload</span>
                                         ) : (
                                           <span className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-150 text-emerald-700 text-[8px] font-black rounded uppercase tracking-wider">Preference</span>
                                         )}
@@ -4212,7 +4391,7 @@ export default function AdminDashboard() {
                               </td>
                               <td className="px-8 py-5 whitespace-nowrap text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                   {ad.isApproved === true || ad.status === 'approved' ? (
+                                   {isAdApprovedByAdmin ? (
                                      <button
                                        onClick={() => handleToggleApprove(ad.id, false)}
                                        className="px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-amber-800 bg-slate-100 hover:bg-amber-50 rounded-lg border border-slate-200 transition cursor-pointer"
@@ -4234,7 +4413,8 @@ export default function AdminDashboard() {
                                 </div>
                               </td>
                             </tr>
-                          ))
+                            );
+                          })
                         ) : (
                           <tr>
                             <td colSpan={6} className="px-8 py-12 text-center text-slate-400 text-sm">
@@ -4832,7 +5012,7 @@ export default function AdminDashboard() {
                         <Trash2 className="w-4 h-4 text-rose-600" /> Delete ALL Listings
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                        {ads.length} total
+                        {(adminStats?.total ?? ads.length).toLocaleString()} total
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500">
@@ -4898,14 +5078,14 @@ export default function AdminDashboard() {
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Database className="w-4 h-4 text-amber-600" /> CSV Uploads Only
+                        <Database className="w-4 h-4 text-amber-600" /> CSV / Bot Uploads Only
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-900">
-                        {ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-")).length} ads
+                        {(adminStats?.csvAndBot ?? ads.filter(a => a.id?.startsWith("csv_") || a.id?.startsWith("csv-") || a.id?.startsWith("ad-agent-")).length).toLocaleString()} ads
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Purges only batch-imported CSV listings, keeping preference/manual ads safe.
+                      Purges only batch-imported CSV/Bot listings, keeping preference/manual ads safe.
                     </p>
                   </button>
 
@@ -4924,7 +5104,7 @@ export default function AdminDashboard() {
                         <ShieldAlert className="w-4 h-4 text-slate-600" /> Unclaimed Ads Only
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
-                        {ads.filter(a => a.isClaimed !== true && !a.verified).length} ads
+                        {(adminStats?.unclaimed ?? ads.filter(a => a.isClaimed !== true && !a.verified).length).toLocaleString()} ads
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500">
@@ -4947,7 +5127,7 @@ export default function AdminDashboard() {
                         <Filter className="w-4 h-4 text-purple-600" /> Current Filtered Results
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-100 text-purple-900">
-                        {getFilteredAds().length} ads
+                        {(adminFilteredTotal ?? getFilteredAds().length).toLocaleString()} ads
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500">
@@ -4994,14 +5174,16 @@ export default function AdminDashboard() {
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
                     {SA_PROVINCES.map((prov) => {
-                      const count = ads.filter(a => {
-                        const p = (a.province || "").toLowerCase();
-                        const l = (a.location || "").toLowerCase();
-                        return p === prov.slug || p === prov.name.toLowerCase() || l.includes(prov.name.toLowerCase());
-                      }).length;
+                      const count =
+                        adminStats?.byProvince?.[prov.slug.toLowerCase()] ??
+                        ads.filter(a => {
+                          const p = (a.province || "").toLowerCase();
+                          const l = (a.location || "").toLowerCase();
+                          return p === prov.slug || p === prov.name.toLowerCase() || l.includes(prov.name.toLowerCase());
+                        }).length;
                       return (
                         <option key={prov.slug} value={prov.slug}>
-                          {prov.name} ({count} listings in database)
+                          {prov.name} ({count.toLocaleString()} listings in database)
                         </option>
                       );
                     })}
@@ -5021,10 +5203,12 @@ export default function AdminDashboard() {
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                   >
                     {CATEGORIES.map((cat) => {
-                      const count = ads.filter(a => (a.category || "").toLowerCase() === cat.toLowerCase()).length;
+                      const count =
+                        adminStats?.byCategory?.[cat.toLowerCase()] ??
+                        ads.filter(a => (a.category || "").toLowerCase() === cat.toLowerCase()).length;
                       return (
                         <option key={cat} value={cat}>
-                          {cat} ({count} listings in database)
+                          {cat} ({count.toLocaleString()} listings in database)
                         </option>
                       );
                     })}
@@ -5035,22 +5219,23 @@ export default function AdminDashboard() {
               {/* Target Impact Summary Banner */}
               {(() => {
                 const targetList = getAdsToPurge();
+                const targetCount = getAdsToPurgeCount();
                 return (
                   <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                       <div className="text-xs space-y-1">
                         <p className="font-bold text-rose-950">
-                          {targetList.length === 0
+                          {targetCount === 0
                             ? "No advertisements match the chosen deletion filter."
-                            : `Warning: This operation will permanently delete and purge ${targetList.length} listing(s).`}
+                            : `Warning: This operation will permanently delete and purge ${targetCount.toLocaleString()} listing(s).`}
                         </p>
                         {targetList.length > 0 && (
                           <div className="text-[11px] text-rose-850 font-medium">
                             <span className="text-slate-600">Sample of targeted businesses: </span>
                             <strong>
                               {targetList.slice(0, 4).map(a => a.title).join(", ")}
-                              {targetList.length > 4 ? ` + ${targetList.length - 4} more` : ""}
+                              {targetCount > 4 ? ` + ${(targetCount - 4).toLocaleString()} more` : ""}
                             </strong>
                           </div>
                         )}
@@ -5127,7 +5312,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={handleExecuteBulkPurge}
-                disabled={isDeletingBulk || getAdsToPurge().length === 0}
+                disabled={isDeletingBulk || getAdsToPurgeCount() === 0}
                 className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {isDeletingBulk ? (
@@ -5138,7 +5323,7 @@ export default function AdminDashboard() {
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4 text-white" />
-                    <span>Authorize & Permanently Delete ({getAdsToPurge().length} Ads)</span>
+                    <span>Authorize & Permanently Delete ({getAdsToPurgeCount().toLocaleString()} Ads)</span>
                   </>
                 )}
               </button>

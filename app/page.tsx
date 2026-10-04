@@ -52,7 +52,7 @@ export default function HomePage() {
       setTotalVerifiedCount(getVerifiedAdsCount());
     };
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count") {
+      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count" || e.key === "searchbiz_verified_count") {
         const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
         setAds(stored);
         setTotalCompaniesCount(getTotalAdsCount());
@@ -86,7 +86,7 @@ export default function HomePage() {
           setTotalCompaniesCount(gTotal);
           safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
         }
-        if (typeof gVer === 'number' && gVer > 0) {
+        if (typeof gVer === 'number' && gVer >= 0) {
           setTotalVerifiedCount(gVer);
           safeLocalStorage.setItem("searchbiz_verified_count", String(gVer));
         }
@@ -146,7 +146,7 @@ export default function HomePage() {
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-emerald-400 mb-1">
-                    {Math.max(totalVerifiedCount, getVerifiedAdsCount()).toLocaleString()}
+                    {totalVerifiedCount.toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Verified & Approved</div>
                 </div>

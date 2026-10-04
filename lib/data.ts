@@ -286,16 +286,11 @@ export function getVerifiedAdsCount(): number {
     const storedCount = safeLocalStorage.getItem("searchbiz_verified_count");
     if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-    const totalCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
-    if (totalCount !== null && totalCount !== undefined && totalCount !== "") {
-      const parsedTotal = parseInt(totalCount, 10);
-      if (!isNaN(parsedTotal) && parsedTotal > 0) return parsedTotal;
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
     }
   }
   const ads = getStoredAds();
-  return ads.filter(a => a && (a.verified || a.isApproved !== false || a.status === 'approved')).length;
+  return ads.filter(a => a && (a.verified === true || a.adminApproved === true)).length;
 }
 
 // Unified global advertisements client register with localStorage persistence

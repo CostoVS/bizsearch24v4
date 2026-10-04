@@ -177,6 +177,7 @@ export function writeServerDb(data: any, immediate: boolean = false): void {
   data.updatedAt = Date.now();
   globalRef.storageCache = data;
   globalRef.storageCacheTime = Date.now();
+  globalRef.adminStatsCache = null;
   globalRef.pendingDiskFlush = true;
 
   if (immediate || !Array.isArray(data.ads) || data.ads.length < 1000) {
@@ -258,9 +259,10 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     showCallOption: true,
     verified: verified,
     isPremium: isPremium,
-    isApproved: true,
-    status: 'approved',
-    approvalStatus: 'approved',
+    isApproved: false,
+    adminApproved: false,
+    status: 'pending',
+    approvalStatus: 'pending',
     isSponsor: isFree ? false : (payload.isSponsor || false),
     isClaimed: isClaimed,
     plan: plan,
@@ -394,9 +396,10 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       showCallOption: true,
       verified: false,
       isPremium: isPremium,
-      isApproved: true,
-      status: 'approved',
-      approvalStatus: 'approved',
+      isApproved: false,
+      adminApproved: false,
+      status: 'pending',
+      approvalStatus: 'pending',
       isSponsor: isFree ? false : (item.isSponsor || false),
       isClaimed: isClaimed,
       plan: isPremium ? 'PREMIUM' : 'free',
@@ -430,7 +433,7 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
 
     const existingAd = existingAdMap.get(compositeKey) || existingAdMap.get(fallbackKey);
     if (existingAd) {
-      // Enrich existing ad in-place so its province, town, city, suburb, category, and approval status are 100% accurate
+      // Enrich existing ad in-place so its province, town, city, suburb, and category are 100% accurate
       existingAd.province = candidateAd.province;
       existingAd.provinceName = candidateAd.provinceName;
       existingAd.city = candidateAd.city;
@@ -447,9 +450,12 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
         existingAd.description = candidateAd.description;
       }
       existingAd.isActive = true;
-      existingAd.isApproved = true;
-      existingAd.status = 'approved';
-      existingAd.approvalStatus = 'approved';
+      if (existingAd.adminApproved !== true && existingAd.verified !== true) {
+        existingAd.isApproved = false;
+        existingAd.adminApproved = false;
+        existingAd.status = 'pending';
+        existingAd.approvalStatus = 'pending';
+      }
       updatedCount++;
       skippedDuplicatesCount++;
       continue;

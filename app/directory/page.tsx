@@ -47,9 +47,8 @@ function DirectoryContent() {
 
   const isAdVisible = useCallback((a: any) => {
     if (!a || a.isActive === false) return false;
-    if (a.isApproved === false && a.status === 'pending' && !isAdmin) return false;
     return true;
-  }, [isAdmin]);
+  }, []);
 
   const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
 
@@ -131,7 +130,7 @@ function DirectoryContent() {
           if (typeof gTotal === 'number' && gTotal > 0) {
             safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
           }
-          if (typeof gVer === 'number' && gVer > 0) {
+          if (typeof gVer === 'number' && gVer >= 0) {
             safeLocalStorage.setItem("searchbiz_verified_count", String(gVer));
           }
         }

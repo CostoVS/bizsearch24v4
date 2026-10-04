@@ -315,11 +315,26 @@ export function resolveAdGeographyAndCategory(ad: any): void {
     ad.description = `${ad.title || 'Local Business'} provides trusted ${niceCat.toLowerCase()} in ${niceCity}${niceProv ? ', ' + niceProv : ''}. Contact us directly for enquiries, quotes, and service availability.`;
   }
 
-  // 5. Ensure bot/scraped ads are always active and approved
+  // 5. Ensure bot/scraped ads are active in the directory, but ONLY marked approved/verified when explicitly authorized by Admin
   if (ad.isActive === undefined) ad.isActive = true;
-  if (ad.source === 'agent_bot' || ad.userId === 'agent-bot' || (typeof ad.id === 'string' && ad.id.startsWith('ad-agent-'))) {
-    ad.isApproved = true;
-    ad.status = 'approved';
-    ad.approvalStatus = 'approved';
+  const isBotOrCsvAd =
+    ad.source === 'agent_bot' ||
+    ad.source === 'csv' ||
+    ad.userId === 'agent-bot' ||
+    ad.userId === 'system' ||
+    (typeof ad.id === 'string' && (ad.id.startsWith('ad-agent-') || ad.id.startsWith('bot_') || ad.id.startsWith('csv')));
+
+  if (isBotOrCsvAd) {
+    if (ad.adminApproved === true || ad.verified === true || ad.isPremium === true || ad.isSponsor === true) {
+      ad.isApproved = true;
+      ad.status = 'approved';
+      ad.approvalStatus = 'approved';
+    } else {
+      ad.verified = false;
+      ad.isApproved = false;
+      ad.adminApproved = false;
+      ad.status = 'pending';
+      ad.approvalStatus = 'pending';
+    }
   }
 }

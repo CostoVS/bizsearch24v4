@@ -71,7 +71,7 @@ export default function LocationListings({ ads: propAds, properName, initialTota
         .then(data => {
           if (!active || !data) return;
           if (Array.isArray(data.ads)) {
-            const valid = (data.ads as Ad[]).filter(ad => ad && (ad as any).isActive !== false && (ad as any).isApproved !== false && (ad as any).status !== 'pending');
+            const valid = (data.ads as Ad[]).filter(ad => ad && (ad as any).isActive !== false);
             setServerAds(valid);
             setFilteredAds(valid);
           }

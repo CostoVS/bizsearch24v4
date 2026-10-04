@@ -292,6 +292,14 @@ function getFastBaseData(): any {
   const now = Date.now();
   const hasMemCache = globalRef.storageCache && Array.isArray(globalRef.storageCache.ads) && globalRef.storageCache.ads.length > 0;
 
+  if (hasMemCache && !globalRef.approvalNormalizerV2) {
+    for (const ad of globalRef.storageCache.ads) {
+      resolveAdGeographyAndCategory(ad);
+    }
+    globalRef.approvalNormalizerV2 = true;
+    globalRef.adminStatsCache = null;
+  }
+
   // Instant 0ms memory hit if cache was checked within the last 3 seconds or a background flush is active
   if (hasMemCache && (globalRef.pendingDiskFlush || (now - (globalRef.lastMtimeCheck || 0) < 3000))) {
     return globalRef.storageCache;
@@ -313,12 +321,122 @@ function getFastBaseData(): any {
     globalRef.storageCache = diskData;
     globalRef.storageMtime = currentMtime;
     globalRef.storageCacheTime = now;
+    globalRef.approvalNormalizerV2 = true;
+    globalRef.adminStatsCache = null;
     globalRef.existingAdKeysSet = null;
     globalRef.existingAdMap = null;
     return diskData;
   }
 
   return globalRef.storageCache;
+}
+
+function isBotOrCsvListing(a: any): boolean {
+  if (!a) return false;
+  const id = typeof a.id === 'string' ? a.id : '';
+  return (
+    id.startsWith('csv_') ||
+    id.startsWith('csv-') ||
+    id.startsWith('ad-agent-') ||
+    id.startsWith('bot_') ||
+    a.source === 'csv' ||
+    a.source === 'agent_bot' ||
+    a.userId === 'agent-bot' ||
+    a.userId === 'system'
+  );
+}
+
+function getAdminStats(allAds: any[], cacheKey: number) {
+  if (
+    globalRef.adminStatsCache &&
+    globalRef.adminStatsCacheKey === cacheKey &&
+    globalRef.adminStatsCacheLen === allAds.length
+  ) {
+    return globalRef.adminStatsCache;
+  }
+
+  let active = 0;
+  let pendingApproval = 0;
+  let approved = 0;
+  let verified = 0;
+  let free = 0;
+  let premium = 0;
+  let sponsor = 0;
+  let claimed = 0;
+  let unclaimed = 0;
+  let remove = 0;
+  let claimedFree = 0;
+  let csvAndBot = 0;
+  let preference = 0;
+  const byProvince: Record<string, number> = {};
+  const byCategory: Record<string, number> = {};
+
+  for (let i = 0; i < allAds.length; i++) {
+    const a = allAds[i];
+    if (!a) continue;
+    if (a.isActive !== false) active++;
+
+    const isAdminAppr = a.adminApproved === true || a.verified === true || a.isPremium === true || a.isSponsor === true;
+    if (isAdminAppr) {
+      approved++;
+    } else {
+      pendingApproval++;
+    }
+
+    if (a.verified === true) verified++;
+    if (a.isSponsor) {
+      sponsor++;
+    } else if (a.isPremium) {
+      premium++;
+    } else {
+      free++;
+    }
+
+    if (a.isClaimed === true) {
+      claimed++;
+      if (a.claimIntention === 'free') claimedFree++;
+    } else if (!a.verified) {
+      unclaimed++;
+    }
+
+    if (a.claimIntention === 'remove') remove++;
+
+    if (isBotOrCsvListing(a)) {
+      csvAndBot++;
+    } else {
+      preference++;
+    }
+
+    const prov = (a.province || 'gauteng').toLowerCase();
+    byProvince[prov] = (byProvince[prov] || 0) + 1;
+
+    const cat = a.category || 'Other';
+    byCategory[cat] = (byCategory[cat] || 0) + 1;
+  }
+
+  const stats = {
+    total: allAds.length,
+    active,
+    pendingApproval,
+    approved,
+    verified,
+    free,
+    premium,
+    sponsor,
+    claimed,
+    unclaimed,
+    remove,
+    claimedFree,
+    csvAndBot,
+    preference,
+    byProvince,
+    byCategory
+  };
+
+  globalRef.adminStatsCache = stats;
+  globalRef.adminStatsCacheKey = cacheKey;
+  globalRef.adminStatsCacheLen = allAds.length;
+  return stats;
 }
 
 export async function GET(req: Request) {
@@ -328,6 +446,7 @@ export async function GET(req: Request) {
     const rawLimit = url.searchParams.get('limit');
     const isLimitAll = rawLimit === 'all' || rawLimit === '0' || rawLimit === 'unlimited';
     const limitNum = rawLimit && !isLimitAll ? parseInt(rawLimit, 10) : null;
+    const includeInactive = url.searchParams.get('includeInactive') === 'true';
     
     // Server-side pagination parameters
     const pageParam = url.searchParams.get('page');
@@ -339,13 +458,19 @@ export async function GET(req: Request) {
     const rawAds = Array.isArray(baseData.ads) ? baseData.ads : [];
     const deletedSet = new Set(Array.isArray(baseData.deletedAds) ? baseData.deletedAds : []);
     
-    const allAds = deletedSet.size > 0
-      ? rawAds.filter((a: any) => a && a.id && a.isActive !== false && !deletedSet.has(a.id))
-      : rawAds.filter((a: any) => a && a.id && a.isActive !== false);
+    const allNonDeletedAds = deletedSet.size > 0
+      ? rawAds.filter((a: any) => a && a.id && !deletedSet.has(a.id))
+      : rawAds.filter((a: any) => a && a.id);
+
+    const adminStats = getAdminStats(allNonDeletedAds, baseData.updatedAt || 0);
+
+    const allAds = includeInactive
+      ? allNonDeletedAds
+      : allNonDeletedAds.filter((a: any) => a.isActive !== false);
 
     const totalAdsCount = allAds.length;
-    // Count all verified OR approved listings for the "Verified & Approved" metric
-    const verifiedCount = allAds.filter((a: any) => a.verified || a.isApproved !== false || a.status === 'approved').length;
+    // Count ONLY ads that have actually been verified or approved by Admin (never auto-count unverified bot uploads)
+    const verifiedCount = adminStats.approved;
 
     const qParam = (url.searchParams.get('q') || '').toLowerCase().trim();
     const catParam = (url.searchParams.get('category') || '').toLowerCase().trim();
@@ -355,6 +480,8 @@ export async function GET(req: Request) {
     const locSlugParam = (url.searchParams.get('locationSlug') || '').toLowerCase().trim();
     const addrParam = (url.searchParams.get('address') || '').toLowerCase().trim();
     const statusParam = (url.searchParams.get('status') || '').toLowerCase().trim();
+    const sourceParam = (url.searchParams.get('source') || '').toLowerCase().trim();
+    const adTypeParam = (url.searchParams.get('adType') || '').toLowerCase().trim();
     const approvedOnly = url.searchParams.get('approvedOnly') === 'true';
     const pendingOnly = url.searchParams.get('pendingOnly') === 'true';
     const freeOnly = url.searchParams.get('freeOnly') === 'true';
@@ -365,7 +492,8 @@ export async function GET(req: Request) {
 
     if (
       qParam || catParam || townParam || provParam || subParam || locSlugParam ||
-      addrParam || statusParam || approvedOnly || pendingOnly || freeOnly || premiumOnly || sponsorOnly
+      addrParam || statusParam || sourceParam || adTypeParam ||
+      approvedOnly || pendingOnly || freeOnly || premiumOnly || sponsorOnly
     ) {
       const STOP_WORDS = new Set(['in', 'at', 'near', 'the', 'and', 'or', 'for', 'of', 'to', 'a', 'an', 'on', 'by', 'with', '&']);
       const PROV_ACRONYMS: Record<string, string> = {
@@ -383,12 +511,12 @@ export async function GET(req: Request) {
       const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
       const nAddrParam = addrParam ? norm(addrParam) : '';
-      const targetProv = provParam ? (PROV_ACRONYMS[provParam] || provParam) : '';
+      const targetProv = (provParam && provParam !== 'all') ? (PROV_ACRONYMS[provParam] || provParam) : '';
       const nTargetProv = targetProv ? norm(targetProv) : '';
       const nTownParam = townParam ? norm(townParam) : '';
       const nSubParam = subParam ? norm(subParam) : '';
       const nLocSlug = locSlugParam ? norm(locSlugParam) : '';
-      const nCatParam = catParam ? norm(catParam) : '';
+      const nCatParam = (catParam && catParam !== 'all') ? norm(catParam) : '';
 
       const rawTokens = qParam ? qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean) : [];
       const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
@@ -397,14 +525,35 @@ export async function GET(req: Request) {
       filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
 
+        // Admin source filter
+        if (sourceParam && sourceParam !== 'all') {
+          const isBotCsv = isBotOrCsvListing(ad);
+          if (sourceParam === 'csv' && !isBotCsv) return false;
+          if (sourceParam === 'preference' && isBotCsv) return false;
+        }
+
+        // Admin lifecycle adType filter
+        const isAdAdminApproved = ad.adminApproved === true || ad.verified === true || ad.isPremium === true || ad.isSponsor === true;
+        if (adTypeParam && adTypeParam !== 'all') {
+          if (adTypeParam === 'pending_approval' && isAdAdminApproved) return false;
+          if (adTypeParam === 'approved' && !isAdAdminApproved) return false;
+          if (adTypeParam === 'free' && (ad.isPremium || ad.isSponsor)) return false;
+          if (adTypeParam === 'premium' && (!ad.isPremium || ad.isSponsor)) return false;
+          if (adTypeParam === 'sponsor' && !ad.isSponsor) return false;
+          if (adTypeParam === 'claimed' && ad.isClaimed !== true) return false;
+          if (adTypeParam === 'unclaimed' && (ad.isClaimed === true || ad.verified === true)) return false;
+          if (adTypeParam === 'remove' && ad.claimIntention !== 'remove') return false;
+          if (adTypeParam === 'claimed_free' && (ad.isClaimed !== true || ad.claimIntention !== 'free')) return false;
+        }
+
         if (freeOnly && (ad.isPremium || ad.isSponsor)) return false;
         if (premiumOnly && (!ad.isPremium || ad.isSponsor)) return false;
         if (sponsorOnly && !ad.isSponsor) return false;
         
-        if (approvedOnly && ad.isApproved === false && ad.status === 'pending') return false;
-        if (pendingOnly && (ad.isApproved !== false || ad.status === 'approved')) return false;
+        if (approvedOnly && !isAdAdminApproved) return false;
+        if (pendingOnly && isAdAdminApproved) return false;
         if (statusParam) {
-          const currentStatus = (ad.status || (ad.isApproved !== false ? 'approved' : 'pending')).toLowerCase();
+          const currentStatus = isAdAdminApproved ? 'approved' : 'pending';
           if (currentStatus !== statusParam) return false;
         }
 
@@ -546,7 +695,7 @@ export async function GET(req: Request) {
     }
 
     const filteredTotal = filtered.length;
-    const filteredVerified = filtered.filter((a: any) => a && (a.verified || a.isApproved !== false || a.status === 'approved')).length;
+    const filteredVerified = filtered.filter((a: any) => a && (a.verified === true || a.adminApproved === true || a.isPremium === true || a.isSponsor === true)).length;
 
     // Handle Pagination slice
     let adsToReturn = filtered;
@@ -585,6 +734,7 @@ export async function GET(req: Request) {
       verifiedCount: filteredVerified,
       globalTotalAdsCount: totalAdsCount,
       globalVerifiedCount: verifiedCount,
+      adminStats,
       page: activePage,
       pageSize: activePageSize,
       totalPages: totalPages,
@@ -600,12 +750,13 @@ export async function GET(req: Request) {
     console.error("GET /api/storage failed:", error);
     const fallback = globalRef.storageCache || getLocalDataNoCache();
     const fallbackAds = Array.isArray(fallback.ads) ? fallback.ads : [];
+    const fbVerified = fallbackAds.filter((a: any) => a && (a.verified === true || a.adminApproved === true)).length;
     return NextResponse.json({
       ...fallback,
       totalAdsCount: fallbackAds.length,
-      verifiedCount: fallbackAds.length,
+      verifiedCount: fbVerified,
       globalTotalAdsCount: fallbackAds.length,
-      globalVerifiedCount: fallbackAds.length,
+      globalVerifiedCount: fbVerified,
       ads: fallbackAds.slice(0, 100)
     }, { 
       status: 200, 
@@ -622,7 +773,107 @@ export async function POST(req: Request) {
     const currentData = getFastBaseData();
     const newData = { ...currentData };
 
-    if (body.deleteAdId) {
+    if (body.adminAction) {
+      const ads = Array.isArray(currentData.ads) ? [...currentData.ads] : [];
+      const action = body.adminAction;
+
+      if (action === 'approve_all_pending') {
+        let count = 0;
+        for (let i = 0; i < ads.length; i++) {
+          const a = ads[i];
+          if (a && a.adminApproved !== true) {
+            a.isApproved = true;
+            a.adminApproved = true;
+            a.status = 'approved';
+            a.approvalStatus = 'approved';
+            count++;
+          }
+        }
+        newData.ads = ads;
+      } else if (action === 'unapprove_all_unverified') {
+        for (let i = 0; i < ads.length; i++) {
+          const a = ads[i];
+          if (a && !a.verified && !a.isPremium && !a.isSponsor) {
+            a.isApproved = false;
+            a.adminApproved = false;
+            a.status = 'pending';
+            a.approvalStatus = 'pending';
+          }
+        }
+        newData.ads = ads;
+      } else if (action === 'approve_selected' && Array.isArray(body.adIds)) {
+        const idSet = new Set(body.adIds);
+        for (let i = 0; i < ads.length; i++) {
+          const a = ads[i];
+          if (a && idSet.has(a.id)) {
+            a.isApproved = true;
+            a.adminApproved = true;
+            a.status = 'approved';
+            a.approvalStatus = 'approved';
+          }
+        }
+        newData.ads = ads;
+      } else if (action === 'toggle_approve' && body.adId) {
+        const approved = Boolean(body.approved);
+        for (let i = 0; i < ads.length; i++) {
+          const a = ads[i];
+          if (a && a.id === body.adId) {
+            a.isApproved = approved;
+            a.adminApproved = approved;
+            a.status = approved ? 'approved' : 'pending';
+            a.approvalStatus = approved ? 'approved' : 'pending';
+            if (body.verified !== undefined) {
+              a.verified = Boolean(body.verified);
+            }
+            break;
+          }
+        }
+        newData.ads = ads;
+      } else if (action === 'update_ad_field' && body.adId && body.updates) {
+        for (let i = 0; i < ads.length; i++) {
+          const a = ads[i];
+          if (a && a.id === body.adId) {
+            Object.assign(a, body.updates);
+            break;
+          }
+        }
+        newData.ads = ads;
+      } else if (action === 'bulk_purge') {
+        const scope = body.scope || 'selected';
+        const selectedSet = new Set(Array.isArray(body.adIds) ? body.adIds : []);
+        const targetProv = (body.province || '').toLowerCase().trim();
+        const targetCat = (body.category || '').toLowerCase().trim();
+        const purgedIds: string[] = [];
+
+        newData.ads = ads.filter((a: any) => {
+          if (!a || !a.id) return false;
+          let shouldDelete = false;
+          if (scope === 'all') {
+            shouldDelete = true;
+          } else if (scope === 'selected' || scope === 'filtered') {
+            shouldDelete = selectedSet.has(a.id);
+          } else if (scope === 'csv') {
+            shouldDelete = isBotOrCsvListing(a);
+          } else if (scope === 'unclaimed') {
+            shouldDelete = a.isClaimed !== true && !a.verified;
+          } else if (scope === 'province' && targetProv) {
+            const p = (a.province || '').toLowerCase();
+            shouldDelete = p === targetProv || p.includes(targetProv);
+          } else if (scope === 'category' && targetCat) {
+            const c = (a.category || '').toLowerCase();
+            shouldDelete = c === targetCat || c.includes(targetCat);
+          }
+          if (shouldDelete) {
+            purgedIds.push(a.id);
+            return false;
+          }
+          return true;
+        });
+
+        const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
+        newData.deletedAds = Array.from(new Set([...currentDeleted, ...purgedIds]));
+      }
+    } else if (body.deleteAdId) {
       const ads = Array.isArray(currentData.ads) ? currentData.ads : [];
       const targetAd = ads.find((ad: any) => ad && ad.id === body.deleteAdId);
       newData.ads = ads.filter((ad: any) => ad && ad.id !== body.deleteAdId);
@@ -708,6 +959,7 @@ export async function POST(req: Request) {
     }
 
     newData.updatedAt = Date.now();
+    globalRef.adminStatsCache = null;
     saveLocalDataNoCache(newData);
 
     if (!(globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil))) {
@@ -718,12 +970,17 @@ export async function POST(req: Request) {
       });
     }
 
+    const updatedAdsList = Array.isArray(newData.ads) ? newData.ads : [];
+    const updatedStats = getAdminStats(updatedAdsList, newData.updatedAt);
+
     return NextResponse.json({
       success: true,
-      totalAdsCount: Array.isArray(newData.ads) ? newData.ads.length : 0,
+      totalAdsCount: updatedAdsList.length,
+      verifiedCount: updatedStats.approved,
+      adminStats: updatedStats,
       data: {
         ...newData,
-        ads: Array.isArray(newData.ads) ? newData.ads.slice(0, 100) : []
+        ads: updatedAdsList.slice(0, 100)
       }
     }, {
       headers: {
