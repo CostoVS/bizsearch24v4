@@ -37,6 +37,7 @@ function DirectoryContent() {
 
   const [allAds, setAllAds] = useState<any[]>([]);
   const [serverFilteredAds, setServerFilteredAds] = useState<any[] | null>(null);
+  const [serverTotalCount, setServerTotalCount] = useState<number | null>(null);
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -92,8 +93,12 @@ function DirectoryContent() {
     return parts.join(' • ');
   };
 
+  // Reset page to 1 when search filters change
   useEffect(() => {
     setCurrentPage(1);
+  }, [q, category, town, province, suburb]);
+
+  useEffect(() => {
     setIsLocalLoading(true);
 
     const params = new URLSearchParams();
@@ -103,9 +108,11 @@ function DirectoryContent() {
     if (province) params.set('province', province);
     if (suburb) params.set('suburb', suburb);
 
-    const queryString = params.toString();
-    const endpoint = queryString ? `/api/storage?${queryString}&limit=all` : '/api/storage?limit=all';
+    const effectiveSize = pageSize >= 999999 ? 500 : pageSize;
+    params.set('page', String(currentPage));
+    params.set('pageSize', String(effectiveSize));
 
+    const endpoint = `/api/storage?${params.toString()}`;
     let isCurrent = true;
 
     fetch(endpoint, { cache: 'no-store', headers: { Accept: 'application/json' } })
@@ -116,6 +123,17 @@ function DirectoryContent() {
           const validAds = data.ads.filter(isAdVisible);
           setServerFilteredAds(validAds);
           setAllAds(validAds);
+          if (typeof data.totalAdsCount === 'number') {
+            setServerTotalCount(data.totalAdsCount);
+          }
+          const gTotal = data.globalTotalAdsCount ?? data.totalAdsCount;
+          const gVer = data.globalVerifiedCount ?? data.verifiedCount;
+          if (typeof gTotal === 'number' && gTotal > 0) {
+            safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
+          }
+          if (typeof gVer === 'number' && gVer > 0) {
+            safeLocalStorage.setItem("searchbiz_verified_count", String(gVer));
+          }
         }
       })
       .catch(err => {
@@ -127,15 +145,10 @@ function DirectoryContent() {
         }
       });
 
-    const scrollTimer = setTimeout(() => {
-      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
-
     return () => {
       isCurrent = false;
-      clearTimeout(scrollTimer);
     };
-  }, [q, category, town, province, suburb, isAdmin]);
+  }, [q, category, town, province, suburb, currentPage, pageSize, isAdmin, isAdVisible]);
 
   useEffect(() => {
     // Only load generic background cache if there are NO active search filters
@@ -344,8 +357,9 @@ function DirectoryContent() {
     return match;
   });
 
-  const results = sortAdsWithPositions(hasFilters && serverFilteredAds !== null ? serverFilteredAds : filteredResults);
-  const paginatedResults = pageSize >= 999999 ? results : results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const results = sortAdsWithPositions(serverFilteredAds !== null ? serverFilteredAds : filteredResults);
+  const totalMatchingAds = serverTotalCount !== null ? serverTotalCount : results.length;
+  const paginatedResults = serverFilteredAds !== null ? results : (pageSize >= 999999 ? results : results.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -548,7 +562,7 @@ function DirectoryContent() {
       </div>
 
       <div ref={resultsRef} className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <p className="text-slate-500 font-medium">Found {results.length} businesses matching your criteria.</p>
+        <p className="text-slate-500 font-medium">Found {totalMatchingAds.toLocaleString()} businesses matching your criteria.</p>
       </div>
 
       {isLocalLoading ? (
@@ -586,7 +600,7 @@ function DirectoryContent() {
           {/* Display Controls & Stats */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
             <span className="text-xs font-bold text-slate-700">
-              Showing <span className="text-emerald-700 font-extrabold">{results.length}</span> verified listing{results.length === 1 ? '' : 's'}
+              Showing <span className="text-emerald-700 font-extrabold">{totalMatchingAds.toLocaleString()}</span> verified listing{totalMatchingAds === 1 ? '' : 's'}
               {hasFilters && <span className="text-slate-500 font-normal"> matching your search criteria</span>}
             </span>
 
@@ -619,7 +633,7 @@ function DirectoryContent() {
                     : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
                 }`}
               >
-                All ({results.length})
+                All ({totalMatchingAds.toLocaleString()})
               </button>
             </div>
           </div>
@@ -628,7 +642,7 @@ function DirectoryContent() {
           {pageSize < 999999 && (
             <Pagination
               currentPage={currentPage}
-              totalItems={results.length}
+              totalItems={totalMatchingAds}
               pageSize={pageSize}
               onPageChange={(page) => {
                 setCurrentPage(page);
@@ -778,7 +792,7 @@ function DirectoryContent() {
           {pageSize < 999999 && (
             <Pagination
               currentPage={currentPage}
-              totalItems={results.length}
+              totalItems={totalMatchingAds}
               pageSize={pageSize}
               onPageChange={(page) => {
                 setCurrentPage(page);

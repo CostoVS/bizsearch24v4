@@ -124,6 +124,42 @@ rm -rf /etc/systemd/system/hermes-agent.service.d
 # Ensure data directories exist and are protected with full permissions
 mkdir -p "${APP_DIR}/leads_storage"
 mkdir -p "${APP_DIR}/listings"
+mkdir -p "../.data" "../data" 2>/dev/null || true
+
+echo "🛡️ Verifying and protecting SearchBiz uploaded ads database across all backups..."
+python3 -c "
+import os, json, shutil
+paths = [
+    '../data/db.json',
+    '../.data/db.json',
+    '../data/backup_db.json',
+    '../.data/backup_db.json',
+    '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json'
+]
+best_path = None
+best_count = -1
+for p in paths:
+    if os.path.exists(p):
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                d = json.load(f)
+                c = len(d.get('ads', [])) if isinstance(d, dict) and isinstance(d.get('ads'), list) else 0
+                if c > best_count:
+                    best_count = c
+                    best_path = p
+        except Exception:
+            pass
+if best_path and best_count > 0:
+    print(f'✅ Found master SearchBiz database with {best_count:,} ads at {best_path}. Syncing all persistent paths...')
+    for p in paths:
+        if p != best_path:
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
+                shutil.copy2(best_path, p)
+            except Exception:
+                pass
+" || true
+
 if [ -d "../.data" ]; then
     chmod -R 777 ../.data ../data 2>/dev/null || true
 fi

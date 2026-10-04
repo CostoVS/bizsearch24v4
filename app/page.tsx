@@ -19,6 +19,10 @@ export default function HomePage() {
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [ads, setAds] = useState<any[]>([]);
+  const [serverFreeAds, setServerFreeAds] = useState<any[] | null>(null);
+  const [totalFreeCount, setTotalFreeCount] = useState<number>(0);
+  const [totalCompaniesCount, setTotalCompaniesCount] = useState<number>(0);
+  const [totalVerifiedCount, setTotalVerifiedCount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
 
   const [freeAdsPage, setFreeAdsPage] = useState(1);
@@ -28,25 +32,31 @@ export default function HomePage() {
   const premiumListingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load initial cached local storage ads immediately on mount
     const cached = getStoredAds().filter((a: any) => a && a.isActive !== false);
     setAds(cached);
+    setTotalCompaniesCount(getTotalAdsCount());
+    setTotalVerifiedCount(getVerifiedAdsCount());
 
-    // Fetch fresh ads asynchronously in background
     fetchAndStoreAds().then(freshAds => {
       if (freshAds && Array.isArray(freshAds)) {
         setAds(freshAds.filter((a: any) => a && a.isActive !== false));
+        setTotalCompaniesCount(getTotalAdsCount());
+        setTotalVerifiedCount(getVerifiedAdsCount());
       }
     }).catch(() => {});
 
     const handleUpdate = () => {
       const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
       setAds(stored);
+      setTotalCompaniesCount(getTotalAdsCount());
+      setTotalVerifiedCount(getVerifiedAdsCount());
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count") {
         const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
         setAds(stored);
+        setTotalCompaniesCount(getTotalAdsCount());
+        setTotalVerifiedCount(getVerifiedAdsCount());
       }
     };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);
@@ -56,6 +66,34 @@ export default function HomePage() {
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
+  // Server-side paginated fetch for Recent Listings (supports 1,000,000+ ads with 0ms lag)
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/storage?freeOnly=true&page=${freeAdsPage}&pageSize=12`, { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => {
+        if (!active || !data) return;
+        if (Array.isArray(data.ads)) {
+          setServerFreeAds(data.ads.filter((a: any) => a && a.isActive !== false));
+        }
+        if (typeof data.totalAdsCount === 'number') {
+          setTotalFreeCount(data.totalAdsCount);
+        }
+        const gTotal = data.globalTotalAdsCount ?? data.totalAdsCount;
+        const gVer = data.globalVerifiedCount ?? data.verifiedCount;
+        if (typeof gTotal === 'number' && gTotal > 0) {
+          setTotalCompaniesCount(gTotal);
+          safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
+        }
+        if (typeof gVer === 'number' && gVer > 0) {
+          setTotalVerifiedCount(gVer);
+          safeLocalStorage.setItem("searchbiz_verified_count", String(gVer));
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [freeAdsPage]);
 
   const sponsoredAds = ads.filter(ad => ad.isSponsor);
   const premiumAds = ads.filter(ad => ad.isPremium && !ad.isSponsor);
@@ -69,7 +107,8 @@ export default function HomePage() {
 
   // Paginated slices for 12 items max
   const paginatedPremiumAds = premiumAds.slice((premiumAdsPage - 1) * 12, premiumAdsPage * 12);
-  const paginatedFreeAds = freeAds.slice((freeAdsPage - 1) * 12, freeAdsPage * 12);
+  const paginatedFreeAds = serverFreeAds !== null ? serverFreeAds : freeAds.slice((freeAdsPage - 1) * 12, freeAdsPage * 12);
+  const effectiveFreeTotal = totalFreeCount > 0 ? totalFreeCount : freeAds.length;
 
   // Precomputed static count of all suburbs altogether across all 9 provinces
   const totalSuburbsAltogether = 6931;
@@ -100,14 +139,14 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-8 sm:gap-12 mb-10 border-b border-emerald-900/60 pb-10">
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-white mb-1">
-                    {getTotalAdsCount().toLocaleString()}
+                    {Math.max(totalCompaniesCount, getTotalAdsCount()).toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Companies</div>
                 </div>
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-emerald-400 mb-1">
-                    {getVerifiedAdsCount().toLocaleString()}
+                    {Math.max(totalVerifiedCount, getVerifiedAdsCount()).toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Verified & Approved</div>
                 </div>
@@ -349,7 +388,7 @@ export default function HomePage() {
       )}
 
       {/* Free Ads Section */}
-      {freeAds.length > 0 && (
+      {(paginatedFreeAds.length > 0 || effectiveFreeTotal > 0) && (
         <section ref={recentListingsRef} className="w-full bg-slate-100/50 border-t border-slate-200">
           <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -359,7 +398,7 @@ export default function HomePage() {
             {/* Top Pagination for Recent Listings */}
             <Pagination
               currentPage={freeAdsPage}
-              totalItems={freeAds.length}
+              totalItems={effectiveFreeTotal}
               pageSize={12}
               onPageChange={(page) => {
                 setFreeAdsPage(page);
@@ -439,7 +478,7 @@ export default function HomePage() {
             {/* Bottom Pagination for Recent Listings */}
             <Pagination
               currentPage={freeAdsPage}
-              totalItems={freeAds.length}
+              totalItems={effectiveFreeTotal}
               pageSize={12}
               onPageChange={(page) => {
                 setFreeAdsPage(page);

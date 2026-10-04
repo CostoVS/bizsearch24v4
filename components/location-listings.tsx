@@ -30,14 +30,17 @@ interface Ad {
 }
 
 interface LocationListingsProps {
-  ads: Ad[]; // Kept for prop-type compatibility, but ignored in favor of getStoredAds()
+  ads: Ad[];
   properName: string;
+  initialTotalCount?: number;
 }
 
-export default function LocationListings({ ads: propAds, properName }: LocationListingsProps) {
+export default function LocationListings({ ads: propAds, properName, initialTotalCount }: LocationListingsProps) {
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
   const [filteredAds, setFilteredAds] = useState<Ad[]>(propAds && propAds.length > 0 ? propAds : []);
+  const [serverAds, setServerAds] = useState<Ad[] | null>(null);
+  const [serverTotalCount, setServerTotalCount] = useState<number | null>(typeof initialTotalCount === 'number' ? initialTotalCount : null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(24);
   const listingsRef = useRef<HTMLDivElement>(null);
@@ -47,84 +50,33 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
   }, [properName]);
 
   useEffect(() => {
+    let active = true;
     const loadAndFilter = async () => {
-      let allListings: Ad[] = [];
-      
-      // Merge propAds with locally stored ads so SSR results are never lost
-      const mergedMap = new Map<string, Ad>();
-      (propAds || []).forEach(a => { if (a && a.id) mergedMap.set(a.id, a); });
-      (getStoredAds() as Ad[] || []).forEach(a => { if (a && a.id) mergedMap.set(a.id, { ...(mergedMap.get(a.id) || {}), ...a }); });
-      allListings = Array.from(mergedMap.values());
-      
-      // Filter locally first for performance
-      const performFilter = (currentAds: Ad[]) => {
-        const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean) : [];
-        const currentSlug = (pathParts[pathParts.length - 1] || '').toLowerCase();
+      // Query server specifically for this location using unified locationSlug + pagination
+      const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean) : [];
+      const currentSlug = (pathParts[pathParts.length - 1] || properName || '').toLowerCase().trim();
+      const effectiveSize = pageSize >= 999999 ? 500 : pageSize;
 
-        return currentAds.filter(ad => {
-          if (!ad) return false;
-          if ((ad as any).isActive === false) return false;
-          if ((ad as any).isApproved === false || (ad as any).status === 'pending') return false;
+      const params = new URLSearchParams();
+      if (currentSlug) {
+        params.set('locationSlug', currentSlug);
+      } else if (properName) {
+        params.set('locationSlug', properName);
+      }
+      params.set('page', String(currentPage));
+      params.set('pageSize', String(effectiveSize));
 
-          const adLoc = (ad.location || "").toLowerCase().trim();
-          const adCity = ((ad as any).city || "").toLowerCase().trim();
-          const adTown = ((ad as any).town || "").toLowerCase().trim();
-          const adSub = ((ad as any).suburb || "").toLowerCase().trim();
-          const adAddr = ((ad as any).address || "").toLowerCase().trim();
-          const adProv = ((ad as any).province || "").toLowerCase().trim();
-          const normProper = properName.toLowerCase().trim();
-          const normSlug = currentSlug.trim();
-          const dashedSlug = currentSlug.replace(/-/g, ' ').toLowerCase().trim();
-
-          if (adLoc === 'all locations' || adLoc === 'all-locations' || adProv === 'national') return true;
-
-          const matchesTarget = (target: string) => {
-            if (!target) return false;
-            return (
-              adLoc === target || adCity === target || adTown === target || adSub === target || adProv === target ||
-              (adCity && (adCity.includes(target) || target.includes(adCity))) ||
-              (adTown && (adTown.includes(target) || target.includes(adTown))) ||
-              (adSub && (adSub.includes(target) || target.includes(adSub))) ||
-              (adLoc && (adLoc.includes(target) || target.includes(adLoc))) ||
-              (adProv && (adProv.includes(target) || target.includes(adProv))) ||
-              (adAddr && adAddr.includes(target))
-            );
-          };
-
-          if (matchesTarget(normProper) || matchesTarget(normSlug) || matchesTarget(dashedSlug) || matchesTarget(currentSlug.replace(/-/g, ''))) {
-            return true;
-          }
-
-          // Service areas check
-          if (Array.isArray((ad as any).serviceAreas)) {
-            const inService = (ad as any).serviceAreas.some((sa: any) => {
-              const saSub = (sa.suburb || '').toLowerCase();
-              const saTown = (sa.town || '').toLowerCase();
-              const saProv = (sa.province || '').toLowerCase();
-              return saSub === normSlug || saSub === normProper || saTown === normSlug || saTown === normProper || saProv === normSlug || saProv === normProper;
-            });
-            if (inService) return true;
-          }
-
-          return false;
-        });
-      };
-
-      const initialFiltered = performFilter(allListings);
-      setFilteredAds(initialFiltered);
-
-      // Query server specifically for this location to ensure all ads show up without arbitrary cap
-      const normLower = properName.toLowerCase().trim();
-      const isProv = normLower.includes('cape') || normLower.includes('natal') || normLower.includes('gauteng') ||
-                     normLower.includes('state') || normLower.includes('limpopo') || normLower.includes('mpumalanga') || normLower.includes('west');
-      const targetQuery = properName ? (isProv ? `province=${encodeURIComponent(properName)}&` : `town=${encodeURIComponent(properName)}&`) : '';
-      
-      fetch(`/api/storage?${targetQuery}limit=all`, { cache: 'no-store' })
+      fetch(`/api/storage?${params.toString()}`, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
-          if (data && Array.isArray(data.ads)) {
-            const serverFiltered = performFilter(data.ads as Ad[]);
-            setFilteredAds(serverFiltered);
+          if (!active || !data) return;
+          if (Array.isArray(data.ads)) {
+            const valid = (data.ads as Ad[]).filter(ad => ad && (ad as any).isActive !== false && (ad as any).isApproved !== false && (ad as any).status !== 'pending');
+            setServerAds(valid);
+            setFilteredAds(valid);
+          }
+          if (typeof data.totalAdsCount === 'number') {
+            setServerTotalCount(data.totalAdsCount);
           }
         })
         .catch(() => {});
@@ -132,20 +84,21 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
 
     loadAndFilter();
 
-    // Listen for admin edits, deletes, modifications on other screens
     window.addEventListener("searchbiz_ads_updated", loadAndFilter);
     return () => {
+      active = false;
       window.removeEventListener("searchbiz_ads_updated", loadAndFilter);
     };
-  }, [properName]);
+  }, [properName, currentPage, pageSize]);
 
   // Sort them so Positions ("top", "middle", "bottom") and standard Priority are honored
-  const sortedAds = sortAdsWithPositions(filteredAds);
-  const paginatedAds = pageSize >= 999999 ? sortedAds : sortedAds.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const sortedAds = sortAdsWithPositions(serverAds !== null ? serverAds : filteredAds);
+  const totalLocationCount = serverTotalCount !== null ? serverTotalCount : sortedAds.length;
+  const paginatedAds = serverAds !== null ? sortedAds : (pageSize >= 999999 ? sortedAds : sortedAds.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
   return (
     <div ref={listingsRef} className="w-full">
-      {sortedAds.length === 0 ? (
+      {totalLocationCount === 0 && sortedAds.length === 0 ? (
         <div className="space-y-6">
           <AreaRequestCard
             areaName={properName}
@@ -157,7 +110,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           {/* Display Controls & Stats */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
             <span className="text-xs font-bold text-slate-700">
-              Showing <span className="text-emerald-700 font-extrabold">{sortedAds.length}</span> verified listing{sortedAds.length === 1 ? '' : 's'} in <span className="text-slate-900 font-extrabold capitalize">{properName}</span>
+              Showing <span className="text-emerald-700 font-extrabold">{totalLocationCount.toLocaleString()}</span> verified listing{totalLocationCount === 1 ? '' : 's'} in <span className="text-slate-900 font-extrabold capitalize">{properName}</span>
             </span>
 
             <div className="flex items-center gap-1.5 text-xs">
@@ -189,7 +142,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
                     : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
                 }`}
               >
-                All ({sortedAds.length})
+                All ({totalLocationCount.toLocaleString()})
               </button>
             </div>
           </div>
@@ -198,7 +151,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           {pageSize < 999999 && (
             <Pagination
               currentPage={currentPage}
-              totalItems={sortedAds.length}
+              totalItems={totalLocationCount}
               pageSize={pageSize}
               onPageChange={(page) => {
                 setCurrentPage(page);
@@ -341,7 +294,7 @@ export default function LocationListings({ ads: propAds, properName }: LocationL
           {pageSize < 999999 && (
             <Pagination
               currentPage={currentPage}
-              totalItems={sortedAds.length}
+              totalItems={totalLocationCount}
               pageSize={pageSize}
               onPageChange={(page) => {
                 setCurrentPage(page);

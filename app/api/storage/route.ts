@@ -5,6 +5,8 @@ import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
 import { cleanAdsArray } from '@/lib/clean-ad';
+import { resolveAdGeographyAndCategory } from '@/lib/ad-normalizer';
+import { isSubcategoryOf } from '@/lib/categories';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,16 +32,18 @@ function getDiskMtime(): number {
   return 0;
 }
 
-// Global cache object to survive hot reloads and Next.js API invocations in the same process
 const globalRef = global as any;
 if (globalRef.storageCache === undefined) {
   globalRef.storageCache = getLocalDataNoCache();
 }
 if (globalRef.storageCacheTime === undefined) {
-  globalRef.storageCacheTime = 0;
+  globalRef.storageCacheTime = Date.now();
 }
 if (globalRef.storageMtime === undefined) {
   globalRef.storageMtime = getDiskMtime();
+}
+if (globalRef.lastMtimeCheck === undefined) {
+  globalRef.lastMtimeCheck = Date.now();
 }
 if (globalRef.isDbOffline === undefined) {
   globalRef.isDbOffline = false;
@@ -84,6 +88,9 @@ function getLocalDataNoCache() {
     bestData.updatedAt = bestData.updatedAt || 0;
     if (Array.isArray(bestData.ads)) {
       bestData.ads = cleanAdsArray(bestData.ads);
+      for (const ad of bestData.ads) {
+        resolveAdGeographyAndCategory(ad);
+      }
     }
     return bestData;
   }
@@ -103,7 +110,6 @@ function getLocalDataNoCache() {
   };
 }
 
-// Atomic & safe disk write: writes to temporary file first then atomically replaces target
 function safeAtomicWriteFileSync(targetPath: string, content: string): void {
   try {
     const dir = path.dirname(targetPath);
@@ -114,7 +120,6 @@ function safeAtomicWriteFileSync(targetPath: string, content: string): void {
     fs.writeFileSync(tempPath, content, 'utf-8');
     fs.renameSync(tempPath, targetPath);
   } catch (err) {
-    // Fallback to direct write if rename is not supported
     try {
       fs.writeFileSync(targetPath, content, 'utf-8');
     } catch (fallbackErr) {
@@ -127,7 +132,13 @@ function saveLocalDataNoCache(data: any) {
   if (!data.updatedAt) {
     data.updatedAt = Date.now();
   }
-  const payload = JSON.stringify(data, null, 2);
+  globalRef.storageCache = data;
+  globalRef.storageCacheTime = Date.now();
+  globalRef.existingAdKeysSet = null;
+  globalRef.existingAdMap = null;
+
+  const isLarge = Array.isArray(data.ads) && data.ads.length > 2000;
+  const payload = isLarge ? JSON.stringify(data) : JSON.stringify(data, null, 2);
 
   const targets = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH];
   if (fs.existsSync(path.dirname(VPS_STORAGE_BACKUP))) {
@@ -143,8 +154,6 @@ function saveLocalDataNoCache(data: any) {
   }
 
   globalRef.storageMtime = getDiskMtime();
-  globalRef.storageCache = data;
-  globalRef.storageCacheTime = Date.now();
 }
 
 async function getDbData(): Promise<any> {
@@ -166,25 +175,8 @@ async function getDbData(): Promise<any> {
   );
   
   if (!record || record.length === 0) {
-    const localData = getLocalDataNoCache();
-    const initial = { 
-      ads: Array.isArray(localData.ads) ? localData.ads : [], 
-      banners: Array.isArray(localData.banners) ? localData.banners : [],
-      messages: Array.isArray(localData.messages) ? localData.messages : [],
-      deletedMessages: Array.isArray(localData.deletedMessages) ? localData.deletedMessages : [],
-      deletedAds: Array.isArray(localData.deletedAds) ? localData.deletedAds : [],
-      trashAds: Array.isArray(localData.trashAds) ? localData.trashAds : [],
-      customPartners: Array.isArray(localData.customPartners) ? localData.customPartners : [],
-      community_posts: Array.isArray(localData.community_posts) ? localData.community_posts : [],
-      slugs: Array.isArray(localData.slugs) ? localData.slugs : [],
-      claimRequests: Array.isArray(localData.claimRequests) ? localData.claimRequests : [],
-      updatedAt: localData.updatedAt || Date.now()
-    };
-    await withDbTimeout(
-      db.insert(storage).values({ key: DB_KEY, data: JSON.stringify(initial, null, 2) }), 
-      500
-    );
-    return initial;
+    const localData = globalRef.storageCache || getLocalDataNoCache();
+    return localData;
   }
   
   const parsed = JSON.parse(record[0].data);
@@ -198,6 +190,10 @@ async function saveDbData(data: any): Promise<void> {
   if (isDbCurrentlyOffline()) {
     throw new Error("DB flagged as offline");
   }
+  if (Array.isArray(data.ads) && data.ads.length > 25000) {
+    // Avoid blocking PostgreSQL single-row text column with >50MB blob
+    return;
+  }
   
   initDb();
   if (dbReadyPromise) {
@@ -208,8 +204,8 @@ async function saveDbData(data: any): Promise<void> {
   }
   
   await withDbTimeout(
-    db.update(storage).set({ data: JSON.stringify(data, null, 2) }).where(eq(storage.key, DB_KEY)), 
-    500
+    db.update(storage).set({ data: JSON.stringify(data) }).where(eq(storage.key, DB_KEY)), 
+    800
   );
 }
 
@@ -262,6 +258,9 @@ function mergeData(local: any, db: any) {
   const dbVal = db || {};
 
   merged.ads = cleanAdsArray(mergeArrays(localVal.ads, dbVal.ads, 'id'));
+  for (const ad of merged.ads) {
+    resolveAdGeographyAndCategory(ad);
+  }
   merged.banners = mergeArrays(localVal.banners, dbVal.banners, 'id');
   merged.messages = mergeArrays(localVal.messages, dbVal.messages, 'id');
   merged.customPartners = mergeArrays(localVal.customPartners, dbVal.customPartners, 'id');
@@ -273,14 +272,12 @@ function mergeData(local: any, db: any) {
   merged.deletedAds = mergeIds(localVal.deletedAds, dbVal.deletedAds);
   merged.deletedMessages = mergeIds(localVal.deletedMessages, dbVal.deletedMessages);
 
-  // Filter out permanently deleted ads
   if (merged.deletedAds.length > 0) {
     const deletedAdsSet = new Set(merged.deletedAds);
     merged.ads = merged.ads.filter((ad: any) => ad && ad.id && !deletedAdsSet.has(ad.id));
     merged.trashAds = merged.trashAds.filter((ad: any) => ad && ad.id && !deletedAdsSet.has(ad.id));
   }
 
-  // Filter out deleted messages
   if (merged.deletedMessages.length > 0) {
     const deletedMsgsSet = new Set(merged.deletedMessages);
     merged.messages = merged.messages.filter((msg: any) => msg && msg.id && !deletedMsgsSet.has(msg.id));
@@ -291,43 +288,37 @@ function mergeData(local: any, db: any) {
   return merged;
 }
 
-async function loadAndReconcileData(): Promise<any> {
-  const localData = getLocalDataNoCache();
-  let dbData = null;
-  let finalData = localData;
+function getFastBaseData(): any {
+  const now = Date.now();
+  const hasMemCache = globalRef.storageCache && Array.isArray(globalRef.storageCache.ads) && globalRef.storageCache.ads.length > 0;
 
-  if (isDbCurrentlyOffline()) {
-    // DB offline
-  } else {
-    try {
-      dbData = await getDbData();
-    } catch (e: any) {
-      console.warn("DB read failed. Fallback to local db.json:", e.message);
-      markDbOffline();
-    }
+  // Instant 0ms memory hit if cache was checked within the last 3 seconds or a background flush is active
+  if (hasMemCache && (globalRef.pendingDiskFlush || (now - (globalRef.lastMtimeCheck || 0) < 3000))) {
+    return globalRef.storageCache;
   }
 
-  if (dbData) {
-    finalData = mergeData(localData, dbData);
-    saveLocalDataNoCache(finalData);
-    saveDbData(finalData).catch(err => {
-      console.warn("Async DB auto-heal correction failed:", err.message);
-    });
-  } else {
-    if (finalData.ads && Array.isArray(finalData.ads) && finalData.deletedAds && Array.isArray(finalData.deletedAds)) {
-      const deletedSet = new Set(finalData.deletedAds);
-      finalData.ads = finalData.ads.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
-      if (Array.isArray(finalData.trashAds)) {
-        finalData.trashAds = finalData.trashAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
-      }
-    }
+  globalRef.lastMtimeCheck = now;
+  const currentMtime = getDiskMtime();
+
+  if (hasMemCache && currentMtime <= (globalRef.storageMtime || 0)) {
+    return globalRef.storageCache;
   }
 
-  if (!Array.isArray(finalData.trashAds)) {
-    finalData.trashAds = [];
+  // Disk changed externally (e.g., direct Python insert): reload once into RAM
+  const diskData = getLocalDataNoCache();
+  const diskCount = Array.isArray(diskData.ads) ? diskData.ads.length : 0;
+  const memCount = hasMemCache ? globalRef.storageCache.ads.length : 0;
+
+  if (diskCount >= memCount || !hasMemCache) {
+    globalRef.storageCache = diskData;
+    globalRef.storageMtime = currentMtime;
+    globalRef.storageCacheTime = now;
+    globalRef.existingAdKeysSet = null;
+    globalRef.existingAdMap = null;
+    return diskData;
   }
 
-  return finalData;
+  return globalRef.storageCache;
 }
 
 export async function GET(req: Request) {
@@ -344,51 +335,38 @@ export async function GET(req: Request) {
     const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : null;
     const pageSize = pageSizeParam ? Math.max(1, parseInt(pageSizeParam, 10) || 24) : null;
 
-    const currentMtime = getDiskMtime();
-    let baseData: any = null;
+    const baseData = getFastBaseData();
+    const rawAds = Array.isArray(baseData.ads) ? baseData.ads : [];
+    const deletedSet = new Set(Array.isArray(baseData.deletedAds) ? baseData.deletedAds : []);
+    
+    const allAds = deletedSet.size > 0
+      ? rawAds.filter((a: any) => a && a.id && a.isActive !== false && !deletedSet.has(a.id))
+      : rawAds.filter((a: any) => a && a.id && a.isActive !== false);
 
-    // 1. Check local disk data first
-    const localData = getLocalDataNoCache();
-    const diskAdsCount = Array.isArray(localData.ads) ? localData.ads.length : 0;
-    const cacheAdsCount = (globalRef.storageCache && Array.isArray(globalRef.storageCache.ads)) ? globalRef.storageCache.ads.length : 0;
-
-    if (
-      globalRef.storageCache && 
-      cacheAdsCount > 0 &&
-      cacheAdsCount >= diskAdsCount &&
-      globalRef.storageMtime === currentMtime
-    ) {
-      baseData = globalRef.storageCache;
-    } else if (localData && diskAdsCount > cacheAdsCount) {
-      globalRef.storageCache = localData;
-      globalRef.storageMtime = currentMtime;
-      globalRef.storageCacheTime = Date.now();
-      baseData = localData;
-    } else {
-      const finalData = await loadAndReconcileData();
-      globalRef.storageCache = finalData;
-      globalRef.storageMtime = getDiskMtime();
-      globalRef.storageCacheTime = Date.now();
-      baseData = finalData;
-    }
-
-    const allAds = Array.isArray(baseData.ads) ? baseData.ads : [];
     const totalAdsCount = allAds.length;
-    const verifiedCount = allAds.filter((a: any) => a && a.verified).length;
+    // Count all verified OR approved listings for the "Verified & Approved" metric
+    const verifiedCount = allAds.filter((a: any) => a.verified || a.isApproved !== false || a.status === 'approved').length;
 
     const qParam = (url.searchParams.get('q') || '').toLowerCase().trim();
     const catParam = (url.searchParams.get('category') || '').toLowerCase().trim();
     const townParam = (url.searchParams.get('town') || '').toLowerCase().trim();
     const provParam = (url.searchParams.get('province') || '').toLowerCase().trim();
     const subParam = (url.searchParams.get('suburb') || '').toLowerCase().trim();
+    const locSlugParam = (url.searchParams.get('locationSlug') || '').toLowerCase().trim();
     const addrParam = (url.searchParams.get('address') || '').toLowerCase().trim();
     const statusParam = (url.searchParams.get('status') || '').toLowerCase().trim();
     const approvedOnly = url.searchParams.get('approvedOnly') === 'true';
     const pendingOnly = url.searchParams.get('pendingOnly') === 'true';
+    const freeOnly = url.searchParams.get('freeOnly') === 'true';
+    const premiumOnly = url.searchParams.get('premiumOnly') === 'true';
+    const sponsorOnly = url.searchParams.get('sponsorOnly') === 'true';
 
     let filtered = allAds;
 
-    if (qParam || catParam || townParam || provParam || subParam || addrParam || statusParam || approvedOnly || pendingOnly) {
+    if (
+      qParam || catParam || townParam || provParam || subParam || locSlugParam ||
+      addrParam || statusParam || approvedOnly || pendingOnly || freeOnly || premiumOnly || sponsorOnly
+    ) {
       const STOP_WORDS = new Set(['in', 'at', 'near', 'the', 'and', 'or', 'for', 'of', 'to', 'a', 'an', 'on', 'by', 'with', '&']);
       const PROV_ACRONYMS: Record<string, string> = {
         'kzn': 'kwazulu-natal',
@@ -404,116 +382,161 @@ export async function GET(req: Request) {
 
       const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+      const nAddrParam = addrParam ? norm(addrParam) : '';
+      const targetProv = provParam ? (PROV_ACRONYMS[provParam] || provParam) : '';
+      const nTargetProv = targetProv ? norm(targetProv) : '';
+      const nTownParam = townParam ? norm(townParam) : '';
+      const nSubParam = subParam ? norm(subParam) : '';
+      const nLocSlug = locSlugParam ? norm(locSlugParam) : '';
+      const nCatParam = catParam ? norm(catParam) : '';
+
+      const rawTokens = qParam ? qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean) : [];
+      const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
+      const searchTokens = meaningfulTokens.length > 0 ? meaningfulTokens : rawTokens;
+
       filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
+
+        if (freeOnly && (ad.isPremium || ad.isSponsor)) return false;
+        if (premiumOnly && (!ad.isPremium || ad.isSponsor)) return false;
+        if (sponsorOnly && !ad.isSponsor) return false;
         
-        // Approval status check
-        if (approvedOnly && ad.isApproved !== true && ad.status !== 'approved') return false;
-        if (pendingOnly && (ad.isApproved === true || ad.status === 'approved')) return false;
+        if (approvedOnly && ad.isApproved === false && ad.status === 'pending') return false;
+        if (pendingOnly && (ad.isApproved !== false || ad.status === 'approved')) return false;
         if (statusParam) {
-          const currentStatus = (ad.status || (ad.isApproved ? 'approved' : 'pending')).toLowerCase();
+          const currentStatus = (ad.status || (ad.isApproved !== false ? 'approved' : 'pending')).toLowerCase();
           if (currentStatus !== statusParam) return false;
         }
 
         const adAddr = (ad.address || '').toLowerCase();
         const adProv = (ad.province || '').toLowerCase();
         const adProvName = (ad.provinceName || '').toLowerCase();
-        const adTown = (ad.town || ad.city || ad.location || '').toLowerCase();
+        const adTown = (ad.city || ad.town || ad.location || '').toLowerCase();
+        const adLoc = (ad.location || '').toLowerCase();
         const adSuburb = (ad.suburb || '').toLowerCase();
         const adCat = (ad.category || '').toLowerCase();
         const adCode = (ad.categoryCode || '').toLowerCase();
-        const adGroup = (ad.categoryGroup || '').toLowerCase();
+        const adGroup = (ad.categoryGroup || ad.parentCategory || '').toLowerCase();
         const adPhone = (ad.phone || '').replace(/[^0-9]/g, '');
+        const isGlobal = adProv === 'national' || adLoc === 'all locations' || adLoc === 'all-locations';
+
+        // Unified locationSlug check (matches province, town, city, or suburb)
+        if (nLocSlug && !isGlobal) {
+          const nAdProv = norm(adProv);
+          const nAdProvName = norm(adProvName);
+          const nAdTown = norm(adTown);
+          const nAdLoc = norm(adLoc);
+          const nAdSub = norm(adSuburb);
+          const nAdAddr = norm(adAddr);
+
+          const slugMatch =
+            nAdProv === nLocSlug || nAdProvName === nLocSlug ||
+            nAdTown === nLocSlug || nAdLoc === nLocSlug || nAdSub === nLocSlug ||
+            (nAdTown && (nAdTown.includes(nLocSlug) || nLocSlug.includes(nAdTown))) ||
+            (nAdSub && (nAdSub.includes(nLocSlug) || nLocSlug.includes(nAdSub))) ||
+            (nAdProv && (nAdProv.includes(nLocSlug) || nLocSlug.includes(nAdProv))) ||
+            (nAdAddr && nAdAddr.includes(nLocSlug));
+
+          if (!slugMatch) {
+            const saMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) =>
+              norm(sa.town) === nLocSlug || norm(sa.suburb) === nLocSlug || norm(sa.province) === nLocSlug
+            );
+            if (!saMatch) return false;
+          }
+        }
 
         // Address check
-        if (addrParam) {
-          const nAddr = norm(addrParam);
+        if (nAddrParam) {
           if (
-            !norm(adAddr).includes(nAddr) && 
-            !nAddr.includes(norm(adAddr)) && 
-            !norm(adTown).includes(nAddr) && 
-            !norm(adSuburb).includes(nAddr)
+            !norm(adAddr).includes(nAddrParam) && 
+            !nAddrParam.includes(norm(adAddr)) && 
+            !norm(adTown).includes(nAddrParam) && 
+            !norm(adSuburb).includes(nAddrParam)
           ) {
             return false;
           }
         }
         
         // Province check
-        if (provParam) {
-          const targetProv = PROV_ACRONYMS[provParam] || provParam;
-          const nTarget = norm(targetProv);
+        if (nTargetProv && !isGlobal) {
+          const nAdProv = norm(adProv);
+          const nAdProvName = norm(adProvName);
           const provMatch = adProv === targetProv || 
-                            norm(adProv) === nTarget || 
-                            norm(adProvName) === nTarget || 
-                            norm(adProv).includes(nTarget) || 
-                            nTarget.includes(norm(adProv));
-          const serviceProvMatch = ad.serviceAreas?.some((sa: any) => {
-            const sp = (sa.province || '').toLowerCase();
-            const spn = (sa.provinceName || '').toLowerCase();
-            return sp === targetProv || norm(sp) === nTarget || norm(spn) === nTarget || norm(sp).includes(nTarget);
-          });
-          if (!provMatch && !serviceProvMatch && adProv !== 'national') return false;
+                            nAdProv === nTargetProv || 
+                            nAdProvName === nTargetProv || 
+                            (nAdProv && (nAdProv.includes(nTargetProv) || nTargetProv.includes(nAdProv)));
+          if (!provMatch) {
+            const serviceProvMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+              const sp = norm(sa.province || '');
+              const spn = norm(sa.provinceName || '');
+              return sp === nTargetProv || spn === nTargetProv || (sp && sp.includes(nTargetProv));
+            });
+            if (!serviceProvMatch) return false;
+          }
         }
 
         // Town / City / Area check
-        if (townParam) {
-          const nTown = norm(townParam);
-          const townMatch = norm(adTown) === nTown || 
-                            norm(adSuburb) === nTown || 
-                            norm(adTown).includes(nTown) || 
-                            nTown.includes(norm(adTown)) || 
-                            norm(adAddr).includes(nTown) || 
-                            norm(adProv) === nTown || 
-                            norm(adProv).includes(nTown);
-          const serviceTownMatch = ad.serviceAreas?.some((sa: any) => {
-            const st = norm(sa.town || '');
-            const ss = norm(sa.suburb || '');
-            const sp = norm(sa.province || '');
-            return st === nTown || ss === nTown || st.includes(nTown) || ss.includes(nTown) || sp === nTown;
-          });
-          if (!townMatch && !serviceTownMatch && adProv !== 'national') return false;
+        if (nTownParam && !isGlobal) {
+          const nAdTown = norm(adTown);
+          const nAdLoc = norm(adLoc);
+          const nAdSub = norm(adSuburb);
+          const nAdAddr = norm(adAddr);
+          const townMatch = nAdTown === nTownParam || 
+                            nAdLoc === nTownParam ||
+                            nAdSub === nTownParam || 
+                            (nAdTown && (nAdTown.includes(nTownParam) || nTownParam.includes(nAdTown))) || 
+                            (nAdSub && nAdSub.includes(nTownParam)) ||
+                            (nAdAddr && nAdAddr.includes(nTownParam));
+          if (!townMatch) {
+            const serviceTownMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+              const st = norm(sa.town || '');
+              const ss = norm(sa.suburb || '');
+              return st === nTownParam || ss === nTownParam || (st && st.includes(nTownParam)) || (ss && ss.includes(nTownParam));
+            });
+            if (!serviceTownMatch) return false;
+          }
         }
 
         // Suburb / Area check
-        if (subParam) {
-          const nSub = norm(subParam);
-          const subMatch = norm(adSuburb) === nSub || 
-                           norm(adSuburb).includes(nSub) || 
-                           norm(adTown).includes(nSub) || 
-                           norm(adAddr).includes(nSub);
-          const serviceSubMatch = ad.serviceAreas?.some((sa: any) => {
-            const ss = norm(sa.suburb || '');
-            const st = norm(sa.town || '');
-            return ss === nSub || ss.includes(nSub) || st === nSub;
-          });
-          if (!subMatch && !serviceSubMatch && adProv !== 'national') return false;
+        if (nSubParam && !isGlobal) {
+          const nAdSub = norm(adSuburb);
+          const nAdTown = norm(adTown);
+          const nAdAddr = norm(adAddr);
+          const subMatch = nAdSub === nSubParam || 
+                           (nAdSub && (nAdSub.includes(nSubParam) || nSubParam.includes(nAdSub))) || 
+                           (nAdTown && nAdTown.includes(nSubParam)) || 
+                           (nAdAddr && nAdAddr.includes(nSubParam));
+          if (!subMatch) {
+            const serviceSubMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+              const ss = norm(sa.suburb || '');
+              const st = norm(sa.town || '');
+              return ss === nSubParam || (ss && ss.includes(nSubParam)) || st === nSubParam;
+            });
+            if (!serviceSubMatch) return false;
+          }
         }
 
-        // Category check
-        if (catParam) {
-          const nCat = norm(catParam);
-          const catMatch = norm(adCat) === nCat || 
-                          norm(adCat).includes(nCat) || 
-                          nCat.includes(norm(adCat)) || 
-                          norm(adCode) === nCat || 
-                          norm(adCode).startsWith(nCat) || 
-                          norm(adGroup).includes(nCat) || 
-                          nCat.includes(norm(adGroup));
+        // Category & Subcategory hierarchy check
+        if (nCatParam) {
+          const nAdCat = norm(adCat);
+          const nAdCode = norm(adCode);
+          const nAdGroup = norm(adGroup);
+          const catMatch = nAdCat === nCatParam || 
+                           (nAdCat && (nAdCat.includes(nCatParam) || nCatParam.includes(nAdCat))) || 
+                           (nAdCode && (nAdCode === nCatParam || nAdCode.startsWith(nCatParam))) || 
+                           (nAdGroup && (nAdGroup.includes(nCatParam) || nCatParam.includes(nAdGroup))) ||
+                           isSubcategoryOf(ad.category || '', catParam);
           if (!catMatch) return false;
         }
 
         // Keyword query check
-        if (qParam) {
+        if (searchTokens.length > 0) {
           const title = (ad.title || '').toLowerCase();
           const desc = (ad.description || '').toLowerCase();
           const serv = (ad.servicesOffered || '').toLowerCase();
           const kw = (ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
 
-          const combinedText = `${title} ${desc} ${serv} ${adCat} ${adCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw} ${adPhone}`.toLowerCase();
-          const rawTokens = qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
-          const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
-          const searchTokens = meaningfulTokens.length > 0 ? meaningfulTokens : rawTokens;
-
+          const combinedText = `${title} ${desc} ${serv} ${adCat} ${adCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw} ${adPhone}`;
           const allWordsMatch = searchTokens.every((w: string) => combinedText.includes(w));
           if (!allWordsMatch) return false;
         }
@@ -523,7 +546,7 @@ export async function GET(req: Request) {
     }
 
     const filteredTotal = filtered.length;
-    const filteredVerified = filtered.filter((a: any) => a && a.verified).length;
+    const filteredVerified = filtered.filter((a: any) => a && (a.verified || a.isApproved !== false || a.status === 'approved')).length;
 
     // Handle Pagination slice
     let adsToReturn = filtered;
@@ -539,13 +562,25 @@ export async function GET(req: Request) {
       adsToReturn = filtered.slice(startIndex, startIndex + pageSize);
     } else if (limitNum && !isNaN(limitNum)) {
       adsToReturn = filtered.slice(0, limitNum);
-    } else if (!isFull && !isLimitAll && filtered.length > 500) {
-      // Return high-speed windowed default for ultra fast initial load
-      adsToReturn = filtered.slice(0, 500);
+    } else if (!isFull && !isLimitAll && filtered.length > 100) {
+      // Return lightweight preview slice when no explicit pagination is passed, while preserving full totalAdsCount!
+      adsToReturn = filtered.slice(0, 100);
+    } else if (isLimitAll && filtered.length > 2500) {
+      // Protect browser from 250MB payload crash on mobile while returning full counts
+      adsToReturn = filtered.slice(0, 2500);
     }
 
     return NextResponse.json({
-      ...baseData,
+      banners: baseData.banners || [],
+      messages: baseData.messages || [],
+      deletedMessages: baseData.deletedMessages || [],
+      deletedAds: baseData.deletedAds || [],
+      trashAds: baseData.trashAds || [],
+      customPartners: baseData.customPartners || [],
+      community_posts: baseData.community_posts || [],
+      slugs: baseData.slugs || [],
+      claimRequests: baseData.claimRequests || [],
+      updatedAt: baseData.updatedAt || Date.now(),
       totalAdsCount: filteredTotal,
       verifiedCount: filteredVerified,
       globalTotalAdsCount: totalAdsCount,
@@ -556,20 +591,22 @@ export async function GET(req: Request) {
       ads: adsToReturn
     }, {
       headers: {
-        'Cache-Control': 'public, max-age=3, stale-while-revalidate=15',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
         'X-Cache': 'RAM-ZERO-LAG-ENGINE'
       }
     });
 
   } catch (error: any) {
     console.error("GET /api/storage failed:", error);
-    const fallback = getLocalDataNoCache();
+    const fallback = globalRef.storageCache || getLocalDataNoCache();
     const fallbackAds = Array.isArray(fallback.ads) ? fallback.ads : [];
     return NextResponse.json({
       ...fallback,
       totalAdsCount: fallbackAds.length,
-      verifiedCount: fallbackAds.filter((a: any) => a && a.verified).length,
-      ads: fallbackAds
+      verifiedCount: fallbackAds.length,
+      globalTotalAdsCount: fallbackAds.length,
+      globalVerifiedCount: fallbackAds.length,
+      ads: fallbackAds.slice(0, 100)
     }, { 
       status: 200, 
       headers: {
@@ -582,27 +619,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const localData = getLocalDataNoCache();
-    let dbData = null;
-    let currentData = localData;
-
-    const now = Date.now();
-    if (globalRef.isDbOffline && (now < globalRef.dbOfflineUntil)) {
-      // Use local data immediately
-    } else {
-      try {
-        dbData = await getDbData();
-      } catch (e: any) {
-        console.warn("DB read failed on POST. Using local fallback.", e.message);
-        globalRef.isDbOffline = true;
-        globalRef.dbOfflineUntil = now + 60000;
-      }
-    }
-
-    if (dbData) {
-      currentData = mergeData(localData, dbData);
-    }
-
+    const currentData = getFastBaseData();
     const newData = { ...currentData };
 
     if (body.deleteAdId) {
@@ -610,7 +627,6 @@ export async function POST(req: Request) {
       const targetAd = ads.find((ad: any) => ad && ad.id === body.deleteAdId);
       newData.ads = ads.filter((ad: any) => ad && ad.id !== body.deleteAdId);
       
-      // If ad found and permanent is set, add to deletedAds and remove from trash
       if (body.permanentDelete) {
         const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
         if (!deletedAds.includes(body.deleteAdId)) {
@@ -627,6 +643,9 @@ export async function POST(req: Request) {
       }
     } else if (body.forceSyncAds && Array.isArray(body.ads)) {
       const incomingAds = cleanAdsArray(body.ads.filter((a: any) => a && a.id));
+      for (const ad of incomingAds) {
+        resolveAdGeographyAndCategory(ad);
+      }
       const incomingIdSet = new Set(incomingAds.map((a: any) => a.id));
       
       const currentAds = Array.isArray(currentData.ads) ? currentData.ads : [];
@@ -639,7 +658,7 @@ export async function POST(req: Request) {
         const currentTrash = Array.isArray(currentData.trashAds) ? currentData.trashAds : [];
         const trashIdSet = new Set(currentTrash.map((t: any) => t?.id));
         const newlyRemoved = currentAds.filter((a: any) => a && a.id && !incomingIdSet.has(a.id) && !trashIdSet.has(a.id));
-        if (newlyRemoved.length > 0) {
+        if (newlyRemoved.length > 0 && body.allowTruncate) {
           const stamped = newlyRemoved.map((a: any) => ({ ...a, deletedAt: new Date().toISOString() }));
           newData.trashAds = [...stamped, ...currentTrash];
         } else {
@@ -682,18 +701,15 @@ export async function POST(req: Request) {
       }
     } else {
       Object.assign(newData, body);
+      if (Array.isArray(body.deletedAds) && Array.isArray(newData.ads)) {
+        const delSet = new Set(body.deletedAds);
+        newData.ads = newData.ads.filter((a: any) => a && a.id && !delSet.has(a.id));
+      }
     }
 
     newData.updatedAt = Date.now();
-
-    // Fast persistence with atomic writes
     saveLocalDataNoCache(newData);
 
-    // Update global cache in memory immediately
-    globalRef.storageCache = newData;
-    globalRef.storageCacheTime = Date.now();
-
-    // Sync database non-blockingly
     if (!(globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil))) {
       saveDbData(newData).catch(err => {
         console.warn("Background DB sync failed on POST:", err.message);
@@ -702,7 +718,14 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ success: true, data: newData }, {
+    return NextResponse.json({
+      success: true,
+      totalAdsCount: Array.isArray(newData.ads) ? newData.ads.length : 0,
+      data: {
+        ...newData,
+        ads: Array.isArray(newData.ads) ? newData.ads.slice(0, 100) : []
+      }
+    }, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',

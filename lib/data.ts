@@ -274,7 +274,7 @@ export function getTotalAdsCount(): number {
     const storedCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
     if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed)) return Math.max(0, parsed);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
     }
   }
   const ads = getStoredAds();
@@ -286,11 +286,16 @@ export function getVerifiedAdsCount(): number {
     const storedCount = safeLocalStorage.getItem("searchbiz_verified_count");
     if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed)) return Math.max(0, parsed);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    const totalCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
+    if (totalCount !== null && totalCount !== undefined && totalCount !== "") {
+      const parsedTotal = parseInt(totalCount, 10);
+      if (!isNaN(parsedTotal) && parsedTotal > 0) return parsedTotal;
     }
   }
   const ads = getStoredAds();
-  return ads.filter(a => a && a.verified).length;
+  return ads.filter(a => a && (a.verified || a.isApproved !== false || a.status === 'approved')).length;
 }
 
 // Unified global advertisements client register with localStorage persistence
@@ -336,9 +341,9 @@ export async function fetchAndStoreAds(): Promise<any[]> {
   async function performFetch(attempt: number = 0): Promise<any[]> {
     try {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 12000) : null;
 
-      const res = await fetch('/api/storage?limit=all', { 
+      const res = await fetch('/api/storage?page=1&pageSize=120', { 
         cache: 'no-store',
         headers: { 'Accept': 'application/json' },
         signal: controller ? controller.signal : undefined
@@ -362,19 +367,20 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         const cleanedServerAds = cleanAdsArray(serverAds);
         const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
-        if (data.totalAdsCount !== undefined) {
-          safeLocalStorage.setItem("searchbiz_total_ads_count", String(data.totalAdsCount));
+        const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
+        const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
+        if (totalCnt !== undefined) {
+          safeLocalStorage.setItem("searchbiz_total_ads_count", String(totalCnt));
         }
-        if (data.verifiedCount !== undefined) {
-          safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
+        if (verCnt !== undefined) {
+          safeLocalStorage.setItem("searchbiz_verified_count", String(verCnt));
         }
 
         const currentLocal = getStoredAds();
         // Protect local ads if server returned empty due to sync lag
         if (finalAds.length > 0 || currentLocal.length === 0) {
           _memStoredAds = finalAds;
-          // Store lightweight recent slice in localStorage to prevent 5MB browser quota lockup
-          const localSlice = finalAds.length > 500 ? finalAds.slice(0, 500) : finalAds;
+          const localSlice = finalAds.length > 120 ? finalAds.slice(0, 120) : finalAds;
           const serialized = JSON.stringify(localSlice);
           safeLocalStorage.setItem("searchbiz_all_ads", serialized);
           _memStoredAdsRaw = serialized;

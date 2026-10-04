@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Batch sync complete! Added ${result.addedCount} new listings. Skipped ${result.skippedDuplicatesCount} duplicates. Total active listings: ${result.totalActiveAds}.`,
+      message: `Batch sync complete! Added ${result.addedCount} new listings, updated ${result.updatedCount || 0}. Total active listings: ${result.totalActiveAds}.`,
       addedCount: result.addedCount,
+      updatedCount: result.updatedCount || 0,
       skippedDuplicatesCount: result.skippedDuplicatesCount,
       totalActiveAds: result.totalActiveAds
     }, { status: 200 });

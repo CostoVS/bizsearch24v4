@@ -10,11 +10,20 @@ export function DataSyncer() {
       if (document.hidden || isSyncing) return;
       isSyncing = true;
       try {
-        // Single unified storage fetch
-        const res = await fetch('/api/storage', { cache: 'no-store' });
+        // Single unified storage fetch (lightweight slice for fast background sync)
+        const res = await fetch('/api/storage?page=1&pageSize=48', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data) {
+            const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
+            const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
+            if (totalCnt !== undefined) {
+              safeLocalStorage.setItem("searchbiz_total_ads_count", String(totalCnt));
+            }
+            if (verCnt !== undefined) {
+              safeLocalStorage.setItem("searchbiz_verified_count", String(verCnt));
+            }
+
             // 1. Ads sync
             if (Array.isArray(data.ads)) {
               const serverAds = data.ads.filter((a: any) => a && a.id);
@@ -27,7 +36,7 @@ export function DataSyncer() {
               const cleanedServerAds = cleanAdsArray(serverAds);
               const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
-              safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds));
+              safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds.slice(0, 100)));
               safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(Array.from(combinedDeletedSet)));
 
               if (data.customPartners) {

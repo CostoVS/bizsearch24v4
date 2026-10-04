@@ -320,7 +320,7 @@ export default async function LocationPage({ params }: Props) {
         </Link>
       </div>
 
-      <LocationListings ads={adsForLocation} properName={properName} />
+      <LocationListings ads={adsForLocation.slice(0, 48)} properName={properName} initialTotalCount={adsForLocation.length} />
 
       {/* Geolocated Visual Map Component */}
       <div className="mt-12 w-full h-[420px] rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative z-0">

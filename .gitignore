@@ -31,3 +31,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# persistent database backups (never overwrite on git pull/reset)
+*backup_db.json
+searchbiz_db_backup.json
