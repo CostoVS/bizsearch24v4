@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { cleanAdsArray } from './clean-ad';
 import { SA_PROVINCES } from './locations';
+import { db, initDb, withDbTimeout } from './db';
+import { storage } from './db/schema';
+import { eq } from 'drizzle-orm';
 
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
@@ -60,6 +63,13 @@ export function readServerDb(): any {
     }
   }
 
+  // Check in-memory global cache
+  if (globalRef.storageCache && Array.isArray(globalRef.storageCache.ads)) {
+    if (!bestData || globalRef.storageCache.ads.length > bestCount) {
+      bestData = globalRef.storageCache;
+    }
+  }
+
   if (bestData) {
     bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
     bestData.trashAds = Array.isArray(bestData.trashAds) ? bestData.trashAds : [];
@@ -96,6 +106,21 @@ export function writeServerDb(data: any): void {
   }
   globalRef.storageCache = data;
   globalRef.storageCacheTime = Date.now();
+
+  // Async sync to PostgreSQL if DATABASE_URL is set
+  if (process.env.DATABASE_URL) {
+    try {
+      initDb();
+      if (db) {
+        withDbTimeout(
+          db.insert(storage).values({ key: 'main', data: payload }).onConflictDoUpdate({ target: storage.key, set: { data: payload } }),
+          1000
+        ).catch((err: any) => {
+          console.warn('[BotAdService] Async Postgres sync note:', err.message);
+        });
+      }
+    } catch (e) {}
+  }
 }
 
 // Normalize province string to canonical slug

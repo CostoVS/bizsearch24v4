@@ -272,9 +272,9 @@ let _activeFetchAdsPromise: Promise<any[]> | null = null;
 export function getTotalAdsCount(): number {
   if (typeof window !== "undefined") {
     const storedCount = safeLocalStorage.getItem("searchbiz_total_ads_count");
-    if (storedCount) {
+    if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
+      if (!isNaN(parsed)) return Math.max(0, parsed);
     }
   }
   const ads = getStoredAds();
@@ -284,13 +284,13 @@ export function getTotalAdsCount(): number {
 export function getVerifiedAdsCount(): number {
   if (typeof window !== "undefined") {
     const storedCount = safeLocalStorage.getItem("searchbiz_verified_count");
-    if (storedCount) {
+    if (storedCount !== null && storedCount !== undefined && storedCount !== "") {
       const parsed = parseInt(storedCount, 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
+      if (!isNaN(parsed)) return Math.max(0, parsed);
     }
   }
   const ads = getStoredAds();
-  return ads.filter(a => a.verified).length;
+  return ads.filter(a => a && a.verified).length;
 }
 
 // Unified global advertisements client register with localStorage persistence

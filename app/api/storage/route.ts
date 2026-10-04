@@ -334,28 +334,29 @@ export async function GET(req: Request) {
 
     let baseData: any = null;
 
-    // 1. Ultra-fast in-memory cache hit (< 1ms) if disk has not changed
+    // 1. Check local disk data first
+    const localData = getLocalDataNoCache();
+    const diskAdsCount = Array.isArray(localData.ads) ? localData.ads.length : 0;
+    const cacheAdsCount = (globalRef.storageCache && Array.isArray(globalRef.storageCache.ads)) ? globalRef.storageCache.ads.length : 0;
+
     if (
       globalRef.storageCache && 
-      Array.isArray(globalRef.storageCache.ads) && 
-      globalRef.storageCache.ads.length > 0 &&
+      cacheAdsCount > 0 &&
+      cacheAdsCount >= diskAdsCount &&
       globalRef.storageMtime === currentMtime
     ) {
       baseData = globalRef.storageCache;
+    } else if (localData && diskAdsCount > cacheAdsCount) {
+      globalRef.storageCache = localData;
+      globalRef.storageMtime = currentMtime;
+      globalRef.storageCacheTime = Date.now();
+      baseData = localData;
     } else {
-      // 2. Read local .data/db.json disk database directly
-      const localData = getLocalDataNoCache();
-      if (localData && Array.isArray(localData.ads) && localData.ads.length > 0) {
-        globalRef.storageCache = localData;
-        globalRef.storageMtime = currentMtime;
-        globalRef.storageCacheTime = Date.now();
-        baseData = localData;
-      } else {
-        const finalData = await loadAndReconcileData();
-        globalRef.storageCache = finalData;
-        globalRef.storageCacheTime = Date.now();
-        baseData = finalData;
-      }
+      const finalData = await loadAndReconcileData();
+      globalRef.storageCache = finalData;
+      globalRef.storageMtime = getDiskMtime();
+      globalRef.storageCacheTime = Date.now();
+      baseData = finalData;
     }
 
     const allAds = Array.isArray(baseData.ads) ? baseData.ads : [];
