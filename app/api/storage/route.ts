@@ -11,6 +11,9 @@ export const dynamic = 'force-dynamic';
 const DB_KEY = 'main';
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
+const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
+const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
+const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
 
 function getDiskMtime(): number {
   try {
@@ -20,11 +23,14 @@ function getDiskMtime(): number {
     if (fs.existsSync(JSON_PATH)) {
       return fs.statSync(JSON_PATH).mtimeMs;
     }
+    if (fs.existsSync(BACKUP_PATH)) {
+      return fs.statSync(BACKUP_PATH).mtimeMs;
+    }
   } catch (e) {}
   return 0;
 }
 
-// Global cache object to survive hot reloads and next.js api invocations in the same process
+// Global cache object to survive hot reloads and Next.js API invocations in the same process
 const globalRef = global as any;
 if (globalRef.storageCache === undefined) {
   globalRef.storageCache = getLocalDataNoCache();
@@ -43,7 +49,13 @@ if (globalRef.dbOfflineUntil === undefined) {
 }
 
 function getLocalDataNoCache() {
-  const candidatePaths = [JSON_PATH, PERSIST_PATH];
+  const candidatePaths = [
+    PERSIST_PATH,
+    JSON_PATH,
+    BACKUP_PATH,
+    BACKUP_DOT_PATH,
+    VPS_STORAGE_BACKUP
+  ];
   let bestData: any = null;
   let bestTime = -1;
   let bestCount = -1;
@@ -91,19 +103,40 @@ function getLocalDataNoCache() {
   };
 }
 
+// Atomic & safe disk write: writes to temporary file first then atomically replaces target
+function safeAtomicWriteFileSync(targetPath: string, content: string): void {
+  try {
+    const dir = path.dirname(targetPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const tempPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
+    fs.writeFileSync(tempPath, content, 'utf-8');
+    fs.renameSync(tempPath, targetPath);
+  } catch (err) {
+    // Fallback to direct write if rename is not supported
+    try {
+      fs.writeFileSync(targetPath, content, 'utf-8');
+    } catch (fallbackErr) {
+      console.error(`Failed atomic write to ${targetPath}:`, fallbackErr);
+    }
+  }
+}
+
 function saveLocalDataNoCache(data: any) {
   if (!data.updatedAt) {
     data.updatedAt = Date.now();
   }
   const payload = JSON.stringify(data, null, 2);
 
-  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
+  const targets = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH];
+  if (fs.existsSync(path.dirname(VPS_STORAGE_BACKUP))) {
+    targets.push(VPS_STORAGE_BACKUP);
+  }
+
+  for (const targetPath of targets) {
     try {
-      const dir = path.dirname(targetPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(targetPath, payload, 'utf-8');
+      safeAtomicWriteFileSync(targetPath, payload);
     } catch (e) {
       console.error(`Failed to write json data to ${targetPath}:`, e);
     }
@@ -114,21 +147,6 @@ function saveLocalDataNoCache(data: any) {
   globalRef.storageCacheTime = Date.now();
 }
 
-async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 500): Promise<T> {
-  let timeoutId: any;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error("Database operation timed out"));
-    }, timeoutMs);
-  });
-  
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 async function getDbData(): Promise<any> {
   if (isDbCurrentlyOffline()) {
     throw new Error("DB flagged as offline");
@@ -136,7 +154,6 @@ async function getDbData(): Promise<any> {
   
   initDb();
   if (dbReadyPromise) {
-    // fast timeout for db readiness check
     await withDbTimeout(dbReadyPromise, 300).catch(() => {});
   }
   if (!db) {
@@ -256,7 +273,7 @@ function mergeData(local: any, db: any) {
   merged.deletedAds = mergeIds(localVal.deletedAds, dbVal.deletedAds);
   merged.deletedMessages = mergeIds(localVal.deletedMessages, dbVal.deletedMessages);
 
-  // Filter out permanently deleted ads from trash as well if any
+  // Filter out permanently deleted ads
   if (merged.deletedAds.length > 0) {
     const deletedAdsSet = new Set(merged.deletedAds);
     merged.ads = merged.ads.filter((ad: any) => ad && ad.id && !deletedAdsSet.has(ad.id));
@@ -280,7 +297,7 @@ async function loadAndReconcileData(): Promise<any> {
   let finalData = localData;
 
   if (isDbCurrentlyOffline()) {
-    // DB offline, skip connection attempt
+    // DB offline
   } else {
     try {
       dbData = await getDbData();
@@ -313,16 +330,6 @@ async function loadAndReconcileData(): Promise<any> {
   return finalData;
 }
 
-async function revalidateCacheBackground(): Promise<void> {
-  try {
-    const data = await loadAndReconcileData();
-    globalRef.storageCache = data;
-    globalRef.storageCacheTime = Date.now();
-  } catch (e) {
-    // Ignore background failures
-  }
-}
-
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -330,8 +337,14 @@ export async function GET(req: Request) {
     const rawLimit = url.searchParams.get('limit');
     const isLimitAll = rawLimit === 'all' || rawLimit === '0' || rawLimit === 'unlimited';
     const limitNum = rawLimit && !isLimitAll ? parseInt(rawLimit, 10) : null;
-    const currentMtime = getDiskMtime();
+    
+    // Server-side pagination parameters
+    const pageParam = url.searchParams.get('page');
+    const pageSizeParam = url.searchParams.get('pageSize');
+    const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : null;
+    const pageSize = pageSizeParam ? Math.max(1, parseInt(pageSizeParam, 10) || 24) : null;
 
+    const currentMtime = getDiskMtime();
     let baseData: any = null;
 
     // 1. Check local disk data first
@@ -373,6 +386,8 @@ export async function GET(req: Request) {
     const approvedOnly = url.searchParams.get('approvedOnly') === 'true';
     const pendingOnly = url.searchParams.get('pendingOnly') === 'true';
 
+    let filtered = allAds;
+
     if (qParam || catParam || townParam || provParam || subParam || addrParam || statusParam || approvedOnly || pendingOnly) {
       const STOP_WORDS = new Set(['in', 'at', 'near', 'the', 'and', 'or', 'for', 'of', 'to', 'a', 'an', 'on', 'by', 'with', '&']);
       const PROV_ACRONYMS: Record<string, string> = {
@@ -389,7 +404,7 @@ export async function GET(req: Request) {
 
       const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      const filtered = allAds.filter((ad: any) => {
+      filtered = allAds.filter((ad: any) => {
         if (!ad) return false;
         
         // Approval status check
@@ -487,7 +502,7 @@ export async function GET(req: Request) {
           if (!catMatch) return false;
         }
 
-        // Keyword query check (Multi-word token search across all business attributes)
+        // Keyword query check
         if (qParam) {
           const title = (ad.title || '').toLowerCase();
           const desc = (ad.description || '').toLowerCase();
@@ -505,46 +520,44 @@ export async function GET(req: Request) {
 
         return true;
       });
-
-      const adsToReturn = (limitNum && !isNaN(limitNum)) ? filtered.slice(0, limitNum) : filtered;
-
-      return NextResponse.json({
-        ...baseData,
-        totalAdsCount: filtered.length,
-        verifiedCount: filtered.filter((a: any) => a && a.verified).length,
-        ads: adsToReturn
-      }, {
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-          'X-Cache': 'RAM-FILTERED-ALL'
-        }
-      });
     }
 
-    if (!isFull) {
-      const returnAds = (limitNum && !isNaN(limitNum)) ? allAds.slice(0, limitNum) : allAds;
-      return NextResponse.json({
-        ...baseData,
-        totalAdsCount,
-        verifiedCount,
-        ads: returnAds
-      }, {
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-          'X-Cache': 'RAM-FAST-PREVIEW'
-        }
-      });
+    const filteredTotal = filtered.length;
+    const filteredVerified = filtered.filter((a: any) => a && a.verified).length;
+
+    // Handle Pagination slice
+    let adsToReturn = filtered;
+    let totalPages = 1;
+    let activePage = 1;
+    let activePageSize = filteredTotal;
+
+    if (page && pageSize) {
+      activePage = page;
+      activePageSize = pageSize;
+      totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
+      const startIndex = (page - 1) * pageSize;
+      adsToReturn = filtered.slice(startIndex, startIndex + pageSize);
+    } else if (limitNum && !isNaN(limitNum)) {
+      adsToReturn = filtered.slice(0, limitNum);
+    } else if (!isFull && !isLimitAll && filtered.length > 500) {
+      // Return high-speed windowed default for ultra fast initial load
+      adsToReturn = filtered.slice(0, 500);
     }
 
     return NextResponse.json({
       ...baseData,
-      totalAdsCount,
-      verifiedCount,
-      ads: allAds
+      totalAdsCount: filteredTotal,
+      verifiedCount: filteredVerified,
+      globalTotalAdsCount: totalAdsCount,
+      globalVerifiedCount: verifiedCount,
+      page: activePage,
+      pageSize: activePageSize,
+      totalPages: totalPages,
+      ads: adsToReturn
     }, {
       headers: {
-        'Cache-Control': 'public, max-age=2, stale-while-revalidate=10',
-        'X-Cache': 'RAM-FULL'
+        'Cache-Control': 'public, max-age=3, stale-while-revalidate=15',
+        'X-Cache': 'RAM-ZERO-LAG-ENGINE'
       }
     });
 
@@ -597,7 +610,7 @@ export async function POST(req: Request) {
       const targetAd = ads.find((ad: any) => ad && ad.id === body.deleteAdId);
       newData.ads = ads.filter((ad: any) => ad && ad.id !== body.deleteAdId);
       
-      // If ad found and permanent is not set, add to trashAds
+      // If ad found and permanent is set, add to deletedAds and remove from trash
       if (body.permanentDelete) {
         const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
         if (!deletedAds.includes(body.deleteAdId)) {
@@ -613,7 +626,6 @@ export async function POST(req: Request) {
         }
       }
     } else if (body.forceSyncAds && Array.isArray(body.ads)) {
-      // Client is sending authoritative ad collection (e.g. from Admin, deduplication, or saved state)
       const incomingAds = cleanAdsArray(body.ads.filter((a: any) => a && a.id));
       const incomingIdSet = new Set(incomingAds.map((a: any) => a.id));
       
@@ -621,11 +633,9 @@ export async function POST(req: Request) {
       const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
       const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
       
-      // If client supplied explicit trashAds, respect them
       if (Array.isArray(body.trashAds)) {
         newData.trashAds = body.trashAds;
       } else {
-        // Collect missing ads into trashAds if not already present
         const currentTrash = Array.isArray(currentData.trashAds) ? currentData.trashAds : [];
         const trashIdSet = new Set(currentTrash.map((t: any) => t?.id));
         const newlyRemoved = currentAds.filter((a: any) => a && a.id && !incomingIdSet.has(a.id) && !trashIdSet.has(a.id));
@@ -637,7 +647,6 @@ export async function POST(req: Request) {
         }
       }
 
-      // If permanent delete IDs are specified
       if (Array.isArray(body.permanentDeletedIds) && body.permanentDeletedIds.length > 0) {
         const permSet = new Set(body.permanentDeletedIds);
         newData.trashAds = (newData.trashAds || []).filter((t: any) => t && t.id && !permSet.has(t.id));
@@ -650,7 +659,6 @@ export async function POST(req: Request) {
       if (incomingAds.length === 0 && currentAds.length > 0) {
         newData.ads = currentAds.filter((a: any) => a && a.id && !allDeletedSet.has(a.id));
       } else if (incomingAds.length < currentAds.length && !body.allowTruncate) {
-        // Client sent a subset (e.g. 200 preview ads). Merge updates without dropping other server ads
         const mergedMap = new Map();
         currentAds.forEach((a: any) => { if (a && a.id) mergedMap.set(a.id, a); });
         incomingAds.forEach((a: any) => { if (a && a.id) mergedMap.set(a.id, { ...mergedMap.get(a.id), ...a }); });
@@ -678,7 +686,7 @@ export async function POST(req: Request) {
 
     newData.updatedAt = Date.now();
 
-    // Fast persistence
+    // Fast persistence with atomic writes
     saveLocalDataNoCache(newData);
 
     // Update global cache in memory immediately
@@ -711,4 +719,3 @@ export async function POST(req: Request) {
     });
   }
 }
-

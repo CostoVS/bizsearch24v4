@@ -8,9 +8,30 @@ import { eq } from 'drizzle-orm';
 
 const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
 const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
+const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
+const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
+const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
 
 // Global cache access matching /app/api/storage/route.ts
 const globalRef = global as any;
+
+function safeAtomicWrite(targetPath: string, content: string): void {
+  try {
+    const dir = path.dirname(targetPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const tempPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
+    fs.writeFileSync(tempPath, content, 'utf-8');
+    fs.renameSync(tempPath, targetPath);
+  } catch (err) {
+    try {
+      fs.writeFileSync(targetPath, content, 'utf-8');
+    } catch (fallbackErr) {
+      console.error(`[BotAdService] Failed atomic write to ${targetPath}:`, fallbackErr);
+    }
+  }
+}
 
 export interface BotAdPayload {
   title: string;
@@ -38,7 +59,7 @@ export interface BotAdPayload {
 }
 
 export function readServerDb(): any {
-  const candidatePaths = [JSON_PATH, PERSIST_PATH];
+  const candidatePaths = [JSON_PATH, PERSIST_PATH, BACKUP_PATH, BACKUP_DOT_PATH];
   let bestData: any = null;
   let bestTime = -1;
   let bestCount = -1;
@@ -84,13 +105,13 @@ export function writeServerDb(data: any): void {
   data.updatedAt = Date.now();
   const payload = JSON.stringify(data, null, 2);
 
-  for (const targetPath of [PERSIST_PATH, JSON_PATH]) {
+  const targets = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH];
+  if (fs.existsSync(path.dirname(VPS_STORAGE_BACKUP))) {
+    targets.push(VPS_STORAGE_BACKUP);
+  }
+  for (const targetPath of targets) {
     try {
-      const dir = path.dirname(targetPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(targetPath, payload, 'utf-8');
+      safeAtomicWrite(targetPath, payload);
     } catch (e) {
       console.error(`[BotAdService] Failed to write ${targetPath}:`, e);
     }

@@ -121,6 +121,13 @@ fi
 # Clean up any drop-in override
 rm -rf /etc/systemd/system/hermes-agent.service.d
 
+# Ensure data directories exist and are protected with full permissions
+mkdir -p "${APP_DIR}/leads_storage"
+mkdir -p "${APP_DIR}/listings"
+if [ -d "../.data" ]; then
+    chmod -R 777 ../.data ../data 2>/dev/null || true
+fi
+
 echo "Restarting hermes-agent service..."
 systemctl daemon-reload
 systemctl restart hermes-agent

@@ -372,9 +372,11 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         const currentLocal = getStoredAds();
         // Protect local ads if server returned empty due to sync lag
         if (finalAds.length > 0 || currentLocal.length === 0) {
-          const serialized = JSON.stringify(finalAds);
-          safeLocalStorage.setItem("searchbiz_all_ads", serialized);
           _memStoredAds = finalAds;
+          // Store lightweight recent slice in localStorage to prevent 5MB browser quota lockup
+          const localSlice = finalAds.length > 500 ? finalAds.slice(0, 500) : finalAds;
+          const serialized = JSON.stringify(localSlice);
+          safeLocalStorage.setItem("searchbiz_all_ads", serialized);
           _memStoredAdsRaw = serialized;
         }
         
@@ -425,11 +427,15 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
   if (typeof window !== "undefined") {
     const validAds = cleanAdsArray(ads.filter(ad => ad && ad.id));
 
-    safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(validAds));
+    _memStoredAds = validAds;
+    const localSlice = validAds.length > 500 ? validAds.slice(0, 500) : validAds;
+    const serialized = JSON.stringify(localSlice);
+    safeLocalStorage.setItem("searchbiz_all_ads", serialized);
+    _memStoredAdsRaw = serialized;
     
     // Also sync the custom ads key for any legacy code
     const customOnly = validAds.filter(ad => ad.id.startsWith("custom_") || !ad.id.startsWith("ad"));
-    safeLocalStorage.setItem("searchbiz_custom_ads", JSON.stringify(customOnly));
+    safeLocalStorage.setItem("searchbiz_custom_ads", JSON.stringify(customOnly.slice(0, 300)));
 
     // Dispatch custom event to notify all components on the same page
     window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
@@ -453,7 +459,11 @@ export async function saveStoredAds(ads: any[]): Promise<void> {
         if (r.ok) {
           const res = await r.json();
           if (res.data && Array.isArray(res.data.ads)) {
-            safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(res.data.ads));
+            _memStoredAds = res.data.ads;
+            const resSlice = res.data.ads.length > 500 ? res.data.ads.slice(0, 500) : res.data.ads;
+            const resSerialized = JSON.stringify(resSlice);
+            safeLocalStorage.setItem("searchbiz_all_ads", resSerialized);
+            _memStoredAdsRaw = resSerialized;
             if (Array.isArray(res.data.deletedAds)) {
               safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(res.data.deletedAds));
             }
