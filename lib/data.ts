@@ -335,9 +335,15 @@ export async function fetchAndStoreAds(): Promise<any[]> {
   
   async function performFetch(attempt: number = 0): Promise<any[]> {
     try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
+
       const res = await fetch('/api/storage?limit=all', { 
         cache: 'no-store',
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: controller ? controller.signal : undefined
+      }).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
       });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();

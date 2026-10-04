@@ -19,7 +19,7 @@ export default function HomePage() {
   const { isAdmin } = useAuth();
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [ads, setAds] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const [freeAdsPage, setFreeAdsPage] = useState(1);
   const [premiumAdsPage, setPremiumAdsPage] = useState(1);
@@ -28,34 +28,25 @@ export default function HomePage() {
   const premiumListingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load initial cached local storage ads immediately on mount to keep UI super fast
-    const cached = getStoredAds().filter((a: any) => a.isActive !== false);
-    if (cached.length > 0) {
-            setAds(cached);
-      setLoading(false);
-    }
+    // Load initial cached local storage ads immediately on mount
+    const cached = getStoredAds().filter((a: any) => a && a.isActive !== false);
+    setAds(cached);
 
-    // Force a fresh fetch from server immediately on mount to solve "0 Companies" lag
+    // Fetch fresh ads asynchronously in background
     fetchAndStoreAds().then(freshAds => {
-      if (freshAds && freshAds.length > 0) {
-        setAds(freshAds.filter((a: any) => a.isActive !== false));
+      if (freshAds && Array.isArray(freshAds)) {
+        setAds(freshAds.filter((a: any) => a && a.isActive !== false));
       }
-    }).finally(() => {
-      setLoading(false);
-    });
+    }).catch(() => {});
 
     const handleUpdate = () => {
-      const stored = getStoredAds().filter((a: any) => a.isActive !== false);
-      if (stored.length > 0) {
-        setAds(stored);
-      }
+      const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
+      setAds(stored);
     };
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads") {
-        const stored = getStoredAds().filter((a: any) => a.isActive !== false);
-        if (stored.length > 0) {
-          setAds(stored);
-        }
+      if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count") {
+        const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
+        setAds(stored);
       }
     };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);
@@ -109,14 +100,14 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-8 sm:gap-12 mb-10 border-b border-emerald-900/60 pb-10">
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-white mb-1">
-                    {loading ? <span className="animate-pulse opacity-50">...</span> : getTotalAdsCount().toLocaleString()}
+                    {getTotalAdsCount().toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Companies</div>
                 </div>
                 <div className="hidden sm:block w-px h-12 bg-emerald-950/40"></div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-display font-bold text-emerald-400 mb-1">
-                    {loading ? <span className="animate-pulse opacity-50">...</span> : getVerifiedAdsCount().toLocaleString()}
+                    {getVerifiedAdsCount().toLocaleString()}
                   </div>
                   <div className="text-[10px] sm:text-xs tracking-widest text-slate-400 uppercase font-semibold">Verified & Approved</div>
                 </div>
