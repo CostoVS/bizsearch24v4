@@ -1,14 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { ShieldCheck, MapPin, MessageCircle, Phone, ChevronRight, Sparkles, PlusCircle } from "lucide-react";
+import { ShieldCheck, MapPin, MessageCircle, Phone, ChevronRight, Sparkles, PlusCircle, Newspaper, Compass, Home, Layers, LogOut, LogIn, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { safeLocalStorage } from "@/lib/data";
+import {
+  safeLocalStorage,
+  CATEGORIES_STRUCTURED,
+  getCategoryIcon,
+  getCategoryAdsCounts,
+  saveCategoryAdsCounts,
+  getCountForCategory,
+  getTotalAdsCount
+} from "@/lib/data";
 import { useState, useEffect } from "react";
 
 export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [totalAdsCount, setTotalAdsCount] = useState<number>(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -37,18 +47,62 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
           setUnreadCount(0);
         }
       };
-      
+
+      const syncCategoryCountsLocal = () => {
+        setCategoryCounts(getCategoryAdsCounts());
+        setTotalAdsCount(getTotalAdsCount());
+      };
+
+      const fetchLiveCategoryCounts = async () => {
+        try {
+          const res = await fetch("/api/storage?page=1&pageSize=1", { cache: "no-store" });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data?.adminStats?.byCategory) {
+            saveCategoryAdsCounts(data.adminStats.byCategory);
+            setCategoryCounts(data.adminStats.byCategory);
+          }
+          const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
+          if (typeof liveTotal === "number") {
+            safeLocalStorage.setItem("searchbiz_total_ads_count", String(liveTotal));
+            setTotalAdsCount(liveTotal);
+          }
+        } catch (e) {}
+      };
+
       checkMessages();
-      window.addEventListener("storage", checkMessages);
+      syncCategoryCountsLocal();
+      fetchLiveCategoryCounts();
+
+      const handleAdsUpdated = () => {
+        syncCategoryCountsLocal();
+        fetchLiveCategoryCounts();
+      };
+
+      const handleStorage = (e: StorageEvent) => {
+        checkMessages();
+        if (
+          e.key === "searchbiz_category_counts" ||
+          e.key === "searchbiz_total_ads_count" ||
+          e.key === "searchbiz_all_ads" ||
+          e.key === "searchbiz_deleted_ads"
+        ) {
+          syncCategoryCountsLocal();
+        }
+      };
+
+      window.addEventListener("storage", handleStorage);
       window.addEventListener("searchbiz_messages_updated", checkMessages);
+      window.addEventListener("searchbiz_ads_updated", handleAdsUpdated);
       const interval = setInterval(checkMessages, 5000);
       return () => {
-        window.removeEventListener("storage", checkMessages);
+        window.removeEventListener("storage", handleStorage);
         window.removeEventListener("searchbiz_messages_updated", checkMessages);
+        window.removeEventListener("searchbiz_ads_updated", handleAdsUpdated);
         clearInterval(interval);
       };
     }
-  }, [user]);
+  }, [user, isAdmin]);
 
   return (
     <footer className="bg-[#0f172a] text-slate-400 py-12 border-t border-slate-800">
@@ -135,30 +189,121 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
           {/* Column 3: Ecosystem & Platform Tools */}
           <div>
             <h3 className="text-white font-bold mb-4 text-sm tracking-wide uppercase flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-400" /> Platform & Tools
+              <Sparkles className="w-4 h-4 text-indigo-400" /> Platform &amp; Tools
             </h3>
             <div className="space-y-2.5 text-sm">
-              <Link href="/directory" className="block hover:text-emerald-400 transition-colors">Home Directory</Link>
-              <Link href="/categories" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400 flex items-center justify-between">
-                <span>All Categories</span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">280+ Listed</span>
+              <Link
+                href="/directory"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 font-extrabold transition-all shadow-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <Home className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Home Directory</span>
+                </span>
+                <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-200 border border-emerald-400/30">
+                  {totalAdsCount.toLocaleString()} Ads
+                </span>
               </Link>
-              <Link href="/posts" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SHOWOFS Feed</Link>
-              <Link href="/pricing" className="block hover:text-emerald-400 transition-colors font-bold text-emerald-400">SearchBiz.co.za Pricing</Link>
-              <Link href="/tools" className="block hover:text-indigo-400 transition-colors font-bold text-indigo-400">SearchBiz.co.za Tools</Link>
-              <Link href="/news" className="block hover:text-emerald-400 transition-colors">News & Updates</Link>
-              <Link href="/premium-partners" className="block hover:text-amber-400 transition-colors font-bold text-amber-400">Premium Partners</Link>
-              <Link href="/llama3-chat" className="block hover:text-purple-400 transition-colors font-bold text-purple-400">AI Search</Link>
-              
-              <Link href={user ? "/messages" : "/login"} className="hover:text-indigo-300 transition-colors font-semibold text-indigo-400 flex items-center gap-2 pt-1">
-                <span>SearchBiz Chat</span>
-                {unreadCount > 0 && (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white shadow-sm animate-pulse">
-                    {unreadCount}
-                  </span>
-                )}
+
+              <Link
+                href="/categories"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-emerald-500/40 text-emerald-400 hover:text-emerald-300 font-bold transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>All Categories</span>
+                </span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  20 Sectors
+                </span>
               </Link>
-              <Link href="/visual-sitemap" className="block hover:text-emerald-400 transition-colors text-xs text-slate-400 pt-1">Visual Sitemap</Link>
+
+              <Link
+                href="/news"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 hover:text-sky-200 font-extrabold transition-all shadow-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <Newspaper className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>News &amp; Updates</span>
+                </span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/30">
+                  Live
+                </span>
+              </Link>
+
+              <Link
+                href="/visual-sitemap"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 hover:text-teal-200 font-extrabold transition-all shadow-xs"
+              >
+                <span className="flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span>Visual Sitemap</span>
+                </span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-500/25 text-teal-200 border border-teal-400/30 flex items-center gap-0.5">
+                  <span>9 Provinces</span>
+                  <ChevronRight className="w-3 h-3" />
+                </span>
+              </Link>
+
+              <div className="pt-1 space-y-2 pl-1">
+                <Link href="/posts" className="block hover:text-emerald-300 transition-colors font-bold text-emerald-400">SHOWOFS Feed</Link>
+                <Link href="/pricing" className="block hover:text-emerald-300 transition-colors font-bold text-emerald-400">SearchBiz.co.za Pricing</Link>
+                <Link href="/tools" className="block hover:text-indigo-300 transition-colors font-bold text-indigo-400">SearchBiz.co.za Tools</Link>
+                <Link href="/premium-partners" className="block hover:text-amber-300 transition-colors font-bold text-amber-400">Premium Partners</Link>
+                <Link href="/llama3-chat" className="block hover:text-purple-300 transition-colors font-bold text-purple-400">AI Search</Link>
+                <Link href={user ? "/messages" : "/login"} className="hover:text-indigo-300 transition-colors font-bold text-indigo-400 flex items-center gap-2">
+                  <span>SearchBiz Chat</span>
+                  {unreadCount > 0 && (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white shadow-sm animate-pulse">
+                      {unreadCount}
+                    </span>
+                  )}
+                </Link>
+              </div>
+
+              {user ? (
+                <div className="pt-2 space-y-2">
+                  <Link
+                    href="/dashboard"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 text-emerald-400 hover:text-emerald-300 font-bold transition-all"
+                  >
+                    <span className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>My Dashboard</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      logout();
+                      window.location.href = "/";
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 hover:text-rose-200 font-extrabold transition-all cursor-pointer shadow-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>Logout</span>
+                    </span>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/30">
+                      Sign Out
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2">
+                  <Link
+                    href="/login"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 font-extrabold transition-all"
+                  >
+                    <span className="flex items-center gap-2">
+                      <LogIn className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Login / Register</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 
@@ -179,44 +324,45 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
 
         </div>
 
-        {/* GOOGLE BUSINESS PROFILE CATEGORIES INDEX BAR */}
-        <div className="py-6 border-b border-slate-800 text-xs">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex items-center gap-2 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>Popular Google Business Categories:</span>
+        {/* 20 BUSINESS INDUSTRY SECTORS & LIVE AD COUNTS (EVENLY SPACED) */}
+        <div className="py-8 border-b border-slate-800 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+            <div className="flex items-center gap-2.5 text-white font-extrabold uppercase tracking-wider text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+              <span>20 Business Industry Sectors &amp; Live Ad Counts:</span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-slate-400">
-              <Link href="/categories?q=Auto+Body" className="hover:text-emerald-400 transition-colors">Auto Body & Repair</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Plumbing" className="hover:text-emerald-400 transition-colors">Plumbing Services</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Electrical" className="hover:text-emerald-400 transition-colors">Electrical Contractors</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Solar" className="hover:text-emerald-400 transition-colors">Solar & Backup Power</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Security" className="hover:text-emerald-400 transition-colors">Security & Armed Response</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Legal" className="hover:text-emerald-400 transition-colors">Legal & Attorneys</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Accounting" className="hover:text-emerald-400 transition-colors">Accounting & Tax</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Medical" className="hover:text-emerald-400 transition-colors">Medical & Dental</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Veterinary" className="hover:text-emerald-400 transition-colors">Veterinary Clinics</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Borehole" className="hover:text-emerald-400 transition-colors">Borehole & Irrigation</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Cleaning" className="hover:text-emerald-400 transition-colors">Cleaning & Janitorial</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Web+Design" className="hover:text-emerald-400 transition-colors">Web Design & Marketing</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories?q=Guest+Houses" className="hover:text-emerald-400 transition-colors">Guest Houses & Lodges</Link>
-              <span className="text-slate-700">•</span>
-              <Link href="/categories" className="text-emerald-400 font-bold hover:underline">
-                View All 20 Sectors & 280+ Categories &rarr;
-              </Link>
-            </div>
+            <Link href="/categories" className="text-emerald-400 font-bold hover:text-emerald-300 hover:underline inline-flex items-center gap-1 text-xs">
+              <span>View All 20 Sectors</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {CATEGORIES_STRUCTURED.map((group) => {
+              const count = getCountForCategory(categoryCounts, group.name);
+              const icon = getCategoryIcon(group.cleanName);
+              return (
+                <Link
+                  key={group.id}
+                  href={`/directory?category=${encodeURIComponent(group.name)}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800/90 hover:border-emerald-500/40 transition-all group h-full"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="text-base shrink-0">{icon}</span>
+                    <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors leading-snug break-words">
+                      {group.name}
+                    </span>
+                  </div>
+                  <span className={`font-mono text-[11px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 border ${
+                    count > 0
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      : "bg-slate-800/90 text-slate-400 border-slate-700/80"
+                  }`}>
+                    {count.toLocaleString()} Ads
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </div>
 

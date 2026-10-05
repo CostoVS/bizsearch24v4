@@ -723,10 +723,10 @@ function SearchBarForm() {
           <div className="absolute top-full left-1/2 -translate-x-1/2 md:translate-x-0 md:left-auto md:right-0 mt-2 z-50 bg-white rounded-3xl border border-slate-200/90 shadow-2xl shadow-emerald-950/30 p-3 sm:p-3.5 w-[calc(100vw-1.5rem)] sm:w-[520px] md:w-[580px] lg:w-[680px] max-w-[96vw] animate-in fade-in-50 zoom-in-95 duration-150 box-border overflow-hidden">
             
             {/* Header with Search and Full Categories Link */}
-            <div className="flex items-center justify-between gap-2 mb-2.5 pb-2 border-b border-slate-100">
+            <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="text-xs font-bold text-slate-900">Select Business Category</span>
+                <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">20 Business Sectors &amp; Ad Counts</span>
               </div>
               <Link 
                 href="/categories" 
@@ -738,50 +738,15 @@ function SearchBarForm() {
               </Link>
             </div>
 
-            {/* Quick Popular Chips */}
-            <div className="mb-2.5 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-[10px] font-bold uppercase text-slate-400 whitespace-nowrap mr-0.5">Popular:</span>
-              {POPULAR_CATEGORIES.map(pop => {
-                const popCount = getCountForCategory(categoryCounts, pop.name);
-                return (
-                  <button
-                    key={pop.name}
-                    type="button"
-                    onClick={() => {
-                      setCategory(pop.name);
-                      setCustomCategory('');
-                      setOpenDropdown(null);
-                    }}
-                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap transition border flex items-center gap-1.5 ${
-                      category === pop.name 
-                        ? 'bg-emerald-600 text-white border-emerald-600' 
-                        : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200/80 hover:border-emerald-300'
-                    }`}
-                  >
-                    <span>{pop.label}</span>
-                    <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded-md font-extrabold ${
-                      category === pop.name
-                        ? 'bg-white/25 text-white'
-                        : popCount > 0
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-200/80 text-slate-500'
-                    }`}>
-                      {popCount.toLocaleString()}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Live Search Input */}
-            <div className="relative mb-2.5">
+            <div className="relative mb-3">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={categorySearch}
                 onChange={(e) => setCategorySearch(e.target.value)}
-                placeholder="Search category number or name (e.g. 1.1, plumber, 6.8, legal)..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                placeholder="Search any of the 20 business sectors (e.g. 1, automotive, construction, legal)..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
                 autoFocus
               />
               {categorySearch && (
@@ -791,8 +756,8 @@ function SearchBarForm() {
               )}
             </div>
 
-            {/* Expansive Categories List */}
-            <div className="max-h-[60vh] md:max-h-[460px] overflow-y-auto space-y-2.5 pr-1 text-xs [scrollbar-width:thin]">
+            {/* 20 Industry Sectors List Evenly Spaced Out */}
+            <div className="max-h-[60vh] md:max-h-[460px] overflow-y-auto space-y-2 pr-1 text-xs [scrollbar-width:thin]">
               
               {/* Option 1: All Categories */}
               <button
@@ -802,118 +767,71 @@ function SearchBarForm() {
                   setCustomCategory('');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-3 py-2.5 rounded-xl font-bold flex items-center justify-between gap-2 transition ${
-                  !category ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-emerald-50 text-slate-800'
+                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border ${
+                  !category
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-slate-100 hover:bg-emerald-50 text-slate-900 border-slate-200/80 hover:border-emerald-300'
                 }`}
               >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <span className="text-base shrink-0">📂</span>
-                  <span className="leading-snug">All Categories (Search Across Everything)</span>
+                  <span className="leading-snug font-extrabold">All Categories (Search Across Everything)</span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                  <span className={`font-mono text-[11px] font-extrabold px-2 py-0.5 rounded-lg ${
-                    !category ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800'
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
+                    !category
+                      ? 'bg-white/25 text-white border-white/30'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                   }`}>
-                    {totalAdsCount.toLocaleString()}
+                    {totalAdsCount.toLocaleString()} Ads
                   </span>
-                  {!category && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                  {!category && <Check className="w-4 h-4 text-white shrink-0" />}
                 </div>
               </button>
 
-              {/* Category Groups with Subcategories ALWAYS Visible */}
-              {filteredCategoriesStructured.map((group) => {
-                const isGroupSelected = category === group.name;
-                const icon = group.icon;
-                const groupCount = getCountForCategory(categoryCounts, group.name);
+              {/* ONLY THE 20 SECTORS / 20 GROUPS EVENLY SPACED OUT */}
+              <div className="grid grid-cols-1 gap-2">
+                {filteredCategoriesStructured.map((group) => {
+                  const isGroupSelected = category === group.name;
+                  const icon = group.icon;
+                  const groupCount = getCountForCategory(categoryCounts, group.name);
 
-                return (
-                  <div key={group.name} className="bg-slate-50/90 border border-slate-200/90 rounded-2xl overflow-hidden transition-all shadow-xs">
-                    
-                    {/* Header: Parent category */}
-                    <div className="p-2 sm:p-2.5 bg-gradient-to-r from-slate-100/90 via-slate-50 to-emerald-50/50 border-b border-slate-200/80 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCategory(group.name);
-                          setCustomCategory('');
-                          setOpenDropdown(null);
-                        }}
-                        className={`flex-1 text-left px-3 py-2 rounded-xl font-extrabold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-between gap-2 transition min-w-0 ${
+                  return (
+                    <button
+                      key={group.name}
+                      type="button"
+                      onClick={() => {
+                        setCategory(group.name);
+                        setCustomCategory('');
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-2xl font-extrabold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-between gap-4 transition border ${
+                        isGroupSelected
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50/90 hover:bg-emerald-50/90 text-slate-900 hover:text-emerald-950 border-slate-200/90 hover:border-emerald-300'
+                      }`}
+                      title={`Select ${group.name}`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="text-base shrink-0">{icon}</span>
+                        <span className="font-extrabold break-words leading-snug">{group.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
                           isGroupSelected
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'text-slate-900 hover:bg-emerald-100/80 hover:text-emerald-950'
-                        }`}
-                        title={`Select all ${group.name}`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className="text-base shrink-0">{icon}</span>
-                          <span className="font-extrabold break-words leading-tight">{group.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          <span className={`font-mono text-[11px] font-extrabold px-2 py-0.5 rounded-lg border ${
-                            isGroupSelected
-                              ? 'bg-white/25 text-white border-white/30'
-                              : groupCount > 0
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                : 'bg-white text-slate-500 border-slate-200'
-                          }`}>
-                            {groupCount.toLocaleString()}
-                          </span>
-                          {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0" />}
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* ALL CHILD CATEGORIES DIRECTLY DISPLAYED AND FULLY VISIBLE */}
-                    <div className="p-2.5 bg-white grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {group.items.map((item) => {
-                        const isSubSelected = category === item.fullName || category === item.name;
-                        const itemCount =
-                          getCountForCategory(categoryCounts, item.fullName) ||
-                          getCountForCategory(categoryCounts, item.name) ||
-                          getCountForCategory(categoryCounts, item.id);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setCategory(item.fullName);
-                              setCustomCategory('');
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between gap-2 transition min-w-0 border ${
-                              isSubSelected
-                                ? 'bg-emerald-600 text-white font-bold border-emerald-600 shadow-xs'
-                                : 'text-slate-800 hover:bg-emerald-50 hover:text-emerald-950 bg-slate-50/80 border-slate-200/60 hover:border-emerald-300'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${
-                                isSubSelected ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800 border border-emerald-200/60'
-                              }`}>
-                                {item.id}
-                              </span>
-                              <span className="break-words leading-snug">{item.name}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                              <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                                isSubSelected
-                                  ? 'bg-white/25 text-white'
-                                  : itemCount > 0
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
-                                    : 'bg-slate-200/70 text-slate-500'
-                              }`}>
-                                {itemCount.toLocaleString()}
-                              </span>
-                              {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                            ? 'bg-white/25 text-white border-white/30'
+                            : groupCount > 0
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : 'bg-white text-slate-500 border-slate-200'
+                        }`}>
+                          {groupCount.toLocaleString()} Ads
+                        </span>
+                        {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
               {/* Option: Other */}
               <button
@@ -922,39 +840,41 @@ function SearchBarForm() {
                   setCategory('Other');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-3 py-2 rounded-xl font-bold flex items-center justify-between gap-2 transition ${
-                  category === 'Other' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-emerald-50 text-slate-800'
+                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border ${
+                  category === 'Other'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-slate-100 hover:bg-emerald-50 text-slate-800 border-slate-200/80 hover:border-emerald-300'
                 }`}
               >
-                <span>Other / Custom Category (Specify)</span>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                  <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                <span className="font-extrabold">Other / Custom Category (Specify)</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
                     category === 'Other'
-                      ? 'bg-white/25 text-white'
+                      ? 'bg-white/25 text-white border-white/30'
                       : getCountForCategory(categoryCounts, 'Other') > 0
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-slate-200/80 text-slate-500'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : 'bg-white text-slate-500 border-slate-200'
                   }`}>
-                    {getCountForCategory(categoryCounts, 'Other').toLocaleString()}
+                    {getCountForCategory(categoryCounts, 'Other').toLocaleString()} Ads
                   </span>
-                  {category === 'Other' && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                  {category === 'Other' && <Check className="w-4 h-4 text-white shrink-0" />}
                 </div>
               </button>
 
               {filteredCategoriesStructured.length === 0 && (
-                <div className="p-4 text-center text-slate-400 text-xs font-semibold">No categories found matching &quot;{categorySearch}&quot;</div>
+                <div className="p-4 text-center text-slate-400 text-xs font-semibold">No sectors found matching &quot;{categorySearch}&quot;</div>
               )}
             </div>
 
             {/* Bottom Footer inside Popover */}
             <div className="pt-2.5 mt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-              <span>{CATEGORIES_STRUCTURED.length} Industry Sectors • 150+ Subcategories</span>
+              <span>{CATEGORIES_STRUCTURED.length} Business Industry Sectors</span>
               <Link
                 href="/categories"
                 onClick={() => setOpenDropdown(null)}
                 className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline"
               >
-                View Full Index →
+                View All Sectors →
               </Link>
             </div>
 

@@ -4081,21 +4081,22 @@ export default function AdminDashboard() {
 
                   {/* Category Dropdown */}
                   <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1">Filter by Category</label>
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1">Filter by Category Sector</label>
                     <select
                       value={adSearchCategory}
                       onChange={(e) => setAdSearchCategory(e.target.value)}
                       className="w-full bg-slate-50 text-slate-800 rounded-xl px-3 py-2.5 text-xs border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold"
                     >
-                      <option value="all">All Service Categories ({(adminStats?.total ?? ads.length).toLocaleString()})</option>
-                      {Array.from(new Set([...CATEGORIES, ...ads.map(a => a.category).filter(Boolean)])).sort().map((cat) => {
+                      <option value="all">All 20 Business Sectors ({(adminStats?.total ?? ads.length).toLocaleString()} Ads)</option>
+                      {CATEGORIES_STRUCTURED.map((group) => {
                         const cCnt =
-                          adminStats?.byCategory?.[cat] ??
-                          adminStats?.byCategory?.[stripCategoryNumber(cat)] ??
-                          ads.filter(a => a.category === cat).length;
+                          adminStats?.byCategory?.[group.name.toLowerCase()] ??
+                          adminStats?.byCategory?.[group.name] ??
+                          adminStats?.byCategory?.[group.cleanName.toLowerCase()] ??
+                          0;
                         return (
-                          <option key={cat} value={cat}>
-                            {cat} ({cCnt.toLocaleString()})
+                          <option key={group.id} value={group.name}>
+                            {group.name} — {cCnt.toLocaleString()} Ads
                           </option>
                         );
                       })}

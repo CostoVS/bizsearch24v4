@@ -17,6 +17,8 @@ import {
   Newspaper,
   MessageCircle,
   ChevronRight,
+  Compass,
+  Home,
 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -112,10 +114,10 @@ export function Navbar() {
               </Link>
               <Link
                 href="/news"
-                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-emerald-600 transition-colors whitespace-nowrap shrink-0"
+                className="flex items-center text-[11px] xl:text-xs 2xl:text-sm font-bold text-sky-600 hover:text-sky-700 transition-colors whitespace-nowrap shrink-0"
               >
-                <Newspaper className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1" />
-                News
+                <Newspaper className="w-3 h-3 xl:w-3.5 xl:h-3.5 mr-0.5 xl:mr-1 text-sky-500" />
+                News &amp; Updates
               </Link>
               <Link
                 href="/tools"
@@ -196,9 +198,9 @@ export function Navbar() {
                       logout();
                       window.location.href = "/";
                     }}
-                    className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
+                    className="flex items-center space-x-1 text-[11px] xl:text-xs 2xl:text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
                   >
-                    <LogOut className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
+                    <LogOut className="w-3 h-3 xl:w-3.5 xl:h-3.5 text-rose-600" />
                     <span>Logout</span>
                   </button>
                 </>
@@ -293,13 +295,15 @@ export function Navbar() {
                   <Link
                     onClick={() => setMobileMenuOpen(false)}
                     href="/directory"
-                    className="px-4 py-3 text-base font-semibold text-slate-800 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors flex items-center justify-between"
+                    className="px-4 py-3 text-base font-bold text-emerald-900 bg-emerald-50/80 hover:bg-emerald-100/80 border border-emerald-200/70 rounded-xl transition-colors flex items-center justify-between shadow-xs"
                   >
                     <span className="flex items-center gap-2.5">
-                      <Search className="w-4 h-4 text-emerald-600" />
-                      Explore Directory
+                      <Home className="w-4 h-4 text-emerald-600" />
+                      Home Directory
                     </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                    <span className="text-[10px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                      Browse
+                    </span>
                   </Link>
 
                   <Link
@@ -363,11 +367,14 @@ export function Navbar() {
                   <Link
                     onClick={() => setMobileMenuOpen(false)}
                     href="/news"
-                    className="px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                    className="px-4 py-3 text-sm font-bold text-sky-900 bg-sky-50/80 hover:bg-sky-100/80 border border-sky-200/70 rounded-xl transition-colors flex items-center justify-between shadow-xs"
                   >
                     <span className="flex items-center gap-2.5">
-                      <Newspaper className="w-4 h-4 text-emerald-600" />
-                      News & Updates
+                      <Newspaper className="w-4 h-4 text-sky-600" />
+                      News &amp; Updates
+                    </span>
+                    <span className="text-[10px] bg-sky-600 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                      Live
                     </span>
                   </Link>
 
@@ -415,10 +422,14 @@ export function Navbar() {
                   <Link
                     onClick={() => setMobileMenuOpen(false)}
                     href="/visual-sitemap"
-                    className="px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between"
+                    className="px-4 py-3 text-sm font-bold text-teal-900 bg-teal-50/80 hover:bg-teal-100/80 border border-teal-200/70 rounded-xl transition-colors flex items-center justify-between shadow-xs"
                   >
                     <span className="flex items-center gap-2.5">
+                      <Compass className="w-4 h-4 text-teal-600" />
                       Visual Sitemap
+                    </span>
+                    <span className="text-[10px] bg-teal-600 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                      9 Provinces
                     </span>
                   </Link>
                 </div>
@@ -462,10 +473,15 @@ export function Navbar() {
                       logout();
                       window.location.href = "/";
                     }}
-                    className="flex items-center w-full text-left px-4 py-4 text-lg font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                    className="flex items-center justify-between w-full text-left px-4 py-4 text-lg font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-2xl transition-colors shadow-xs cursor-pointer"
                   >
-                    <LogOut className="w-5 h-5 mr-3" />
-                    Logout
+                    <span className="flex items-center">
+                      <LogOut className="w-5 h-5 mr-3 text-rose-600" />
+                      Logout
+                    </span>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-rose-600 text-white tracking-wider">
+                      Sign Out
+                    </span>
                   </button>
                 </>
               )}

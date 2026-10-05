@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { PROVINCES, CATEGORIES } from "@/lib/data";
+import { PROVINCES } from "@/lib/data";
 import { getPostalCodeForTown, KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS, TOTAL_SUBURBS_COUNT, TOTAL_MAJOR_TOWNS_COUNT } from "@/lib/locations";
-import { MapPin, Briefcase } from "lucide-react";
+import { MapPin } from "lucide-react";
+import { SitemapCategories } from "@/components/sitemap-categories";
 import fs from "fs";
 import path from "path";
 import { db, initDb } from "@/lib/db";
@@ -294,31 +295,7 @@ export default async function SitemapPage() {
         </div>
 
         <div className="lg:col-span-1">
-          <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 sticky top-28 block">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center">
-                <Briefcase className="mr-2 text-emerald-600" />
-                Categories
-              </h2>
-              <Link 
-                href="/categories" 
-                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 underline"
-              >
-                Full Index →
-              </Link>
-            </div>
-            <div className="flex flex-col space-y-2 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
-              {CATEGORIES.map(cat => (
-                <Link 
-                  key={cat} 
-                  href={`/directory?category=${encodeURIComponent(cat)}`}
-                  className="text-sm text-slate-600 hover:text-emerald-600 py-1 transition-colors"
-                >
-                  {cat}
-                </Link>
-              ))}
-            </div>
-          </div>
+          <SitemapCategories />
         </div>
       </div>
     </div>

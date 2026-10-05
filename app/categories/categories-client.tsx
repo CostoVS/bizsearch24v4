@@ -260,6 +260,51 @@ export default function CategoriesClient() {
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20">
         
+        {/* 20 Industry Sectors Overview Grid (Evenly Spaced with Live Ad Counts) */}
+        <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-lg border border-slate-200/90 mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-emerald-600 shrink-0" />
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide">
+                20 Business Industry Sectors &amp; Live Ad Counts
+              </h2>
+            </div>
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 self-start sm:self-auto">
+              {allAdsCount.toLocaleString()} Total Active Ads
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {CATEGORIES_STRUCTURED.map((g) => {
+              const sectorCount = getCountForCategory(adCategoryCounts, g.name);
+              const icon = getCategoryIcon(g.cleanName);
+              return (
+                <Link
+                  key={g.id}
+                  href={`/directory?category=${encodeURIComponent(g.name)}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-slate-50 hover:bg-emerald-50/90 border border-slate-200/90 hover:border-emerald-300 transition-all group h-full shadow-2xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="text-base shrink-0">{icon}</span>
+                    <span className="text-xs font-extrabold text-slate-800 group-hover:text-emerald-900 transition-colors leading-snug break-words">
+                      {g.name}
+                    </span>
+                  </div>
+                  <span
+                    className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl shrink-0 border ${
+                      sectorCount > 0
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                        : "bg-white text-slate-500 border-slate-200"
+                    }`}
+                  >
+                    {sectorCount.toLocaleString()} Ads
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Navigation / Filter Toolbar */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg border border-slate-200/90 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           
