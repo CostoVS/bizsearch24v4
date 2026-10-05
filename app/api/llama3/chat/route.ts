@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { createBotAd } from "@/lib/bot-ad-service";
+import { createBotAd, readServerDb } from "@/lib/bot-ad-service";
 
 export const dynamic = "force-dynamic";
 
@@ -100,18 +100,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Load actual real-time business data from local JSON database to prevent stale / mock data
-    const dbPath = path.join(process.cwd(), ".data", "db.json");
+    // Load actual real-time business data from in-memory server database
     let activeAds: any[] = [];
     try {
-      if (fs.existsSync(dbPath)) {
-        const dbData = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-        if (dbData && Array.isArray(dbData.ads)) {
-          activeAds = dbData.ads.filter((ad: any) => ad && ad.isActive !== false);
-        }
+      const dbData = readServerDb();
+      if (dbData && Array.isArray(dbData.ads)) {
+        activeAds = dbData.ads.filter((ad: any) => ad && ad.isActive !== false).slice(0, 30);
       }
     } catch (e) {
-      console.error("AI Chat API: Failed to load db.json", e);
+      console.error("AI Chat API: Failed to load server db", e);
     }
 
     const adsContext = activeAds.map((ad, idx) => {

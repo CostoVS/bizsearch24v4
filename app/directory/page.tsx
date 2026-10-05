@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getStoredAds, saveStoredAds, deleteAd, getDeletedAdIds, sortAdsWithPositions, safeLocalStorage, fetchAndStoreAds, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
+import { getStoredAds, saveStoredAds, deleteAd, getDeletedAdIds, sortAdsWithPositions, safeLocalStorage, getTotalAdsCount, saveCategoryAdsCounts, isLocationKeyword, isSubcategoryOf, CATEGORIES_STRUCTURED, PROVINCES } from '@/lib/data';
 import { isCustomerReviewOrGarbage } from '@/lib/clean-ad';
 import { BadgeCheck, MapPin, Star, Edit, Trash2, X, Briefcase, Home, Search, MessageSquare, AlertCircle, Compass, Send, CheckCircle2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
@@ -35,22 +35,33 @@ function DirectoryContent() {
   const province = rawProvince.toLowerCase().trim();
   const suburb = rawSuburb.toLowerCase().trim();
 
-  const [allAds, setAllAds] = useState<any[]>([]);
-  const [serverFilteredAds, setServerFilteredAds] = useState<any[] | null>(null);
-  const [serverTotalCount, setServerTotalCount] = useState<number | null>(null);
-  const [selectedAd, setSelectedAd] = useState<any | null>(null);
-  const [isLocalLoading, setIsLocalLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(24);
-  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
 
   const isAdVisible = useCallback((a: any) => {
     if (!a || a.isActive === false) return false;
     return true;
   }, []);
 
-  const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
+  const [allAds, setAllAds] = useState<any[]>(() => {
+    if (typeof window !== 'undefined' && !hasFilters) {
+      return getStoredAds().filter(a => a && a.isActive !== false);
+    }
+    return [];
+  });
+  const [serverFilteredAds, setServerFilteredAds] = useState<any[] | null>(null);
+  const [serverTotalCount, setServerTotalCount] = useState<number | null>(() => {
+    if (typeof window !== 'undefined' && !hasFilters) {
+      const cnt = getTotalAdsCount();
+      return cnt > 0 ? cnt : null;
+    }
+    return null;
+  });
+  const [selectedAd, setSelectedAd] = useState<any | null>(null);
+  const [isLocalLoading, setIsLocalLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(24);
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const locationInfo: LocationMatchResult = useMemo(() => {
     return resolveLocationDetails({
@@ -99,6 +110,9 @@ function DirectoryContent() {
 
   useEffect(() => {
     setIsLocalLoading(true);
+    if (hasFilters || currentPage > 1) {
+      setServerFilteredAds(null);
+    }
 
     const params = new URLSearchParams();
     if (q) params.set('q', q);
@@ -113,8 +127,14 @@ function DirectoryContent() {
 
     const endpoint = `/api/storage?${params.toString()}`;
     let isCurrent = true;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
 
-    fetch(endpoint, { cache: 'no-store', headers: { Accept: 'application/json' } })
+    fetch(endpoint, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: controller ? controller.signal : undefined
+    })
       .then(res => res.json())
       .then(data => {
         if (!isCurrent) return;
@@ -133,12 +153,21 @@ function DirectoryContent() {
           if (typeof gVer === 'number' && gVer >= 0) {
             safeLocalStorage.setItem("searchbiz_verified_count", String(gVer));
           }
+          if (data.adminStats?.byCategory) {
+            saveCategoryAdsCounts(data.adminStats.byCategory);
+          }
+          if (!hasFilters && currentPage === 1 && validAds.length > 0) {
+            safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(validAds.slice(0, 48)));
+          }
         }
       })
       .catch(err => {
-        console.error('Directory fetch error:', err);
+        if (err?.name !== 'AbortError') {
+          console.error('Directory fetch error:', err);
+        }
       })
       .finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
         if (isCurrent) {
           setIsLocalLoading(false);
         }
@@ -146,24 +175,18 @@ function DirectoryContent() {
 
     return () => {
       isCurrent = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (controller) controller.abort();
     };
-  }, [q, category, town, province, suburb, currentPage, pageSize, isAdmin, isAdVisible]);
+  }, [q, category, town, province, suburb, currentPage, pageSize, isAdmin, isAdVisible, hasFilters]);
 
   useEffect(() => {
-    // Only load generic background cache if there are NO active search filters
-    if (hasFilters) return;
-
-    const cached = getStoredAds().filter(isAdVisible);
-    if (cached.length > 0) {
-      setAllAds(prev => (prev.length === 0 ? cached : prev));
-    }
-
-    // Force a fresh fetch from server immediately on mount to solve sync lag
-    fetchAndStoreAds().then(freshAds => {
-      if (freshAds && freshAds.length > 0 && !hasFilters) {
-        setAllAds(freshAds.filter(isAdVisible));
+    if (!hasFilters) {
+      const cached = getStoredAds().filter(isAdVisible);
+      if (cached.length > 0) {
+        setAllAds(prev => (prev.length === 0 ? cached : prev));
       }
-    });
+    }
 
     const handleUpdate = (e: any) => {
       const deletedId = e?.detail?.deletedId;
@@ -174,10 +197,8 @@ function DirectoryContent() {
       setAllAds((prev: any[]) => prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)));
       setServerFilteredAds((prev: any[] | null) => prev ? prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)) : null);
       setSelectedAd((prev: any) => (prev && deletedSet.has(prev.id) ? null : prev));
-
-      if (!hasFilters) {
-        const fresh = getStoredAds().filter(isAdVisible);
-        setAllAds(fresh);
+      if (deletedId) {
+        setServerTotalCount(prev => (typeof prev === 'number' && prev > 0 ? prev - 1 : prev));
       }
     };
     const handleStorageChange = (e: StorageEvent) => {
@@ -185,10 +206,6 @@ function DirectoryContent() {
         const deletedSet = new Set(getDeletedAdIds());
         setAllAds((prev: any[]) => prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)));
         setServerFilteredAds((prev: any[] | null) => prev ? prev.filter((a: any) => a && a.id && !deletedSet.has(a.id)) : null);
-        if (!hasFilters) {
-          const fresh = getStoredAds().filter(isAdVisible);
-          setAllAds(fresh);
-        }
       }
     };
     window.addEventListener("searchbiz_ads_updated", handleUpdate);
@@ -197,7 +214,7 @@ function DirectoryContent() {
       window.removeEventListener("searchbiz_ads_updated", handleUpdate);
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, [hasFilters, isAdmin]);
+  }, [hasFilters, isAdmin, isAdVisible]);
 
   const filteredResults = allAds.filter(ad => {
     if (!isAdVisible(ad)) return false;
@@ -564,15 +581,20 @@ function DirectoryContent() {
         <p className="text-slate-500 font-medium">Found {totalMatchingAds.toLocaleString()} businesses matching your criteria.</p>
       </div>
 
-      {isLocalLoading ? (
+      {isLocalLoading && paginatedResults.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
           <div className="relative flex items-center justify-center w-20 h-20">
             <div className="absolute inset-0 animate-spin text-emerald-600">
               <svg className="w-full h-full" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M 50 10 A 40 40 0 0 1 90 50" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                <polygon points="90,46 95,54 85,54" fill="currentColor" />
-                <path d="M 50 90 A 40 40 0 0 1 10 50" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                <polygon points="10,54 5,46 15,46" fill="currentColor" />
+                {/* Top-to-Right Clockwise Arrow */}
+                <path d="M 50 10 A 40 40 0 0 1 89.4 43" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
+                <path d="M 81 40 L 90 53 L 98 39" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                <polygon points="90,55 80,39 90,43 99,39" fill="currentColor" />
+
+                {/* Bottom-to-Left Clockwise Arrow */}
+                <path d="M 50 90 A 40 40 0 0 1 10.6 57" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
+                <path d="M 19 60 L 10 47 L 2 61" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                <polygon points="10,45 20,61 10,57 1,61" fill="currentColor" />
               </svg>
             </div>
             

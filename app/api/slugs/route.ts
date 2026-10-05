@@ -1,111 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { db, initDb, withDbTimeout, isDbCurrentlyOffline, markDbOffline } from "@/lib/db";
-import { storage } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { readServerDb, writeServerDb } from "@/lib/bot-ad-service";
 
 export const dynamic = 'force-dynamic';
 
-const dbPath = path.join(process.cwd(), ".data", "db.json");
-
 async function getCustomSlugs(): Promise<any[]> {
-  const globalRef = global as any;
-  if (globalRef.storageCache && Array.isArray(globalRef.storageCache.slugs)) {
-    return globalRef.storageCache.slugs;
-  }
-
-  const now = Date.now();
-  if (!isDbCurrentlyOffline()) {
-    try {
-      initDb();
-      if (db) {
-        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
-        if (record && record.length > 0) {
-          const parsed = JSON.parse(record[0].data);
-          if (parsed && Array.isArray(parsed.slugs)) {
-            globalRef.storageCache = parsed;
-            globalRef.storageCacheTime = now;
-            return parsed.slugs;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn("getCustomSlugs db read failed, relying on local db.json:", (error as any).message);
-      markDbOffline();
-    }
-  }
-
-  try {
-    if (fs.existsSync(dbPath)) {
-      const data = fs.readFileSync(dbPath, "utf-8");
-      const parsed = JSON.parse(data);
-      globalRef.storageCache = parsed;
-      globalRef.storageCacheTime = now;
-      return parsed.slugs || [];
-    }
-  } catch (error) {
-    console.error("Failed to read slugs fallback from db.json:", error);
-  }
-  return [];
+  const dbData = readServerDb();
+  return Array.isArray(dbData?.slugs) ? dbData.slugs : [];
 }
 
 async function saveCustomSlugs(slugs: any[]) {
-  const globalRef = global as any;
-  let currentData: any = { ads: [], banners: [], customPartners: [], slugs: [], messages: [], deletedMessages: [], deletedAds: [] };
-  
-  if (globalRef.storageCache) {
-    currentData = { ...globalRef.storageCache };
-  } else {
-    try {
-      if (!isDbCurrentlyOffline()) {
-        initDb();
-        if (db) {
-          const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
-          if (record && record.length > 0) {
-            currentData = JSON.parse(record[0].data);
-          }
-        }
-      }
-    } catch (e) {
-      try {
-        if (fs.existsSync(dbPath)) {
-          currentData = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-        }
-      } catch (e2) {}
-    }
-  }
-
+  const currentData = readServerDb();
   currentData.slugs = slugs;
-  currentData.updatedAt = Date.now();
-
-  // update global cache in memory instantly
-  globalRef.storageCache = currentData;
-  globalRef.storageCacheTime = Date.now();
-
-  if (!isDbCurrentlyOffline()) {
-    try {
-      initDb();
-      if (db) {
-        await withDbTimeout(db.update(storage).set({ data: JSON.stringify(currentData, null, 2) }).where(eq(storage.key, 'main')), 400);
-      }
-    } catch (error) {
-      console.warn("saveCustomSlugs db update failed:", (error as any).message);
-      markDbOffline();
-    }
-  }
-
-  try {
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const tempPath = dbPath + '.' + Math.random().toString(36).substring(2) + '.tmp';
-    fs.writeFileSync(tempPath, JSON.stringify(currentData, null, 2), "utf-8");
-    fs.renameSync(tempPath, dbPath);
-  } catch (error) {
-    console.error("Failed to write slugs fallback to db.json:", error);
-  }
+  writeServerDb(currentData, false, true);
 }
 
 export async function GET() {

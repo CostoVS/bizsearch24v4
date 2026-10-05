@@ -1,35 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, saveUser, getDeterministicSecretKey } from '@/lib/auth-service';
 import { saveOtp, generateOtp } from '@/lib/otp-service';
+import { readServerDb, writeServerDb } from '@/lib/bot-ad-service';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
 
-// Helper to inject a system message into the shared storage (db.json and drizzle PG if available)
+// Helper to inject a system message into the shared storage
 async function createVerificationSystemMessage(normalizedEmail: string, fullName: string, plan: string, companyName: string, idNumber: string) {
   try {
-    const JSON_PATH = path.join(process.cwd(), '.data', 'db.json');
-    let storageData: any = { messages: [] };
-    
-    // 1. Read local storage
-    if (fs.existsSync(JSON_PATH)) {
-      try {
-        storageData = JSON.parse(fs.readFileSync(JSON_PATH, 'utf-8')) || { messages: [] };
-      } catch (e) {}
-    }
-    
-    if (!storageData.messages) storageData.messages = [];
+    const storageData = readServerDb();
+    if (!Array.isArray(storageData.messages)) storageData.messages = [];
     
     // 2. Generate new message
     const adminEmail = "admin";
     const planFormatted = plan.toUpperCase();
-    let priceText = "R199.99/month";
-    if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R9,999.00/month";
-    else if (planFormatted === "ENTERPRISE_BASIC") priceText = "R499,999.00/month";
-    else if (planFormatted === "ENTERPRISE_PREMIUM") priceText = "R999,999.00/month";
-    else if (planFormatted === "ELITE_BASIC") priceText = "R25,000,000.00/month";
-    else if (planFormatted === "ELITE_PREMIUM") priceText = "R50,000,000.00/month";
-    else if (planFormatted === "ELITE_ENTERPRISE") priceText = "R100,000,000.00/month";
+    let priceText = "R199.00/month";
+    if (planFormatted === "PREMIUM" || planFormatted === "PRO") priceText = "R199.00/month";
 
     const newMessage = {
       id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(7),
@@ -45,10 +32,7 @@ async function createVerificationSystemMessage(normalizedEmail: string, fullName
     };
     
     storageData.messages.push(newMessage);
-    storageData.updatedAt = Date.now();
-    
-    // 3. Write back to file
-    fs.writeFileSync(JSON_PATH, JSON.stringify(storageData, null, 2), 'utf-8');
+    writeServerDb(storageData, false, true);
     
     // 4. Also sync to database if active
     try {

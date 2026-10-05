@@ -7,11 +7,7 @@ import Image from "next/image";
 import { Metadata } from 'next';
 import { VerificationBadge } from "@/components/ui-extras";
 import LocationListings from "@/components/location-listings";
-import fs from "fs";
-import path from "path";
-import { db, initDb, withDbTimeout, isDbCurrentlyOffline } from "@/lib/db";
-import { storage } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { readServerDb } from "@/lib/bot-ad-service";
 import LocationMap from "@/components/location-map";
 
 export const dynamic = 'force-dynamic';
@@ -28,79 +24,90 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// Memory cache for extreme performance
-let cachedDbData: { slugs: any[], ads: any[] } | null = null;
-let lastDbCacheTime = 0;
-const DB_CACHE_TTL = 15000; // 15 seconds caching
+const FAST_NORM = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+interface StaticLocationInfo {
+  properName: string;
+  type: 'Province' | 'Town' | 'Suburb';
+  detectedProvince: string;
+  provinceSlug: string;
+  specificSubName?: string;
+  townName?: string;
+}
+
+const STATIC_LOCATION_INDEX = new Map<string, StaticLocationInfo>();
+const PROVINCE_SLUGS_SET = new Set<string>();
+const TOWN_TO_PROVINCE_SLUG = new Map<string, string>();
+
+(function buildStaticLocationIndex() {
+  for (const prov of PROVINCES) {
+    const pSlug = prov.slug.toLowerCase().trim();
+    PROVINCE_SLUGS_SET.add(pSlug);
+    STATIC_LOCATION_INDEX.set(pSlug, {
+      properName: prov.name,
+      type: 'Province',
+      detectedProvince: prov.name,
+      provinceSlug: pSlug
+    });
+    STATIC_LOCATION_INDEX.set(slugify(prov.name), {
+      properName: prov.name,
+      type: 'Province',
+      detectedProvince: prov.name,
+      provinceSlug: pSlug
+    });
+    for (const t of prov.towns) {
+      const tSlug = slugify(t);
+      TOWN_TO_PROVINCE_SLUG.set(t.toLowerCase().trim(), pSlug);
+      TOWN_TO_PROVINCE_SLUG.set(tSlug, pSlug);
+      if (!STATIC_LOCATION_INDEX.has(tSlug)) {
+        STATIC_LOCATION_INDEX.set(tSlug, {
+          properName: t,
+          type: 'Town',
+          detectedProvince: prov.name,
+          provinceSlug: pSlug,
+          townName: t.toLowerCase().trim()
+        });
+      }
+    }
+  }
+
+  const allSuburbsMaps = [
+    { map: KZN_SUBURBS, province: "KwaZulu-Natal", pSlug: "kwazulu-natal" },
+    { map: GAUTENG_SUBURBS, province: "Gauteng", pSlug: "gauteng" },
+    { map: WESTERN_CAPE_SUBURBS, province: "Western Cape", pSlug: "western-cape" },
+    { map: EASTERN_CAPE_SUBURBS, province: "Eastern Cape", pSlug: "eastern-cape" },
+    { map: FREE_STATE_SUBURBS, province: "Free State", pSlug: "free-state" },
+    { map: LIMPOPO_SUBURBS, province: "Limpopo", pSlug: "limpopo" },
+    { map: MPUMALANGA_SUBURBS, province: "Mpumalanga", pSlug: "mpumalanga" },
+    { map: NORTH_WEST_SUBURBS, province: "North West", pSlug: "north-west" },
+    { map: NORTHERN_CAPE_SUBURBS, province: "Northern Cape", pSlug: "northern-cape" }
+  ];
+
+  for (const { map: subMap, province: provName, pSlug } of allSuburbsMaps) {
+    for (const [townName, subList] of Object.entries(subMap)) {
+      for (const sub of subList) {
+        const sSlug = slugify(sub.name);
+        if (!STATIC_LOCATION_INDEX.has(sSlug)) {
+          STATIC_LOCATION_INDEX.set(sSlug, {
+            properName: `${sub.name}, ${townName}`,
+            type: 'Suburb',
+            detectedProvince: provName,
+            provinceSlug: pSlug,
+            specificSubName: sub.name.toLowerCase().trim(),
+            townName: townName.toLowerCase().trim()
+          });
+        }
+      }
+    }
+  }
+})();
 
 async function getCachedDbData(): Promise<{ slugs: any[], ads: any[] }> {
-  const globalRef = global as any;
-  
-  // If the global memory cache is populated (reconciled by /api/storage), use it instantly!
-  if (globalRef.storageCache) {
-    return {
-      slugs: Array.isArray(globalRef.storageCache.slugs) ? globalRef.storageCache.slugs : [],
-      ads: Array.isArray(globalRef.storageCache.ads) ? globalRef.storageCache.ads : []
-    };
-  }
-
-  const now = Date.now();
-  if (cachedDbData && (now - lastDbCacheTime < DB_CACHE_TTL)) {
-    return cachedDbData;
-  }
-
-  let slugs: any[] = [];
-  let ads: any[] = [];
-
-  // Check if DB is known to be offline before attempting
-  if (!isDbCurrentlyOffline()) {
-    try {
-      initDb();
-      if (db) {
-        const record = await withDbTimeout(db.select().from(storage).where(eq(storage.key, 'main')).limit(1), 400);
-        if (record && record.length > 0) {
-          const parsed = JSON.parse(record[0].data);
-          if (parsed) {
-            if (Array.isArray(parsed.slugs)) slugs = parsed.slugs;
-            if (Array.isArray(parsed.ads)) ads = parsed.ads;
-            
-            // Warm the global storage cache
-            globalRef.storageCache = parsed;
-            globalRef.storageCacheTime = now;
-          }
-        }
-      }
-    } catch (dbErr) {
-      console.warn("DB fetch failed in location, relying on file-backed cache:", (dbErr as any).message);
-    }
-  }
-
-  if (slugs.length === 0 && ads.length === 0) {
-    try {
-      const candidatePaths = [
-        path.join(process.cwd(), ".data", "db.json"),
-        path.join(process.cwd(), "data", "db.json")
-      ];
-      for (const targetPath of candidatePaths) {
-        if (fs.existsSync(targetPath)) {
-          const dbFile = JSON.parse(fs.readFileSync(targetPath, "utf-8"));
-          if (dbFile && typeof dbFile === 'object') {
-            slugs = dbFile.slugs || [];
-            ads = dbFile.ads || [];
-            globalRef.storageCache = dbFile;
-            globalRef.storageCacheTime = now;
-            break;
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load custom slugs fallback in location page:", e);
-    }
-  }
-
-  cachedDbData = { slugs, ads };
-  lastDbCacheTime = now;
-  return cachedDbData;
+  const dbData = readServerDb();
+  return {
+    slugs: Array.isArray(dbData?.slugs) ? dbData.slugs : [],
+    ads: Array.isArray(dbData?.ads) ? dbData.ads : []
+  };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -135,14 +142,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function LocationPage({ params }: Props) {
   const { location } = await params;
   const targetSlug = slugify(location);
+  const targetNorm = FAST_NORM(targetSlug);
   
-  // Verify this location is known
+  // Verify this location is known in O(1)
   let isKnown = false;
   let properName = location;
   let type = 'Location';
   let detectedProvince = '';
+  let targetProvinceSlug = '';
+  let specificSubName = '';
   
-  // Load Custom Slugs and custom ads via cached reader
   const { slugs, ads: allStoredAds } = await getCachedDbData();
   const customSlugMatch = slugs.find(
     (s: any) => s.slug === targetSlug || s.slug === location.toLowerCase().trim()
@@ -153,53 +162,16 @@ export default async function LocationPage({ params }: Props) {
     properName = customSlugMatch.properName || customSlugMatch.city;
     type = 'Custom Slug';
     detectedProvince = customSlugMatch.province || '';
+    targetProvinceSlug = slugify(detectedProvince);
   } else {
-    for (const prov of PROVINCES) {
-      if (prov.slug === targetSlug || slugify(prov.name) === targetSlug) {
-        isKnown = true;
-        properName = prov.name;
-        type = 'Province';
-        detectedProvince = prov.name;
-        break;
-      }
-      for (const t of prov.towns) {
-        if (slugify(t) === targetSlug) {
-          isKnown = true;
-          properName = t;
-          type = 'Town';
-          detectedProvince = prov.name;
-          break;
-        }
-      }
-      if (isKnown) break;
-    }
-
-    if (!isKnown) {
-      // Check KZN, Gauteng, Western Cape and Eastern Cape Suburbs
-      const allSuburbsMaps = [
-        { map: KZN_SUBURBS, province: "KwaZulu-Natal" },
-        { map: GAUTENG_SUBURBS, province: "Gauteng" },
-        { map: WESTERN_CAPE_SUBURBS, province: "Western Cape" },
-        { map: EASTERN_CAPE_SUBURBS, province: "Eastern Cape" },
-        { map: FREE_STATE_SUBURBS, province: "Free State" },
-        { map: LIMPOPO_SUBURBS, province: "Limpopo" },
-        { map: MPUMALANGA_SUBURBS, province: "Mpumalanga" },
-        { map: NORTH_WEST_SUBURBS, province: "North West" },
-        { map: NORTHERN_CAPE_SUBURBS, province: "Northern Cape" }
-      ];
-      for (const { map: subMap, province: provName } of allSuburbsMaps) {
-        for (const [townName, subList] of Object.entries(subMap)) {
-          const foundSub = subList.find(sub => slugify(sub.name) === targetSlug);
-          if (foundSub) {
-            isKnown = true;
-            properName = `${foundSub.name}, ${townName}`;
-            type = 'Suburb';
-            detectedProvince = provName;
-            break;
-          }
-        }
-        if (isKnown) break;
-      }
+    const staticHit = STATIC_LOCATION_INDEX.get(targetSlug);
+    if (staticHit) {
+      isKnown = true;
+      properName = staticHit.properName;
+      type = staticHit.type;
+      detectedProvince = staticHit.detectedProvince;
+      targetProvinceSlug = staticHit.provinceSlug;
+      specificSubName = staticHit.specificSubName || '';
     }
   }
 
@@ -207,98 +179,93 @@ export default async function LocationPage({ params }: Props) {
     properName = location.split(/[-_]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   }
 
-  const baseAds = [...MOCK_ADS, ...allStoredAds].filter(ad => {
-    const adLoc = ad.location?.toLowerCase().trim() || "";
-    
-    // 1. Determine Province
-    let adProvinceSlug = ((ad as any).province || "").toLowerCase().trim();
-    if (!adProvinceSlug && ad.location) {
-      const locLower = ad.location.toLowerCase().trim();
-      const matchedProvBySlug = PROVINCES.find(p => p.slug === locLower);
-      if (matchedProvBySlug) {
-        adProvinceSlug = matchedProvBySlug.slug;
-      } else {
-        const foundProv = PROVINCES.find(p => p.towns.some(t => t.toLowerCase() === locLower));
-        if (foundProv) {
-          adProvinceSlug = foundProv.slug;
-        }
-      }
+  const nProperName = FAST_NORM(properName);
+  const nSpecificSub = FAST_NORM(specificSubName);
+  const nCustomCity = customSlugMatch ? FAST_NORM(customSlugMatch.city || '') : '';
+  const nCustomProv = customSlugMatch ? FAST_NORM(customSlugMatch.province || '') : '';
+
+  // Fast initial SSR slice (LocationListings on the client fetches full paginated results via /api/storage)
+  const globalRef = global as any;
+  const candidatePool: any[] =
+    (type === 'Province' && globalRef.indexedDataset?.byProvinceActive?.has(targetSlug))
+      ? globalRef.indexedDataset.byProvinceActive.get(targetSlug)
+      : allStoredAds;
+
+  const adsForLocation: any[] = [];
+  for (let i = 0; i < candidatePool.length; i++) {
+    const ad = candidatePool[i];
+    if (!ad || ad.isActive === false) continue;
+
+    if (type === 'Province' && candidatePool !== allStoredAds) {
+      adsForLocation.push(ad);
+      continue;
     }
 
-    // 2. Determine if it is province-wide
-    const isAdProvinceWide = !ad.location || PROVINCES.some(p => p.slug === ad.location.toLowerCase().trim());
-    const adTown = isAdProvinceWide ? "" : ad.location.toLowerCase().trim();
-    const isGlobalLocation = adLoc === "all locations" || adLoc === "all-locations" || adProvinceSlug === "national";
+    const nAdProv = ad._provNorm ?? FAST_NORM(ad.province || '');
+    const nAdTown = ad._townNorm ?? FAST_NORM(ad.city || ad.town || ad.location || '');
+    const nAdLoc = ad._locNorm ?? FAST_NORM(ad.location || '');
+    const nAdSub = ad._subNorm ?? FAST_NORM(ad.suburb || '');
+    const nAdAddr = ad._addrNorm ?? FAST_NORM(ad.address || '');
+    const isGlobalLocation = ad._provLower === 'national' || nAdLoc === 'alllocations' || nAdProv === 'national';
 
-    if (isGlobalLocation) return true;
+    if (isGlobalLocation) {
+      adsForLocation.push(ad);
+      continue;
+    }
 
     if (customSlugMatch) {
-      const matchCity = customSlugMatch.city.toLowerCase().trim();
-      const matchProv = customSlugMatch.province.toLowerCase().trim();
-      const matchesCity = adTown === matchCity || (!isAdProvinceWide && adLoc === matchCity);
-      const matchesProvince = adProvinceSlug === matchProv;
-      return matchesCity || matchesProvince || adLoc === targetSlug;
-    }
-    
-    const adSub = (ad.suburb || "").toLowerCase().trim();
-    const adDesc = (ad.description || "").toLowerCase().trim();
-    const adAddr = (ad.address || "").toLowerCase().trim();
-    
-    if (type === 'Suburb') {
-      let specificSubName = "";
-      const allSuburbsMaps = [
-        KZN_SUBURBS, 
-        GAUTENG_SUBURBS, 
-        WESTERN_CAPE_SUBURBS, 
-        EASTERN_CAPE_SUBURBS, 
-        FREE_STATE_SUBURBS, 
-        LIMPOPO_SUBURBS, 
-        MPUMALANGA_SUBURBS,
-        NORTH_WEST_SUBURBS,
-        NORTHERN_CAPE_SUBURBS
-      ];
-      for (const subMap of allSuburbsMaps) {
-        for (const [townName, subList] of Object.entries(subMap)) {
-          const found = subList.find(sub => slugify(sub.name) === targetSlug);
-          if (found) {
-            specificSubName = found.name.toLowerCase();
-            break;
-          }
-        }
-        if (specificSubName) break;
+      if (
+        (nCustomCity && (nAdTown === nCustomCity || nAdLoc === nCustomCity)) ||
+        (nCustomProv && nAdProv === nCustomProv) ||
+        nAdLoc === targetNorm
+      ) {
+        adsForLocation.push(ad);
       }
-      return (
-        adSub === targetSlug || 
-        slugify(adSub) === targetSlug ||
-        (specificSubName && (adSub === specificSubName || adLoc.includes(specificSubName) || adDesc.includes(specificSubName) || adAddr.includes(specificSubName)))
-      );
+      continue;
     }
 
     if (type === 'Province') {
-      return adProvinceSlug === targetSlug || adProvinceSlug === properName.toLowerCase();
+      if (ad._provLower === targetSlug || nAdProv === targetNorm || nAdProv === nProperName) {
+        adsForLocation.push(ad);
+      }
+      continue;
     }
 
-    // Town-level matching
-    const matchesTown = slugify(ad.location) === targetSlug || 
-                        ad.location.toLowerCase() === properName.toLowerCase() || 
-                        ad.location.toLowerCase() === location.toLowerCase();
+    if (type === 'Suburb') {
+      if (
+        nAdSub === targetNorm ||
+        (nSpecificSub && (
+          nAdSub === nSpecificSub ||
+          nAdLoc.includes(nSpecificSub) ||
+          nAdAddr.includes(nSpecificSub)
+        ))
+      ) {
+        adsForLocation.push(ad);
+      }
+      continue;
+    }
 
-    // If ad is province-wide, and the target is a town within that province, show it!
-    const isTargetTownInProvince = PROVINCES.find(p => p.slug === adProvinceSlug)?.towns.some(t => slugify(t) === targetSlug);
-    const matchesProvinceWide = isAdProvinceWide && isTargetTownInProvince;
+    // Town-level or generic location matching
+    if (
+      nAdTown === targetNorm ||
+      nAdLoc === targetNorm ||
+      nAdSub === targetNorm ||
+      nAdTown === nProperName ||
+      (targetNorm.length > 3 && (nAdTown.includes(targetNorm) || nAdAddr.includes(targetNorm)))
+    ) {
+      adsForLocation.push(ad);
+    }
+  }
 
-    return matchesTown || matchesProvinceWide;
-  });
-  
-  const adsForLocation = [...baseAds].filter(a => a.isActive !== false).sort((a, b) => {
+  adsForLocation.sort((a, b) => {
     const score = (item: any) => {
       if (item.isSponsor) return 100;
       if (item.isSpotlight) return 90;
       if (item.isBannerPlacement) return 80;
       if (item.isVideoPromo) return 70;
       if (item.isPremium) return 60;
-      if (item.verified) return 40; // Verified Free Ads
-      return 10; // Not Verified Free Ads
+      if (item.verified) return 40;
+      return 10;
     };
     return score(b) - score(a);
   });

@@ -7,9 +7,8 @@ import {
   CATEGORIES_STRUCTURED,
   getCategoryIcon,
   getCategoryAdsCounts,
-  saveCategoryAdsCounts,
   getCountForCategory,
-  safeLocalStorage,
+  fetchDirectoryStats,
 } from "@/lib/data";
 
 export function SitemapCategories() {
@@ -20,28 +19,21 @@ export function SitemapCategories() {
       setCategoryCounts(getCategoryAdsCounts());
     };
 
-    const fetchLive = async () => {
+    const fetchLive = async (force: boolean = false) => {
       try {
-        const res = await fetch("/api/storage?page=1&pageSize=1", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await fetchDirectoryStats(force);
         if (data?.adminStats?.byCategory) {
-          saveCategoryAdsCounts(data.adminStats.byCategory);
           setCategoryCounts(data.adminStats.byCategory);
-        }
-        const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
-        if (typeof liveTotal === "number") {
-          safeLocalStorage.setItem("searchbiz_total_ads_count", String(liveTotal));
         }
       } catch (e) {}
     };
 
     syncLocal();
-    fetchLive();
+    fetchLive(false);
 
     const handleAdsUpdated = () => {
       syncLocal();
-      fetchLive();
+      fetchLive(true);
     };
 
     const handleStorage = (e: StorageEvent) => {
@@ -71,6 +63,7 @@ export function SitemapCategories() {
           <span>20 Industry Sectors</span>
         </h2>
         <Link
+          prefetch={false}
           href="/categories"
           className="text-xs font-bold text-emerald-600 hover:text-emerald-700 underline shrink-0"
         >
@@ -83,6 +76,7 @@ export function SitemapCategories() {
           const icon = getCategoryIcon(group.cleanName);
           return (
             <Link
+              prefetch={false}
               key={group.id}
               href={`/directory?category=${encodeURIComponent(group.name)}`}
               className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl bg-white hover:bg-emerald-50 border border-slate-200/90 hover:border-emerald-300 transition-all group shadow-2xs"

@@ -68,59 +68,62 @@ export interface BotAdPayload {
 }
 
 export function readServerDb(): any {
-  const diskMtime = getFastDiskMtime();
-
-  // Instant O(1) memory hit if globalRef.storageCache is already populated and up to date
+  // Instant O(1) memory hit if globalRef.storageCache is already populated in RAM
   if (
     globalRef.storageCache &&
     Array.isArray(globalRef.storageCache.ads) &&
-    globalRef.storageCache.ads.length > 0 &&
-    (globalRef.storageMtime >= diskMtime || globalRef.pendingDiskFlush)
+    globalRef.storageCache.ads.length > 0
   ) {
     return globalRef.storageCache;
   }
 
   const candidatePaths = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP];
-  let bestData: any = null;
-  let bestTime = -1;
-  let bestCount = -1;
+  const rankedCandidates: { path: string; size: number; mtimeMs: number }[] = [];
 
   for (const targetPath of candidatePaths) {
     try {
       if (fs.existsSync(targetPath)) {
-        const fileContent = fs.readFileSync(targetPath, 'utf-8');
-        const data = JSON.parse(fileContent);
-        if (data && typeof data === 'object') {
-          const adsCount = Array.isArray(data.ads) ? data.ads.length : 0;
-          const updated = Number(data.updatedAt) || 0;
-          if (!bestData || adsCount > bestCount || (adsCount === bestCount && updated > bestTime)) {
-            bestData = data;
-            bestTime = updated;
-            bestCount = adsCount;
-          }
+        const st = fs.statSync(targetPath);
+        if (st.size > 2) {
+          rankedCandidates.push({ path: targetPath, size: st.size, mtimeMs: st.mtimeMs });
         }
       }
-    } catch (e) {
-      console.error(`[BotAdService] Failed to read ${targetPath}:`, e);
-    }
+    } catch (e) {}
   }
 
-  // Check in-memory global cache if it has more ads
-  if (globalRef.storageCache && Array.isArray(globalRef.storageCache.ads)) {
-    if (!bestData || globalRef.storageCache.ads.length > bestCount) {
-      bestData = globalRef.storageCache;
+  // Sort by largest file size (with 5% tolerance favoring newer mtime) so we only parse ONE file
+  rankedCandidates.sort((a, b) => {
+    if (Math.abs(a.size - b.size) > Math.max(a.size, b.size) * 0.05) {
+      return b.size - a.size;
+    }
+    return b.mtimeMs - a.mtimeMs;
+  });
+
+  let bestData: any = null;
+  for (const candidate of rankedCandidates) {
+    try {
+      const fileContent = fs.readFileSync(candidate.path, 'utf-8');
+      const data = JSON.parse(fileContent);
+      if (data && typeof data === 'object' && Array.isArray(data.ads)) {
+        bestData = data;
+        break; // Parse only the single best file!
+      }
+    } catch (e) {
+      console.error(`[BotAdService] Failed to read ${candidate.path}:`, e);
     }
   }
 
   if (bestData) {
     bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
     for (const ad of bestData.ads) {
-      resolveAdGeographyAndCategory(ad);
+      if (ad && !ad._indexedV3) {
+        resolveAdGeographyAndCategory(ad);
+      }
     }
     bestData.trashAds = Array.isArray(bestData.trashAds) ? bestData.trashAds : [];
     bestData.deletedAds = Array.isArray(bestData.deletedAds) ? bestData.deletedAds : [];
     globalRef.storageCache = bestData;
-    globalRef.storageMtime = diskMtime || Date.now();
+    globalRef.storageMtime = getFastDiskMtime() || Date.now();
     globalRef.storageCacheTime = Date.now();
     globalRef.existingAdKeysSet = null;
     globalRef.existingAdMap = null;
@@ -132,72 +135,131 @@ export function readServerDb(): any {
   return empty;
 }
 
-function flushToDiskNow(data: any): void {
+async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promise<void> {
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    await fs.promises.mkdir(dir, { recursive: true });
+  }
+  const tempPath = `${targetPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
+  const handle = await fs.promises.open(tempPath, 'w');
   try {
-    // Use compact JSON when > 2000 ads to cut file size by 45% and double serialization speed
-    const isLarge = Array.isArray(data.ads) && data.ads.length > 2000;
-    const payload = isLarge ? JSON.stringify(data) : JSON.stringify(data, null, 2);
-
-    const targets = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH];
-    if (fs.existsSync(path.dirname(VPS_STORAGE_BACKUP))) {
-      targets.push(VPS_STORAGE_BACKUP);
+    const meta: Record<string, any> = {};
+    for (const k of Object.keys(data)) {
+      if (k !== 'ads') meta[k] = data[k];
     }
-    for (const targetPath of targets) {
-      try {
-        safeAtomicWrite(targetPath, payload);
-      } catch (e) {
-        console.error(`[BotAdService] Failed to write ${targetPath}:`, e);
+    const metaStr = JSON.stringify(meta);
+    const prefix = metaStr.slice(0, -1) + (metaStr.length > 2 ? ',"ads":[' : '"ads":[');
+    await handle.write(prefix, null, 'utf-8');
+
+    const ads = Array.isArray(data.ads) ? data.ads : [];
+    const CHUNK_SIZE = 2500;
+    let wroteAny = false;
+    for (let i = 0; i < ads.length; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, ads.length);
+      let chunkStr = '';
+      for (let j = i; j < end; j++) {
+        const item = ads[j];
+        if (!item) continue;
+        const itemStr = JSON.stringify(item);
+        if (!itemStr) continue;
+        chunkStr += (wroteAny ? ',' : '') + itemStr;
+        wroteAny = true;
+      }
+      if (chunkStr) {
+        await handle.write(chunkStr, null, 'utf-8');
+      }
+      if (end < ads.length) {
+        await new Promise<void>(resolve => setImmediate(resolve));
       }
     }
+    await handle.write(']}', null, 'utf-8');
+  } finally {
+    await handle.close();
+  }
+  await fs.promises.rename(tempPath, targetPath);
+}
 
+export { writeStorageJsonNonBlocking };
+
+async function flushToDiskAsync(data: any): Promise<void> {
+  if (globalRef.isFlushingToDisk) {
+    globalRef.needsAnotherFlush = true;
+    return;
+  }
+  globalRef.isFlushingToDisk = true;
+  globalRef.needsAnotherFlush = false;
+
+  try {
+    await writeStorageJsonNonBlocking(PERSIST_PATH, data);
+
+    try {
+      const jsonDir = path.dirname(JSON_PATH);
+      if (!fs.existsSync(jsonDir)) {
+        await fs.promises.mkdir(jsonDir, { recursive: true });
+      }
+      const tempCopy = `${JSON_PATH}.tmp.${process.pid}.${Date.now()}`;
+      await fs.promises.copyFile(PERSIST_PATH, tempCopy);
+      await fs.promises.rename(tempCopy, JSON_PATH);
+    } catch (copyErr) {
+      console.error(`[BotAdService] Failed copy to ${JSON_PATH}:`, copyErr);
+    }
+
+    const now = Date.now();
+    // Only write backup copy at most once every 10 minutes
+    if (!globalRef.lastBackupWriteTime || now - globalRef.lastBackupWriteTime > 600000) {
+      globalRef.lastBackupWriteTime = now;
+      try {
+        const tempBk = `${BACKUP_PATH}.tmp.${process.pid}.${Date.now()}`;
+        await fs.promises.copyFile(PERSIST_PATH, tempBk);
+        await fs.promises.rename(tempBk, BACKUP_PATH);
+      } catch (bkErr) {}
+    }
+
+    globalRef.lastSelfWriteTime = Date.now();
     globalRef.storageMtime = getFastDiskMtime() || Date.now();
     globalRef.pendingDiskFlush = false;
-
-    // Async sync to PostgreSQL if DATABASE_URL is set and payload is within reasonable size
-    if (process.env.DATABASE_URL && payload.length < 50_000_000) {
-      try {
-        initDb();
-        if (db) {
-          withDbTimeout(
-            db.insert(storage).values({ key: 'main', data: payload }).onConflictDoUpdate({ target: storage.key, set: { data: payload } }),
-            2000
-          ).catch((err: any) => {
-            console.warn('[BotAdService] Async Postgres sync note:', err.message);
-          });
-        }
-      } catch (e) {}
-    }
   } catch (err) {
-    console.error('[BotAdService] Flush error:', err);
+    console.error('[BotAdService] Async flush error:', err);
     globalRef.pendingDiskFlush = false;
+  } finally {
+    globalRef.isFlushingToDisk = false;
+    if (globalRef.needsAnotherFlush && globalRef.storageCache) {
+      globalRef.needsAnotherFlush = false;
+      setTimeout(() => {
+        if (globalRef.storageCache) flushToDiskAsync(globalRef.storageCache);
+      }, 10000);
+    }
   }
 }
 
-export function writeServerDb(data: any, immediate: boolean = false): void {
+export function writeServerDb(data: any, immediate: boolean = false, keepIndexValid: boolean = false): void {
   data.updatedAt = Date.now();
   globalRef.storageCache = data;
   globalRef.storageCacheTime = Date.now();
-  globalRef.adminStatsCache = null;
-  globalRef.pendingDiskFlush = true;
-
-  if (immediate || !Array.isArray(data.ads) || data.ads.length < 1000) {
-    if (globalRef.flushTimer) {
-      clearTimeout(globalRef.flushTimer);
-      globalRef.flushTimer = null;
+  if (!keepIndexValid) {
+    globalRef.adminStatsCache = null;
+    globalRef.indexedDataset = null;
+  } else if (globalRef.indexedDataset) {
+    const rawAdsLen = Array.isArray(data.ads) ? data.ads.length : 0;
+    const delLen = Array.isArray(data.deletedAds) ? data.deletedAds.length : 0;
+    globalRef.indexedDataset.cacheKey = `${data.updatedAt}_${rawAdsLen}_${delLen}`;
+    if (globalRef.indexedDataset.queryCache instanceof Map) {
+      globalRef.indexedDataset.queryCache.clear();
     }
-    flushToDiskNow(data);
-    return;
   }
+  globalRef.pendingDiskFlush = true;
+  globalRef.lastSelfWriteTime = Date.now();
 
-  // Coalesce high-speed bulk batch writes so 198,000+ ads ingest in RAM in milliseconds
-  // and flush cleanly in the background without blocking HTTP responses
+  const adCount = Array.isArray(data.ads) ? data.ads.length : 0;
+  const debounceMs = immediate && adCount < 1000 ? 300 : adCount > 5000 ? 25000 : 3000;
+
   if (!globalRef.flushTimer) {
     globalRef.flushTimer = setTimeout(() => {
       globalRef.flushTimer = null;
       if (globalRef.storageCache) {
-        flushToDiskNow(globalRef.storageCache);
+        flushToDiskAsync(globalRef.storageCache);
       }
-    }, 800);
+    }, debounceMs);
   }
 }
 
@@ -299,6 +361,15 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
 
   // Prepend to active ads (only clean the new ad, not the entire existing array)
   const cleanedNew = cleanAdsArray([newAd]);
+  if (typeof globalRef.incrementallyIndexAds === 'function' && cleanedNew.length > 0) {
+    try {
+      globalRef.incrementallyIndexAds(cleanedNew);
+    } catch (e) {
+      globalRef.indexedDataset = null;
+    }
+  } else {
+    globalRef.indexedDataset = null;
+  }
   dbData.ads = [...cleanedNew, ...currentAds];
   dbData.lastCreatedAdId = newAd.id;
   dbData.lastCreatedAd = newAd;
@@ -311,7 +382,7 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     dbData.trashAds = dbData.trashAds.filter((t: any) => t && t.id !== adId);
   }
 
-  writeServerDb(dbData, true);
+  writeServerDb(dbData, false, Boolean(globalRef.indexedDataset));
 
   return {
     success: true,
@@ -474,9 +545,20 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
   if (addedCount > 0 || updatedCount > 0) {
     if (addedCount > 0) {
       const cleanedBatch = cleanAdsArray(newAdsToAppend);
+      if (typeof globalRef.incrementallyIndexAds === 'function' && cleanedBatch.length > 0 && updatedCount === 0) {
+        try {
+          globalRef.incrementallyIndexAds(cleanedBatch);
+        } catch (e) {
+          globalRef.indexedDataset = null;
+        }
+      } else {
+        globalRef.indexedDataset = null;
+      }
       dbData.ads = [...cleanedBatch, ...currentAds];
+    } else {
+      globalRef.indexedDataset = null;
     }
-    writeServerDb(dbData, false);
+    writeServerDb(dbData, false, Boolean(globalRef.indexedDataset));
   }
 
   return {

@@ -270,6 +270,45 @@ let _memStoredAdsRaw: string | null = null;
 let _memCategoryCounts: Record<string, number> | null = null;
 let _memCategoryCountsRaw: string | null = null;
 let _activeFetchAdsPromise: Promise<any[]> | null = null;
+let _activeStatsPromise: Promise<any> | null = null;
+let _lastStatsData: any = null;
+let _lastStatsTime = 0;
+
+export async function fetchDirectoryStats(force: boolean = false): Promise<any> {
+  if (typeof window === "undefined") return null;
+  const now = Date.now();
+  if (!force && _lastStatsData && now - _lastStatsTime < 4000) {
+    return _lastStatsData;
+  }
+  if (_activeStatsPromise) {
+    return _activeStatsPromise;
+  }
+
+  _activeStatsPromise = fetch('/api/storage?statsOnly=true', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => {
+      if (data) {
+        _lastStatsData = data;
+        _lastStatsTime = Date.now();
+        if (typeof data.totalAdsCount === "number") {
+          safeLocalStorage.setItem("searchbiz_total_ads_count", String(data.totalAdsCount));
+        }
+        if (typeof data.verifiedCount === "number") {
+          safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
+        }
+        if (data.adminStats?.byCategory) {
+          saveCategoryAdsCounts(data.adminStats.byCategory);
+        }
+      }
+      return data;
+    })
+    .catch(() => _lastStatsData)
+    .finally(() => {
+      _activeStatsPromise = null;
+    });
+
+  return _activeStatsPromise;
+}
 
 export function saveCategoryAdsCounts(counts: Record<string, number> | undefined | null): void {
   if (typeof window === "undefined" || !counts || typeof counts !== "object") return;

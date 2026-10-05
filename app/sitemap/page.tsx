@@ -3,11 +3,7 @@ import { PROVINCES } from "@/lib/data";
 import { getPostalCodeForTown, KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS, FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS, TOTAL_SUBURBS_COUNT, TOTAL_MAJOR_TOWNS_COUNT } from "@/lib/locations";
 import { MapPin } from "lucide-react";
 import { SitemapCategories } from "@/components/sitemap-categories";
-import fs from "fs";
-import path from "path";
-import { db, initDb } from "@/lib/db";
-import { storage } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { readServerDb } from "@/lib/bot-ad-service";
 
 export const dynamic = 'force-dynamic';
 
@@ -19,48 +15,9 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// Memory caching for lightning-fast loading
-let cachedCustomSlugs: any[] | null = null;
-let lastSlugsCacheTime = 0;
-const SLUGS_CACHE_TTL = 30000; // 30 seconds caching
-
 async function getCustomSlugsCached(): Promise<any[]> {
-  const now = Date.now();
-  if (cachedCustomSlugs && (now - lastSlugsCacheTime < SLUGS_CACHE_TTL)) {
-    return cachedCustomSlugs;
-  }
-
-  let list: any[] = [];
-  try {
-    initDb();
-    if (db) {
-      const record = await db.select().from(storage).where(eq(storage.key, 'main')).limit(1);
-      if (record && record.length > 0) {
-        const parsed = JSON.parse(record[0].data);
-        if (parsed && Array.isArray(parsed.slugs)) {
-          list = parsed.slugs;
-        }
-      }
-    }
-  } catch (dbErr) {
-    console.warn("DB fetch failed in sitemap, fallback to JSON file:", (dbErr as any).message);
-  }
-
-  if (list.length === 0) {
-    try {
-      const dbPath = path.join(process.cwd(), ".data", "db.json");
-      if (fs.existsSync(dbPath)) {
-        const dbFile = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-        list = dbFile.slugs || [];
-      }
-    } catch (e) {
-      console.error("Failed to load custom slugs fallback in sitemap page:", e);
-    }
-  }
-
-  cachedCustomSlugs = list;
-  lastSlugsCacheTime = now;
-  return list;
+  const dbData = readServerDb();
+  return Array.isArray(dbData?.slugs) ? dbData.slugs : [];
 }
 
 export default async function SitemapPage() {
@@ -199,7 +156,7 @@ export default async function SitemapPage() {
 
               return (
                 <div key={prov.slug} id={prov.slug} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 animate-fade-in scroll-mt-24">
-                  <Link href={`/${prov.slug}`} className="text-xl font-bold text-slate-900 hover:text-emerald-600 mb-6 inline-block transition-colors border-b-2 border-emerald-500 pb-1">
+                  <Link prefetch={false} href={`/${prov.slug}`} className="text-xl font-bold text-slate-900 hover:text-emerald-600 mb-6 inline-block transition-colors border-b-2 border-emerald-500 pb-1">
                     {prov.name} Province {provinceSubMap ? `(${combinedTowns.length} Towns, ${totalSuburbs} Suburbs)` : ''}
                   </Link>
 
@@ -215,6 +172,7 @@ export default async function SitemapPage() {
                             <div key={`${townItem.name}-${idx}`} className="bg-slate-50 border border-slate-200 rounded-xl p-4 hover:border-emerald-300 hover:shadow-md transition-all duration-300">
                               <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2.5">
                                 <Link 
+                                  prefetch={false}
                                   href={townItem.href}
                                   className="text-sm font-bold text-slate-800 hover:text-emerald-600 transition-colors flex items-center gap-1.5"
                                 >
@@ -229,7 +187,7 @@ export default async function SitemapPage() {
                                   {sublist.map((sub, sIdx) => {
                                     const subSlug = slugify(sub.name);
                                     return (
-                                      <Link
+                                      <a
                                         key={`${sub.name}-${sIdx}`}
                                         href={`/${subSlug}`}
                                         className="text-xs bg-white text-slate-700 hover:text-emerald-600 hover:border-emerald-200 px-2 py-1 rounded-lg border border-slate-150 flex items-center justify-between transition-all group min-w-0"
@@ -238,7 +196,7 @@ export default async function SitemapPage() {
                                         <span className="text-[9px] text-slate-400 font-mono flex-shrink-0 bg-slate-50 px-1 py-0.5 rounded border border-slate-100">
                                           {sub.postalCode}
                                         </span>
-                                      </Link>
+                                      </a>
                                     );
                                   })}
                                 </div>
@@ -255,6 +213,7 @@ export default async function SitemapPage() {
                       {combinedTowns.map((item, idx) => {
                         return (
                           <Link 
+                            prefetch={false}
                             key={`${item.name}-${idx}`} 
                             href={item.href}
                             className="flex flex-col border-l-2 border-transparent hover:border-emerald-500 pl-2 transition-all focus:outline-none group min-w-0"

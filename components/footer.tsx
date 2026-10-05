@@ -10,7 +10,8 @@ import {
   getCategoryAdsCounts,
   saveCategoryAdsCounts,
   getCountForCategory,
-  getTotalAdsCount
+  getTotalAdsCount,
+  fetchDirectoryStats
 } from "@/lib/data";
 import { useState, useEffect } from "react";
 
@@ -53,18 +54,15 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
         setTotalAdsCount(getTotalAdsCount());
       };
 
-      const fetchLiveCategoryCounts = async () => {
+      const fetchLiveCategoryCounts = async (force: boolean = false) => {
         try {
-          const res = await fetch("/api/storage?page=1&pageSize=1", { cache: "no-store" });
-          if (!res.ok) return;
-          const data = await res.json();
+          const data = await fetchDirectoryStats(force);
+          if (!data) return;
           if (data?.adminStats?.byCategory) {
-            saveCategoryAdsCounts(data.adminStats.byCategory);
             setCategoryCounts(data.adminStats.byCategory);
           }
           const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
           if (typeof liveTotal === "number") {
-            safeLocalStorage.setItem("searchbiz_total_ads_count", String(liveTotal));
             setTotalAdsCount(liveTotal);
           }
         } catch (e) {}
@@ -72,11 +70,11 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
 
       checkMessages();
       syncCategoryCountsLocal();
-      fetchLiveCategoryCounts();
+      fetchLiveCategoryCounts(false);
 
       const handleAdsUpdated = () => {
         syncCategoryCountsLocal();
-        fetchLiveCategoryCounts();
+        fetchLiveCategoryCounts(true);
       };
 
       const handleStorage = (e: StorageEvent) => {
@@ -147,39 +145,39 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
               <MapPin className="w-4 h-4 text-emerald-400" /> Active Provinces
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-y-2.5 text-sm">
-              <Link href="/gauteng" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/gauteng" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Gauteng</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/western-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/western-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Western Cape</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/kwazulu-natal" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/kwazulu-natal" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>KwaZulu-Natal</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/eastern-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/eastern-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Eastern Cape</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/free-state" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/free-state" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Free State</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/limpopo" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/limpopo" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Limpopo</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/mpumalanga" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/mpumalanga" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Mpumalanga</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/north-west" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/north-west" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>North West</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
-              <Link href="/northern-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
+              <Link prefetch={false} href="/northern-cape" className="hover:text-emerald-400 transition-colors flex items-center justify-between text-slate-300">
                 <span>Northern Cape</span>
                 <ChevronRight className="w-3 h-3 text-slate-600" />
               </Link>
@@ -343,6 +341,7 @@ export function Footer({ onShowLegal }: { onShowLegal?: () => void }) {
               const icon = getCategoryIcon(group.cleanName);
               return (
                 <Link
+                  prefetch={false}
                   key={group.id}
                   href={`/directory?category=${encodeURIComponent(group.name)}`}
                   className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800/90 hover:border-emerald-500/40 transition-all group h-full"

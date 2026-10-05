@@ -26,6 +26,7 @@ import {
   saveCategoryAdsCounts,
   getCountForCategory,
   getTotalAdsCount,
+  fetchDirectoryStats,
   safeLocalStorage
 } from '@/lib/data';
 import { 
@@ -84,29 +85,26 @@ function SearchBarForm() {
       setTotalAdsCount(getTotalAdsCount());
     };
 
-    const fetchLiveCounts = async () => {
+    const fetchLiveCounts = async (force: boolean = false) => {
       try {
-        const res = await fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await fetchDirectoryStats(force);
+        if (!data) return;
         if (data?.adminStats?.byCategory) {
-          saveCategoryAdsCounts(data.adminStats.byCategory);
           setCategoryCounts(data.adminStats.byCategory);
         }
         const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
         if (typeof liveTotal === 'number') {
-          safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
           setTotalAdsCount(liveTotal);
         }
       } catch (e) {}
     };
 
     syncFromLocal();
-    fetchLiveCounts();
+    fetchLiveCounts(false);
 
     const handleAdsUpdated = () => {
       syncFromLocal();
-      fetchLiveCounts();
+      fetchLiveCounts(true);
     };
     const handleStorage = (e: StorageEvent) => {
       if (
@@ -130,17 +128,14 @@ function SearchBarForm() {
   // Refresh live counts from server whenever user opens the Category dropdown
   useEffect(() => {
     if (openDropdown === 'category') {
-      fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' })
-        .then(r => (r.ok ? r.json() : null))
+      fetchDirectoryStats(false)
         .then(data => {
           if (!data) return;
           if (data.adminStats?.byCategory) {
-            saveCategoryAdsCounts(data.adminStats.byCategory);
             setCategoryCounts(data.adminStats.byCategory);
           }
           const liveTotal = data.adminStats?.active ?? data.globalTotalAdsCount ?? data.totalAdsCount;
           if (typeof liveTotal === 'number') {
-            safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
             setTotalAdsCount(liveTotal);
           }
         })
