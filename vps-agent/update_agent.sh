@@ -138,24 +138,31 @@ paths = [
 ]
 best_path = None
 best_count = -1
+best_size = -1
 for p in paths:
     if os.path.exists(p):
         try:
+            sz = os.path.getsize(p)
+            if sz <= 2:
+                continue
             with open(p, 'r', encoding='utf-8') as f:
                 d = json.load(f)
                 c = len(d.get('ads', [])) if isinstance(d, dict) and isinstance(d.get('ads'), list) else 0
-                if c > best_count:
+                if c > best_count or (c == best_count and sz > best_size):
                     best_count = c
+                    best_size = sz
                     best_path = p
         except Exception:
             pass
 if best_path and best_count > 0:
-    print(f'✅ Found master SearchBiz database with {best_count:,} ads at {best_path}. Syncing all persistent paths...')
+    print(f'✅ Found master SearchBiz database with {best_count:,} ads at {best_path}. Syncing any out-of-date paths...')
     for p in paths:
         if p != best_path:
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
-                shutil.copy2(best_path, p)
+                # Only copy if target file does not exist or differs in size so we do not needlessly bump mtime
+                if not os.path.exists(p) or abs(os.path.getsize(p) - best_size) > 64:
+                    shutil.copy2(best_path, p)
             except Exception:
                 pass
 " || true
@@ -163,6 +170,10 @@ if best_path and best_count > 0:
 if [ -d "../.data" ]; then
     chmod -R 777 ../.data ../data 2>/dev/null || true
 fi
+
+# Pre-warm the web container O(1) RAM index so all pages respond instantaneously
+curl -s "http://127.0.0.1:3005/api/storage?statsOnly=true" >/dev/null 2>&1 || true
+curl -s "http://127.0.0.1:3005/api/storage?freeOnly=true&includeFeatured=true&page=1&pageSize=12" >/dev/null 2>&1 || true
 
 echo "Restarting hermes-agent service..."
 systemctl daemon-reload

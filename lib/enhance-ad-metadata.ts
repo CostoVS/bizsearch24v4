@@ -2,14 +2,73 @@ import { SA_PROVINCES } from './locations';
 import { CATEGORIES_STRUCTURED, stripCategoryNumber, getCategoryCode } from './categories';
 import { resolveLocationDetails } from './location-resolver';
 
+interface FastCatMatch {
+  groupCode: string;
+  groupCleanName: string;
+  groupFullName: string;
+  subCode: string;
+  subCleanName: string;
+  subFullName: string;
+}
+
+const FAST_CATEGORY_MAP = new Map<string, FastCatMatch>();
+const FAST_PROVINCE_SLUG_MAP = new Map<string, { slug: string; name: string }>();
+
+(function buildFastEnhanceMaps() {
+  for (const p of SA_PROVINCES) {
+    FAST_PROVINCE_SLUG_MAP.set(p.slug.toLowerCase(), { slug: p.slug, name: p.name });
+    FAST_PROVINCE_SLUG_MAP.set(p.name.toLowerCase(), { slug: p.slug, name: p.name });
+  }
+
+  for (const group of CATEGORIES_STRUCTURED) {
+    const defaultItem = group.items[0];
+    const groupMatch: FastCatMatch = {
+      groupCode: group.code,
+      groupCleanName: group.cleanName,
+      groupFullName: group.name,
+      subCode: defaultItem?.id || `${group.code}.1`,
+      subCleanName: defaultItem?.name || group.cleanName,
+      subFullName: defaultItem?.fullName || group.name
+    };
+    FAST_CATEGORY_MAP.set(group.code.toLowerCase(), groupMatch);
+    FAST_CATEGORY_MAP.set(group.cleanName.toLowerCase().trim(), groupMatch);
+    FAST_CATEGORY_MAP.set(group.name.toLowerCase().trim(), groupMatch);
+
+    for (const item of group.items) {
+      const itemMatch: FastCatMatch = {
+        groupCode: group.code,
+        groupCleanName: group.cleanName,
+        groupFullName: group.name,
+        subCode: item.id,
+        subCleanName: item.name,
+        subFullName: item.fullName
+      };
+      FAST_CATEGORY_MAP.set(item.id.toLowerCase().trim(), itemMatch);
+      FAST_CATEGORY_MAP.set(item.name.toLowerCase().trim(), itemMatch);
+      FAST_CATEGORY_MAP.set(item.fullName.toLowerCase().trim(), itemMatch);
+    }
+  }
+})();
+
 /**
  * Enhances an advertisement record with canonical province, city/town, suburb, postal code,
- * service areas, category group, subcategory, category code, keywords, search tags, and slug.
+ * service areas, category group, subcategory, category code, and slug in O(1).
  */
 export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
   if (!ad || typeof ad !== 'object') return ad;
 
-  const copy: Record<string, any> = { ...ad };
+  // Fast O(1) return if already enhanced or has canonical fields populated
+  if (
+    (ad as any)._enhancedV2 === true ||
+    (ad.province && ad.provinceName && ad.city && ad.categoryCode && ad.categoryGroup && ad.slug)
+  ) {
+    if (!(ad as any)._enhancedV2) {
+      Object.defineProperty(ad, '_enhancedV2', { value: true, writable: true, enumerable: false });
+    }
+    return ad;
+  }
+
+  const copy: Record<string, any> = ad;
 
   // 1. RESOLVE LOCATION & PROVINCE LINKAGE
   const rawProv = String(copy.province || '').toLowerCase().trim();
@@ -17,31 +76,35 @@ export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
   const rawSuburb = String(copy.suburb || '').trim();
   const rawAddr = String(copy.address || '').trim();
 
-  // Resolve canonical location hierarchy using Location Resolver
-  const locResult = resolveLocationDetails({
-    query: rawAddr || rawSuburb || rawCity,
-    province: rawProv,
-    town: rawCity,
-    suburb: rawSuburb
-  });
+  const directProv = rawProv ? FAST_PROVINCE_SLUG_MAP.get(rawProv) : undefined;
+  let canonicalProvSlug = directProv?.slug || 'gauteng';
+  let canonicalProvName = directProv?.name || 'Gauteng';
+  let canonicalTown = rawCity || 'Johannesburg';
+  let canonicalSuburb = rawSuburb;
+  let canonicalPostalCode = copy.postalCode || copy.postal_code || '';
 
-  let canonicalProvSlug = 'gauteng';
-  let canonicalProvName = 'Gauteng';
+  if (!directProv || !rawCity) {
+    const locResult = resolveLocationDetails({
+      query: rawAddr || rawSuburb || rawCity,
+      province: rawProv,
+      town: rawCity,
+      suburb: rawSuburb
+    });
 
-  if (locResult.provinceSlug) {
-    canonicalProvSlug = locResult.provinceSlug;
-    canonicalProvName = locResult.province || canonicalProvSlug.toUpperCase();
-  } else if (rawProv) {
-    const provMatch = SA_PROVINCES.find(p => p.slug === rawProv || p.name.toLowerCase() === rawProv);
-    if (provMatch) {
-      canonicalProvSlug = provMatch.slug;
-      canonicalProvName = provMatch.name;
+    if (locResult.provinceSlug) {
+      canonicalProvSlug = locResult.provinceSlug;
+      canonicalProvName = locResult.province || canonicalProvSlug.toUpperCase();
+    }
+    if (locResult.town || locResult.city) {
+      canonicalTown = locResult.town || locResult.city || canonicalTown;
+    }
+    if (locResult.suburb && !canonicalSuburb) {
+      canonicalSuburb = locResult.suburb;
+    }
+    if (locResult.postalCode && !canonicalPostalCode) {
+      canonicalPostalCode = locResult.postalCode;
     }
   }
-
-  const canonicalTown = locResult.town || locResult.city || rawCity || 'Johannesburg';
-  const canonicalSuburb = locResult.suburb || rawSuburb || '';
-  const canonicalPostalCode = locResult.postalCode || copy.postalCode || copy.postal_code || '';
 
   copy.province = canonicalProvSlug;
   copy.provinceName = canonicalProvName;
@@ -51,161 +114,40 @@ export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
   copy.location = (canonicalSuburb || canonicalTown).toLowerCase();
   copy.postalCode = canonicalPostalCode;
 
-  // Build structured Service Areas
-  if (!Array.isArray(copy.serviceAreas) || copy.serviceAreas.length === 0) {
-    copy.serviceAreas = [
-      {
-        province: canonicalProvSlug,
-        provinceName: canonicalProvName,
-        town: canonicalTown,
-        suburb: canonicalSuburb,
-        postalCode: canonicalPostalCode
-      }
-    ];
-  }
-
-  // Ensure clean address string
   if (!copy.address || copy.address.trim() === '' || copy.address === canonicalTown) {
     const parts = [canonicalSuburb, canonicalTown, canonicalProvName, 'South Africa'].filter(Boolean);
     copy.address = parts.join(', ');
   }
 
-  // 2. RESOLVE CATEGORY, SUBCATEGORY & CATEGORY CODE LINKAGE
+  // 2. RESOLVE CATEGORY, SUBCATEGORY & CATEGORY CODE LINKAGE IN O(1)
   const rawCat = String(copy.category || '').trim();
   const rawCatCode = String(copy.categoryCode || copy.category_code || '').trim();
+  const extractedCode = (rawCatCode || getCategoryCode(rawCat) || '').toLowerCase().trim();
+  const cleanCatLower = stripCategoryNumber(rawCat).toLowerCase().trim();
 
-  let matchedGroupCode = '20';
-  let matchedGroupCleanName = 'BUSINESS SERVICES';
-  let matchedGroupFullName = '20. BUSINESS SERVICES';
-  let matchedSubCode = '20.1';
-  let matchedSubCleanName = 'General Services';
-  let matchedSubFullName = '20.1 General Services';
-  let isCatFound = false;
+  const catHit =
+    (extractedCode ? FAST_CATEGORY_MAP.get(extractedCode) : undefined) ||
+    (cleanCatLower ? FAST_CATEGORY_MAP.get(cleanCatLower) : undefined) ||
+    (rawCat ? FAST_CATEGORY_MAP.get(rawCat.toLowerCase()) : undefined);
 
-  // Attempt code-based match first if rawCatCode or rawCat contains code like "1.1" or "1"
-  const extractedCode = rawCatCode || getCategoryCode(rawCat);
-
-  if (extractedCode) {
-    for (const group of CATEGORIES_STRUCTURED) {
-      for (const item of group.items) {
-        if (item.id === extractedCode) {
-          matchedGroupCode = group.code;
-          matchedGroupCleanName = group.cleanName;
-          matchedGroupFullName = group.name;
-          matchedSubCode = item.id;
-          matchedSubCleanName = item.name;
-          matchedSubFullName = item.fullName;
-          isCatFound = true;
-          break;
-        }
-      }
-      if (isCatFound) break;
-    }
+  if (catHit) {
+    copy.category = catHit.subCleanName;
+    copy.categoryCode = catHit.subCode;
+    copy.categoryGroup = catHit.groupCleanName;
+    copy.parentCategory = catHit.groupFullName;
+    copy.categoryFullName = catHit.subFullName;
+  } else {
+    copy.category = copy.category || 'General Services';
+    copy.categoryCode = copy.categoryCode || '20.1';
+    copy.categoryGroup = copy.categoryGroup || 'BUSINESS SERVICES';
+    copy.parentCategory = copy.parentCategory || '20. BUSINESS SERVICES';
+    copy.categoryFullName = copy.categoryFullName || '20.1 General Services';
   }
 
-  if (!isCatFound && rawCat) {
-    const cleanCatLower = stripCategoryNumber(rawCat).toLowerCase().trim();
-    for (const group of CATEGORIES_STRUCTURED) {
-      const gCleanLower = group.cleanName.toLowerCase().trim();
-
-      for (const item of group.items) {
-        const iNameLower = item.name.toLowerCase().trim();
-        const iFullLower = item.fullName.toLowerCase().trim();
-
-        if (cleanCatLower === iNameLower || cleanCatLower === iFullLower || rawCat.toLowerCase() === iNameLower) {
-          matchedGroupCode = group.code;
-          matchedGroupCleanName = group.cleanName;
-          matchedGroupFullName = group.name;
-          matchedSubCode = item.id;
-          matchedSubCleanName = item.name;
-          matchedSubFullName = item.fullName;
-          isCatFound = true;
-          break;
-        }
-      }
-
-      if (!isCatFound && (cleanCatLower.includes(gCleanLower) || gCleanLower.includes(cleanCatLower))) {
-        matchedGroupCode = group.code;
-        matchedGroupCleanName = group.cleanName;
-        matchedGroupFullName = group.name;
-        matchedSubCode = group.items[0]?.id || `${group.code}.1`;
-        matchedSubCleanName = group.items[0]?.name || group.cleanName;
-        matchedSubFullName = group.items[0]?.fullName || group.name;
-        isCatFound = true;
-        break;
-      }
-
-      if (isCatFound) break;
-    }
-  }
-
-  if (!isCatFound && rawCat) {
-    const cleanCatLower = stripCategoryNumber(rawCat).toLowerCase().trim();
-    for (const group of CATEGORIES_STRUCTURED) {
-      for (const item of group.items) {
-        const iNameLower = item.name.toLowerCase().trim();
-        if (cleanCatLower.includes(iNameLower) || iNameLower.includes(cleanCatLower)) {
-          matchedGroupCode = group.code;
-          matchedGroupCleanName = group.cleanName;
-          matchedGroupFullName = group.name;
-          matchedSubCode = item.id;
-          matchedSubCleanName = item.name;
-          matchedSubFullName = item.fullName;
-          isCatFound = true;
-          break;
-        }
-      }
-      if (isCatFound) break;
-    }
-  }
-
-  copy.category = matchedSubCleanName;
-  copy.categoryCode = matchedSubCode;
-  copy.categoryGroup = matchedGroupCleanName;
-  copy.parentCategory = matchedGroupFullName;
-  copy.categoryFullName = matchedSubFullName;
-
-  // 3. GENERATE KEYWORDS & FULL-TEXT SEARCH TAGS LINKAGE
-  const keywordSet = new Set<string>();
-
-  // Add category tokens
-  keywordSet.add(matchedSubCode.toLowerCase());
-  keywordSet.add(matchedGroupCode.toLowerCase());
-  matchedSubCleanName.toLowerCase().split(/[\s,&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  matchedGroupCleanName.toLowerCase().split(/[\s,&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-
-  // Add location tokens
-  keywordSet.add(canonicalProvSlug.toLowerCase());
-  canonicalProvName.toLowerCase().split(/[\s/]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  canonicalTown.toLowerCase().split(/[\s,/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  if (canonicalSuburb) {
-    canonicalSuburb.toLowerCase().split(/[\s,/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  }
-  if (canonicalPostalCode) {
-    keywordSet.add(canonicalPostalCode);
-  }
-
-  // Add title, address & description tokens
-  if (copy.title) {
-    String(copy.title).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  }
-  if (copy.address) {
-    String(copy.address).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  }
-  if (copy.servicesOffered) {
-    String(copy.servicesOffered).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 2 && keywordSet.add(t));
-  }
-  if (copy.description) {
-    String(copy.description).toLowerCase().split(/[\s,.!?"'()&/-]+/).forEach(t => t.length >= 3 && keywordSet.add(t));
-  }
-
-  copy.keywords = Array.from(keywordSet);
-  copy.searchTags = Array.from(keywordSet).join(' ');
-
-  // 4. GENERATE SEO SLUG LINKAGE
+  // 3. GENERATE SEO SLUG LINKAGE
   if (!copy.slug) {
     const slugParts = [
-      matchedSubCleanName,
+      copy.category,
       canonicalSuburb || canonicalTown,
       canonicalProvSlug,
       copy.id || Math.random().toString(36).substring(2, 8)
@@ -217,5 +159,6 @@ export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
       .replace(/^-+|-+$/g, '');
   }
 
+  Object.defineProperty(copy, '_enhancedV2', { value: true, writable: true, enumerable: false });
   return copy as T;
 }

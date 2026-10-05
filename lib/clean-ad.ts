@@ -88,6 +88,9 @@ export function isCustomerReviewOrGarbage(text?: string | null): boolean {
 export function sanitizeVerifiedWording(text?: string | null): string {
   if (!text) return "";
   let clean = String(text);
+  if (!clean.toLowerCase().includes("verified")) {
+    return clean.trim();
+  }
   
   // Replace "Verified local business" -> "Local business"
   clean = clean.replace(/\bverified\s+local\s+business(es)?\b/gi, "local business$1");
@@ -116,9 +119,10 @@ export function sanitizeVerifiedWording(text?: string | null): string {
 }
 
 export function cleanAd<T extends Record<string, any>>(ad: T): T {
-  if (!ad) return ad;
+  if (!ad || typeof ad !== 'object') return ad;
+  if ((ad as any)._cleanedV2 === true) return ad;
 
-  const copy: Record<string, any> = { ...ad };
+  const copy: Record<string, any> = ad;
 
   // Sanitize title against any "Verified Business" or "(Verified)" text
   if (copy.title) {
@@ -184,13 +188,17 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
     copy.isVerified = false;
   }
 
-  // 4. Enhance Metadata: Link Province, City/Town, Suburb, Category Code, Group, Keywords & Search Tags
+  // 4. Enhance Metadata: Link Province, City/Town, Suburb, Category Code, Group & Slug in O(1)
   const enhanced = enhanceAdMetadata(copy);
+  Object.defineProperty(enhanced, '_cleanedV2', { value: true, writable: true, enumerable: false });
 
   return enhanced as T;
 }
 
 export function cleanAdsArray(ads: any[]): any[] {
   if (!Array.isArray(ads)) return [];
-  return ads.map(ad => cleanAd(ad));
+  for (let i = 0; i < ads.length; i++) {
+    ads[i] = cleanAd(ads[i]);
+  }
+  return ads;
 }

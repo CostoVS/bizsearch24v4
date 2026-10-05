@@ -50,6 +50,7 @@ USER nextjs
 EXPOSE 3000
 
 ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# server.js is created by next build from the standalone output
-CMD ["node", "server.js"]
+# Automatically pre-warm the in-memory O(1) ad index immediately on container start so even the first request after `docker compose up --build -d web` is 0ms
+CMD ["sh", "-c", "(sleep 2 && wget -qO- 'http://127.0.0.1:3000/api/storage?statsOnly=true' >/dev/null 2>&1 && wget -qO- 'http://127.0.0.1:3000/api/storage?freeOnly=true&includeFeatured=true&page=1&pageSize=12' >/dev/null 2>&1 && wget -qO- 'http://127.0.0.1:3000/api/storage?page=1&pageSize=24' >/dev/null 2>&1) & exec node server.js"]

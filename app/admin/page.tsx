@@ -530,7 +530,7 @@ export default function AdminDashboard() {
   const loadClaimRequests = async () => {
     setIsClaimsLoading(true);
     try {
-      const res = await fetch("/api/storage");
+      const res = await fetch("/api/storage?claimsOnly=true");
       if (res.ok) {
         const data = await res.json();
         setClaimRequests(data.claimRequests || []);
@@ -542,7 +542,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Load analytics events and unified advertisements list
+  // Load analytics events and initial admin datasets once on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       setTimeout(() => {
@@ -555,24 +555,18 @@ export default function AdminDashboard() {
           setEvents(combined);
         }
 
-        // Load unified ads from master store & fetch fresh from server
+        // Load unified ads from master store
         const currentLocal = getStoredAds();
         setAds(currentLocal);
         setTrashAds(getTrashAds());
-        fetchAndStoreAds().then((freshAds) => {
-          if (freshAds && Array.isArray(freshAds) && freshAds.length > 0) {
-            setAds(freshAds);
-          }
-          setTrashAds(getTrashAds());
-        }).catch(console.error);
 
-        // Auto-load custom slugs and premium documents
+        // Auto-load custom slugs, premium documents, and claims once on mount
         loadCustomSlugs();
         loadPremiumApps();
         loadClaimRequests();
       }, 0);
     }
-  }, [activeTab]);
+  }, []);
 
   const purgeAllAnalytics = () => {
     if (confirm("Are you sure you want to delete all stored interaction history? This action is permanent.")) {
@@ -4132,7 +4126,7 @@ export default function AdminDashboard() {
 
             {/* Table & Pagination Controls */}
             {(() => {
-              const allFilteredAds = getFilteredAds();
+              const allFilteredAds = (adminPageAds !== null && adminFilteredTotal !== null) ? adminPageAds : getFilteredAds();
               const totalCount = adminFilteredTotal !== null ? adminFilteredTotal : allFilteredAds.length;
               const totalAdPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
               const currentAdPage = Math.min(Math.max(1, adPage), totalAdPages);

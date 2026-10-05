@@ -141,8 +141,9 @@ export function readServerDb(): any {
 
   if (bestData) {
     bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
-    for (const ad of bestData.ads) {
-      if (ad && !ad._indexedV3) {
+    for (let i = 0; i < bestData.ads.length; i++) {
+      const ad = bestData.ads[i];
+      if (ad && !ad._indexedV3 && !ad._geoNormalized && (!ad.province || !ad.categoryCode)) {
         resolveAdGeographyAndCategory(ad);
       }
     }

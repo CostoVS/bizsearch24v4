@@ -184,91 +184,114 @@ export default async function LocationPage({ params }: Props) {
   const nCustomCity = customSlugMatch ? FAST_NORM(customSlugMatch.city || '') : '';
   const nCustomProv = customSlugMatch ? FAST_NORM(customSlugMatch.province || '') : '';
 
-  // Fast initial SSR slice (LocationListings on the client fetches full paginated results via /api/storage)
+  // Fast O(1) SSR lookup via pre-built globalRef.indexedDataset maps when available
   const globalRef = global as any;
-  const candidatePool: any[] =
-    (type === 'Province' && globalRef.indexedDataset?.byProvinceActive?.has(targetSlug))
-      ? globalRef.indexedDataset.byProvinceActive.get(targetSlug)
-      : allStoredAds;
+  const ds = globalRef.indexedDataset;
+  const natPool: any[] = ds?.byProvinceActive?.get('national') || [];
+  let adsForLocation: any[] = [];
+  let usedFastIndex = false;
 
-  const adsForLocation: any[] = [];
-  for (let i = 0; i < candidatePool.length; i++) {
-    const ad = candidatePool[i];
-    if (!ad || ad.isActive === false) continue;
-
-    if (type === 'Province' && candidatePool !== allStoredAds) {
-      adsForLocation.push(ad);
-      continue;
-    }
-
-    const nAdProv = ad._provNorm ?? FAST_NORM(ad.province || '');
-    const nAdTown = ad._townNorm ?? FAST_NORM(ad.city || ad.town || ad.location || '');
-    const nAdLoc = ad._locNorm ?? FAST_NORM(ad.location || '');
-    const nAdSub = ad._subNorm ?? FAST_NORM(ad.suburb || '');
-    const nAdAddr = ad._addrNorm ?? FAST_NORM(ad.address || '');
-    const isGlobalLocation = ad._provLower === 'national' || nAdLoc === 'alllocations' || nAdProv === 'national';
-
-    if (isGlobalLocation) {
-      adsForLocation.push(ad);
-      continue;
-    }
-
-    if (customSlugMatch) {
-      if (
-        (nCustomCity && (nAdTown === nCustomCity || nAdLoc === nCustomCity)) ||
-        (nCustomProv && nAdProv === nCustomProv) ||
-        nAdLoc === targetNorm
-      ) {
-        adsForLocation.push(ad);
-      }
-      continue;
-    }
-
+  if (ds && !customSlugMatch) {
     if (type === 'Province') {
-      if (ad._provLower === targetSlug || nAdProv === targetNorm || nAdProv === nProperName) {
-        adsForLocation.push(ad);
+      const pList = ds.byProvinceActive?.get(targetSlug) || ds.byProvinceActive?.get(targetNorm);
+      if (pList) {
+        adsForLocation = natPool.length > 0 && targetSlug !== 'national' ? [...pList, ...natPool] : pList;
+        usedFastIndex = true;
       }
-      continue;
-    }
-
-    if (type === 'Suburb') {
-      if (
-        nAdSub === targetNorm ||
-        (nSpecificSub && (
-          nAdSub === nSpecificSub ||
-          nAdLoc.includes(nSpecificSub) ||
-          nAdAddr.includes(nSpecificSub)
-        ))
-      ) {
-        adsForLocation.push(ad);
+    } else if (type === 'Suburb') {
+      const sList = (nSpecificSub && ds.bySuburbActive?.get(nSpecificSub)) || ds.bySuburbActive?.get(targetNorm);
+      if (sList) {
+        adsForLocation = natPool.length > 0 ? [...sList, ...natPool] : sList;
+        usedFastIndex = true;
       }
-      continue;
-    }
-
-    // Town-level or generic location matching
-    if (
-      nAdTown === targetNorm ||
-      nAdLoc === targetNorm ||
-      nAdSub === targetNorm ||
-      nAdTown === nProperName ||
-      (targetNorm.length > 3 && (nAdTown.includes(targetNorm) || nAdAddr.includes(targetNorm)))
-    ) {
-      adsForLocation.push(ad);
+    } else {
+      const tList = ds.byTownActive?.get(targetNorm) || ds.byTownActive?.get(nProperName) || ds.bySuburbActive?.get(targetNorm);
+      if (tList) {
+        adsForLocation = natPool.length > 0 ? [...tList, ...natPool] : tList;
+        usedFastIndex = true;
+      }
     }
   }
 
-  adsForLocation.sort((a, b) => {
-    const score = (item: any) => {
-      if (item.isSponsor) return 100;
-      if (item.isSpotlight) return 90;
-      if (item.isBannerPlacement) return 80;
-      if (item.isVideoPromo) return 70;
-      if (item.isPremium) return 60;
-      if (item.verified) return 40;
-      return 10;
-    };
-    return score(b) - score(a);
-  });
+  if (!usedFastIndex) {
+    const candidatePool: any[] =
+      (targetProvinceSlug && ds?.byProvinceActive?.has(targetProvinceSlug))
+        ? ds.byProvinceActive.get(targetProvinceSlug)
+        : allStoredAds;
+
+    for (let i = 0; i < candidatePool.length; i++) {
+      const ad = candidatePool[i];
+      if (!ad || ad.isActive === false) continue;
+
+      const nAdProv = ad._provNorm ?? FAST_NORM(ad.province || '');
+      const nAdTown = ad._townNorm ?? FAST_NORM(ad.city || ad.town || ad.location || '');
+      const nAdLoc = ad._locNorm ?? FAST_NORM(ad.location || '');
+      const nAdSub = ad._subNorm ?? FAST_NORM(ad.suburb || '');
+      const nAdAddr = ad._addrNorm ?? FAST_NORM(ad.address || '');
+      const isGlobalLocation = ad._provLower === 'national' || nAdLoc === 'alllocations' || nAdProv === 'national';
+
+      if (isGlobalLocation) {
+        adsForLocation.push(ad);
+        continue;
+      }
+
+      if (customSlugMatch) {
+        if (
+          (nCustomCity && (nAdTown === nCustomCity || nAdLoc === nCustomCity)) ||
+          (nCustomProv && nAdProv === nCustomProv) ||
+          nAdLoc === targetNorm
+        ) {
+          adsForLocation.push(ad);
+        }
+        continue;
+      }
+
+      if (type === 'Province') {
+        if (ad._provLower === targetSlug || nAdProv === targetNorm || nAdProv === nProperName) {
+          adsForLocation.push(ad);
+        }
+        continue;
+      }
+
+      if (type === 'Suburb') {
+        if (
+          nAdSub === targetNorm ||
+          (nSpecificSub && (
+            nAdSub === nSpecificSub ||
+            nAdLoc.includes(nSpecificSub) ||
+            nAdAddr.includes(nSpecificSub)
+          ))
+        ) {
+          adsForLocation.push(ad);
+        }
+        continue;
+      }
+
+      // Town-level or generic location matching
+      if (
+        nAdTown === targetNorm ||
+        nAdLoc === targetNorm ||
+        nAdSub === targetNorm ||
+        nAdTown === nProperName ||
+        (targetNorm.length > 3 && (nAdTown.includes(targetNorm) || nAdAddr.includes(targetNorm)))
+      ) {
+        adsForLocation.push(ad);
+      }
+    }
+
+    adsForLocation.sort((a, b) => {
+      const score = (item: any) => {
+        if (item.isSponsor) return 100;
+        if (item.isSpotlight) return 90;
+        if (item.isBannerPlacement) return 80;
+        if (item.isVideoPromo) return 70;
+        if (item.isPremium) return 60;
+        if (item.verified) return 40;
+        return 10;
+      };
+      return score(b) - score(a);
+    });
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">

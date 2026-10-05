@@ -51,7 +51,17 @@ export default function LocationListings({ ads: propAds, properName, initialTota
 
   useEffect(() => {
     let active = true;
-    const loadAndFilter = async () => {
+    const loadAndFilter = async (forceFetch = false) => {
+      // If SSR already provided the first page of ads and user is on page 1 with pageSize <= propAds.length, use SSR slice immediately without a redundant round-trip
+      if (!forceFetch && currentPage === 1 && propAds && propAds.length > 0 && pageSize <= propAds.length) {
+        setServerAds(null);
+        setFilteredAds(propAds);
+        if (typeof initialTotalCount === 'number') {
+          setServerTotalCount(initialTotalCount);
+        }
+        return;
+      }
+
       // Query server specifically for this location using unified locationSlug + pagination
       const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean) : [];
       const currentSlug = (pathParts[pathParts.length - 1] || properName || '').toLowerCase().trim();
@@ -82,14 +92,15 @@ export default function LocationListings({ ads: propAds, properName, initialTota
         .catch(() => {});
     };
 
-    loadAndFilter();
+    loadAndFilter(false);
 
-    window.addEventListener("searchbiz_ads_updated", loadAndFilter);
+    const handleAdsUpdated = () => loadAndFilter(true);
+    window.addEventListener("searchbiz_ads_updated", handleAdsUpdated);
     return () => {
       active = false;
-      window.removeEventListener("searchbiz_ads_updated", loadAndFilter);
+      window.removeEventListener("searchbiz_ads_updated", handleAdsUpdated);
     };
-  }, [properName, currentPage, pageSize]);
+  }, [properName, currentPage, pageSize, propAds, initialTotalCount]);
 
   // Sort them so Positions ("top", "middle", "bottom") and standard Priority are honored
   const sortedAds = sortAdsWithPositions(serverAds !== null ? serverAds : filteredAds);

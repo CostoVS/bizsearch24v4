@@ -33,28 +33,26 @@ export default function HomePage() {
 
   useEffect(() => {
     const cached = getStoredAds().filter((a: any) => a && a.isActive !== false);
-    setAds(cached);
+    if (cached.length > 0) {
+      setAds(cached);
+    }
     setTotalCompaniesCount(getTotalAdsCount());
     setTotalVerifiedCount(getVerifiedAdsCount());
 
-    fetchAndStoreAds().then(freshAds => {
-      if (freshAds && Array.isArray(freshAds)) {
-        setAds(freshAds.filter((a: any) => a && a.isActive !== false));
-        setTotalCompaniesCount(getTotalAdsCount());
-        setTotalVerifiedCount(getVerifiedAdsCount());
-      }
-    }).catch(() => {});
-
     const handleUpdate = () => {
       const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
-      setAds(stored);
+      if (stored.length > 0) {
+        setAds(prev => (prev.length === 0 ? stored : prev));
+      }
       setTotalCompaniesCount(getTotalAdsCount());
       setTotalVerifiedCount(getVerifiedAdsCount());
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count" || e.key === "searchbiz_verified_count") {
         const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
-        setAds(stored);
+        if (stored.length > 0) {
+          setAds(prev => (prev.length === 0 ? stored : prev));
+        }
         setTotalCompaniesCount(getTotalAdsCount());
         setTotalVerifiedCount(getVerifiedAdsCount());
       }
@@ -67,15 +65,22 @@ export default function HomePage() {
     };
   }, []);
 
-  // Server-side paginated fetch for Recent Listings (supports 1,000,000+ ads with 0ms lag)
+  // Unified O(1) server fetch for Sponsored, Premium, and paginated Recent Listings
   useEffect(() => {
     let active = true;
-    fetch(`/api/storage?freeOnly=true&page=${freeAdsPage}&pageSize=12`, { cache: 'no-store' })
+    fetch(`/api/storage?freeOnly=true&includeFeatured=true&page=${freeAdsPage}&pageSize=12`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         if (!active || !data) return;
-        if (Array.isArray(data.ads)) {
-          setServerFreeAds(data.ads.filter((a: any) => a && a.isActive !== false));
+        const freeList = Array.isArray(data.ads) ? data.ads.filter((a: any) => a && a.isActive !== false) : [];
+        const featuredList = Array.isArray(data.featuredAds) ? data.featuredAds.filter((a: any) => a && a.isActive !== false) : [];
+        setServerFreeAds(freeList);
+        if (featuredList.length > 0 || freeList.length > 0) {
+          const combined = [...featuredList, ...freeList];
+          setAds(combined);
+          if (freeAdsPage === 1) {
+            safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(combined.slice(0, 48)));
+          }
         }
         if (typeof data.totalAdsCount === 'number') {
           setTotalFreeCount(data.totalAdsCount);

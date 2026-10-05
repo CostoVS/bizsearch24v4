@@ -213,237 +213,93 @@ export const EXTENDED_SA_PLACES: Record<string, { town: string; province: string
   "ceres": { town: "Ceres", province: "Western Cape", provinceSlug: "western-cape", postalCode: "6835" },
 };
 
-/**
- * Finds location metadata (Province, City/Town, Suburb, Postal Code) for any query, keyword or explicit location.
- */
-export function resolveLocationDetails(options: {
-  query?: string;
-  province?: string;
-  town?: string;
-  suburb?: string;
-}): LocationMatchResult {
-  const { query = '', province = '', town = '', suburb = '' } = options;
-  const rawQ = query.trim();
-  const lowerQ = rawQ.toLowerCase().replace(/['"`]/g, '').trim();
+// Pre-built O(1) Lookup Indexes for instant sub-millisecond location resolution
+interface IndexedSuburbEntry {
+  suburb: string;
+  town: string;
+  province: string;
+  provinceSlug: string;
+  postalCode: string;
+}
 
-  // 1. Check if user provided explicit structured fields (suburb, town, province)
-  if (suburb || town || province) {
-    let matchedProvName = "";
-    let matchedProvSlug = province.toLowerCase().trim();
-    let matchedTown = town.trim();
-    let matchedSub = suburb.trim();
-    let matchedPostalCode = "";
+interface IndexedTownEntry {
+  town: string;
+  province: string;
+  provinceSlug: string;
+  postalCode: string;
+}
 
-    const provObj = SA_PROVINCES.find(p => p.slug === matchedProvSlug || p.name.toLowerCase() === matchedProvSlug);
-    if (provObj) {
-      matchedProvName = provObj.name;
-      matchedProvSlug = provObj.slug;
-    }
+const FAST_PROVINCE_MAP = new Map<string, { name: string; slug: string }>();
+const FAST_TOWN_MAP = new Map<string, IndexedTownEntry>();
+const FAST_SUBURB_MAP = new Map<string, IndexedSuburbEntry>();
+const FAST_POSTAL_MAP = new Map<string, IndexedSuburbEntry>();
+const RESULT_LRU_CACHE = new Map<string, LocationMatchResult>();
 
-    // Lookup postal code for suburb
-    if (matchedSub) {
-      const allSubMaps = [
-        KZN_SUBURBS, GAUTENG_SUBURBS, WESTERN_CAPE_SUBURBS, EASTERN_CAPE_SUBURBS,
-        FREE_STATE_SUBURBS, LIMPOPO_SUBURBS, MPUMALANGA_SUBURBS, NORTH_WEST_SUBURBS, NORTHERN_CAPE_SUBURBS
-      ];
-      for (const map of allSubMaps) {
-        for (const [tName, list] of Object.entries(map)) {
-          const found = list.find(s => s.name.toLowerCase() === matchedSub.toLowerCase());
-          if (found) {
-            matchedPostalCode = found.postalCode;
-            if (!matchedTown) matchedTown = tName;
-            break;
-          }
-        }
-        if (matchedPostalCode) break;
-      }
-    }
-
-    if (!matchedPostalCode && matchedTown) {
-      matchedPostalCode = (TOWN_POSTAL_CODES as Record<string, string>)[matchedTown] || "";
-      if (!matchedPostalCode) {
-        const ext = EXTENDED_SA_PLACES[matchedTown.toLowerCase()];
-        if (ext) matchedPostalCode = ext.postalCode;
-      }
-    }
-
-    if (matchedProvName || matchedTown || matchedSub) {
-      return {
-        isLocation: true,
-        isMapped: true,
-        type: matchedSub ? 'suburb' : matchedTown ? 'town' : 'province',
-        name: matchedSub || matchedTown || matchedProvName,
-        suburb: matchedSub || undefined,
-        town: matchedTown || undefined,
-        city: matchedTown || undefined,
-        province: matchedProvName || (matchedProvSlug ? matchedProvSlug.toUpperCase() : undefined),
-        provinceSlug: matchedProvSlug || undefined,
-        postalCode: matchedPostalCode || undefined,
-        query: rawQ || [matchedSub, matchedTown, matchedProvName].filter(Boolean).join(', ')
-      };
-    }
-  }
-
-  if (!lowerQ) {
-    return {
-      isLocation: false,
-      isMapped: false,
-      query: ''
-    };
-  }
-
-  // 2. Check 4-digit South African Postal Code search (e.g. "3969", "4001", "2000")
-  if (/^\d{4}$/.test(lowerQ)) {
-    const code = lowerQ;
-    // Check in extended places
-    for (const place of Object.values(EXTENDED_SA_PLACES)) {
-      if (place.postalCode === code) {
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'postal_code',
-          name: `${place.town} (${code})`,
-          town: place.town,
-          city: place.town,
-          province: place.province,
-          provinceSlug: place.provinceSlug,
-          postalCode: code,
-          query: rawQ
-        };
-      }
-    }
-
-    // Check TOWN_POSTAL_CODES
-    for (const [tName, tCode] of Object.entries(TOWN_POSTAL_CODES)) {
-      if (tCode === code) {
-        const pObj = SA_PROVINCES.find(p => p.towns.some(t => t.toLowerCase() === tName.toLowerCase()));
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'postal_code',
-          name: `${tName} (${code})`,
-          town: tName,
-          city: tName,
-          province: pObj?.name || 'South Africa',
-          provinceSlug: pObj?.slug || 'national',
-          postalCode: code,
-          query: rawQ
-        };
-      }
-    }
-
-    // Check suburb maps
-    const allSubMaps = [
-      { slug: 'kwazulu-natal', name: 'KwaZulu-Natal', map: KZN_SUBURBS },
-      { slug: 'gauteng', name: 'Gauteng', map: GAUTENG_SUBURBS },
-      { slug: 'western-cape', name: 'Western Cape', map: WESTERN_CAPE_SUBURBS },
-      { slug: 'eastern-cape', name: 'Eastern Cape', map: EASTERN_CAPE_SUBURBS },
-      { slug: 'free-state', name: 'Free State', map: FREE_STATE_SUBURBS },
-      { slug: 'limpopo', name: 'Limpopo', map: LIMPOPO_SUBURBS },
-      { slug: 'mpumalanga', name: 'Mpumalanga', map: MPUMALANGA_SUBURBS },
-      { slug: 'north-west', name: 'North West', map: NORTH_WEST_SUBURBS },
-      { slug: 'northern-cape', name: 'Northern Cape', map: NORTHERN_CAPE_SUBURBS }
-    ];
-
-    for (const entry of allSubMaps) {
-      for (const [tName, list] of Object.entries(entry.map)) {
-        const subMatch = list.find(s => s.postalCode === code);
-        if (subMatch) {
-          return {
-            isLocation: true,
-            isMapped: true,
-            type: 'postal_code',
-            name: `${subMatch.name}, ${tName} (${code})`,
-            suburb: subMatch.name,
-            town: tName,
-            city: tName,
-            province: entry.name,
-            provinceSlug: entry.slug,
-            postalCode: code,
-            query: rawQ
-          };
-        }
-      }
-    }
-  }
-
-  // 3. Check Extended Places registry (e.g. Jozini, Mkuze, Pongola, Giyani, etc.)
-  if (EXTENDED_SA_PLACES[lowerQ]) {
-    const ext = EXTENDED_SA_PLACES[lowerQ];
-    return {
-      isLocation: true,
-      isMapped: true,
-      type: 'town',
-      name: ext.town,
-      town: ext.town,
-      city: ext.town,
-      province: ext.province,
-      provinceSlug: ext.provinceSlug,
-      postalCode: ext.postalCode,
-      query: rawQ
-    };
-  }
-
-  // Check if query is a suburb inside extended places
-  for (const ext of Object.values(EXTENDED_SA_PLACES)) {
-    if (ext.suburbs && ext.suburbs.some(s => s.toLowerCase() === lowerQ || s.toLowerCase().includes(lowerQ))) {
-      const matchedSub = ext.suburbs.find(s => s.toLowerCase() === lowerQ || s.toLowerCase().includes(lowerQ));
-      return {
-        isLocation: true,
-        isMapped: true,
-        type: 'suburb',
-        name: matchedSub,
-        suburb: matchedSub,
-        town: ext.town,
-        city: ext.town,
-        province: ext.province,
-        provinceSlug: ext.provinceSlug,
-        postalCode: ext.postalCode,
-        query: rawQ
-      };
-    }
-  }
-
-  // 4. Check Provinces
+(function buildFastLocationLookupMaps() {
   for (const prov of SA_PROVINCES) {
     if (prov.slug !== 'national') {
-      if (prov.name.toLowerCase() === lowerQ || prov.slug === lowerQ || (lowerQ.length > 3 && prov.name.toLowerCase().includes(lowerQ))) {
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'province',
-          name: prov.name,
-          province: prov.name,
-          provinceSlug: prov.slug,
-          postalCode: 'Province-wide',
-          query: rawQ
-        };
-      }
+      FAST_PROVINCE_MAP.set(prov.slug.toLowerCase(), { name: prov.name, slug: prov.slug });
+      FAST_PROVINCE_MAP.set(prov.name.toLowerCase(), { name: prov.name, slug: prov.slug });
     }
-  }
-
-  // 5. Check Towns in SA_PROVINCES
-  for (const prov of SA_PROVINCES) {
     for (const tName of prov.towns) {
-      if (tName.toLowerCase() === lowerQ || (lowerQ.length > 3 && tName.toLowerCase() === lowerQ)) {
-        const pCode = (TOWN_POSTAL_CODES as Record<string, string>)[tName] || (EXTENDED_SA_PLACES[tName.toLowerCase()]?.postalCode) || '';
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'town',
-          name: tName,
+      const tLower = tName.toLowerCase().trim();
+      if (tLower === 'all locations') continue;
+      const pCode = (TOWN_POSTAL_CODES as Record<string, string>)[tName] || (EXTENDED_SA_PLACES[tLower]?.postalCode) || '';
+      if (!FAST_TOWN_MAP.has(tLower)) {
+        FAST_TOWN_MAP.set(tLower, {
           town: tName,
-          city: tName,
           province: prov.name,
           provinceSlug: prov.slug,
-          postalCode: pCode || undefined,
-          query: rawQ
-        };
+          postalCode: pCode
+        });
+      }
+      if (pCode && !FAST_POSTAL_MAP.has(pCode)) {
+        FAST_POSTAL_MAP.set(pCode, {
+          suburb: '',
+          town: tName,
+          province: prov.name,
+          provinceSlug: prov.slug,
+          postalCode: pCode
+        });
       }
     }
   }
 
-  // 6. Check Suburb Maps across all 9 provinces
+  for (const [key, ext] of Object.entries(EXTENDED_SA_PLACES)) {
+    const kLower = key.toLowerCase().trim();
+    const tEntry: IndexedTownEntry = {
+      town: ext.town,
+      province: ext.province,
+      provinceSlug: ext.provinceSlug,
+      postalCode: ext.postalCode
+    };
+    FAST_TOWN_MAP.set(kLower, tEntry);
+    FAST_TOWN_MAP.set(ext.town.toLowerCase().trim(), tEntry);
+    if (ext.postalCode && !FAST_POSTAL_MAP.has(ext.postalCode)) {
+      FAST_POSTAL_MAP.set(ext.postalCode, {
+        suburb: '',
+        town: ext.town,
+        province: ext.province,
+        provinceSlug: ext.provinceSlug,
+        postalCode: ext.postalCode
+      });
+    }
+    if (ext.suburbs) {
+      for (const s of ext.suburbs) {
+        const sLower = s.toLowerCase().trim();
+        if (!FAST_SUBURB_MAP.has(sLower)) {
+          FAST_SUBURB_MAP.set(sLower, {
+            suburb: s,
+            town: ext.town,
+            province: ext.province,
+            provinceSlug: ext.provinceSlug,
+            postalCode: ext.postalCode
+          });
+        }
+      }
+    }
+  }
+
   const allSubMaps = [
     { slug: 'kwazulu-natal', name: 'KwaZulu-Natal', map: KZN_SUBURBS },
     { slug: 'gauteng', name: 'Gauteng', map: GAUTENG_SUBURBS },
@@ -456,70 +312,240 @@ export function resolveLocationDetails(options: {
     { slug: 'northern-cape', name: 'Northern Cape', map: NORTHERN_CAPE_SUBURBS }
   ];
 
-  // Exact Suburb Match
   for (const entry of allSubMaps) {
     for (const [townName, suburbsList] of Object.entries(entry.map)) {
-      const foundSub = suburbsList.find(s => s.name.toLowerCase() === lowerQ);
-      if (foundSub) {
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'suburb',
-          name: foundSub.name,
-          suburb: foundSub.name,
+      const tLower = townName.toLowerCase().trim();
+      const tPostal = (TOWN_POSTAL_CODES as Record<string, string>)[townName] || suburbsList[0]?.postalCode || '';
+      if (!FAST_TOWN_MAP.has(tLower)) {
+        FAST_TOWN_MAP.set(tLower, {
           town: townName,
-          city: townName,
           province: entry.name,
           provinceSlug: entry.slug,
-          postalCode: foundSub.postalCode,
-          query: rawQ
-        };
+          postalCode: tPostal
+        });
+      }
+      for (const sub of suburbsList) {
+        const sLower = sub.name.toLowerCase().trim();
+        if (!FAST_SUBURB_MAP.has(sLower)) {
+          FAST_SUBURB_MAP.set(sLower, {
+            suburb: sub.name,
+            town: townName,
+            province: entry.name,
+            provinceSlug: entry.slug,
+            postalCode: sub.postalCode
+          });
+        }
+        if (sub.postalCode && !FAST_POSTAL_MAP.has(sub.postalCode)) {
+          FAST_POSTAL_MAP.set(sub.postalCode, {
+            suburb: sub.name,
+            town: townName,
+            province: entry.name,
+            provinceSlug: entry.slug,
+            postalCode: sub.postalCode
+          });
+        }
       }
     }
   }
+})();
 
-  // Substring or Partial Town/Suburb Match (for queries like "sandton", "durban north", "stellenbosch central")
-  for (const entry of allSubMaps) {
-    for (const [townName, suburbsList] of Object.entries(entry.map)) {
-      if (townName.toLowerCase() === lowerQ || (lowerQ.length > 3 && townName.toLowerCase().includes(lowerQ))) {
-        const sampleCode = (TOWN_POSTAL_CODES as Record<string, string>)[townName] || suburbsList[0]?.postalCode || '';
-        return {
-          isLocation: true,
-          isMapped: true,
-          type: 'town',
-          name: townName,
-          town: townName,
-          city: townName,
-          province: entry.name,
-          provinceSlug: entry.slug,
-          postalCode: sampleCode || undefined,
-          query: rawQ
-        };
+/**
+ * Finds location metadata (Province, City/Town, Suburb, Postal Code) for any query, keyword or explicit location in O(1).
+ */
+export function resolveLocationDetails(options: {
+  query?: string;
+  province?: string;
+  town?: string;
+  suburb?: string;
+}): LocationMatchResult {
+  const { query = '', province = '', town = '', suburb = '' } = options;
+  const cacheKey = `${province}|${town}|${suburb}|${query}`.toLowerCase();
+  const cached = RESULT_LRU_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  const rawQ = query.trim();
+  const lowerQ = rawQ.toLowerCase().replace(/['"`]/g, '').trim();
+
+  const cacheAndReturn = (res: LocationMatchResult): LocationMatchResult => {
+    if (RESULT_LRU_CACHE.size > 5000) RESULT_LRU_CACHE.clear();
+    RESULT_LRU_CACHE.set(cacheKey, res);
+    return res;
+  };
+
+  // 1. Check if user provided explicit structured fields (suburb, town, province)
+  if (suburb || town || province) {
+    let matchedProvName = "";
+    let matchedProvSlug = province.toLowerCase().trim();
+    let matchedTown = town.trim();
+    let matchedSub = suburb.trim();
+    let matchedPostalCode = "";
+
+    const provObj = FAST_PROVINCE_MAP.get(matchedProvSlug);
+    if (provObj) {
+      matchedProvName = provObj.name;
+      matchedProvSlug = provObj.slug;
+    }
+
+    if (matchedSub) {
+      const subHit = FAST_SUBURB_MAP.get(matchedSub.toLowerCase());
+      if (subHit) {
+        matchedPostalCode = subHit.postalCode;
+        if (!matchedTown) matchedTown = subHit.town;
+        if (!matchedProvName) {
+          matchedProvName = subHit.province;
+          matchedProvSlug = subHit.provinceSlug;
+        }
       }
+    }
 
-      const partialSub = suburbsList.find(s => s.name.toLowerCase().includes(lowerQ) || lowerQ.includes(s.name.toLowerCase()));
-      if (partialSub && lowerQ.length >= 4) {
-        return {
+    if (matchedTown) {
+      const townHit = FAST_TOWN_MAP.get(matchedTown.toLowerCase());
+      if (townHit) {
+        if (!matchedPostalCode) matchedPostalCode = townHit.postalCode;
+        if (!matchedProvName) {
+          matchedProvName = townHit.province;
+          matchedProvSlug = townHit.provinceSlug;
+        }
+      }
+    }
+
+    if (matchedProvName || matchedTown || matchedSub) {
+      return cacheAndReturn({
+        isLocation: true,
+        isMapped: true,
+        type: matchedSub ? 'suburb' : matchedTown ? 'town' : 'province',
+        name: matchedSub || matchedTown || matchedProvName,
+        suburb: matchedSub || undefined,
+        town: matchedTown || undefined,
+        city: matchedTown || undefined,
+        province: matchedProvName || (matchedProvSlug ? matchedProvSlug.toUpperCase() : undefined),
+        provinceSlug: matchedProvSlug || undefined,
+        postalCode: matchedPostalCode || undefined,
+        query: rawQ || [matchedSub, matchedTown, matchedProvName].filter(Boolean).join(', ')
+      });
+    }
+  }
+
+  if (!lowerQ) {
+    return cacheAndReturn({
+      isLocation: false,
+      isMapped: false,
+      query: ''
+    });
+  }
+
+  // 2. Check 4-digit South African Postal Code search in O(1)
+  if (/^\d{4}$/.test(lowerQ)) {
+    const postalHit = FAST_POSTAL_MAP.get(lowerQ);
+    if (postalHit) {
+      return cacheAndReturn({
+        isLocation: true,
+        isMapped: true,
+        type: 'postal_code',
+        name: postalHit.suburb ? `${postalHit.suburb}, ${postalHit.town} (${lowerQ})` : `${postalHit.town} (${lowerQ})`,
+        suburb: postalHit.suburb || undefined,
+        town: postalHit.town,
+        city: postalHit.town,
+        province: postalHit.province,
+        provinceSlug: postalHit.provinceSlug,
+        postalCode: lowerQ,
+        query: rawQ
+      });
+    }
+  }
+
+  // 3. O(1) Exact Province Match
+  const provHit = FAST_PROVINCE_MAP.get(lowerQ);
+  if (provHit) {
+    return cacheAndReturn({
+      isLocation: true,
+      isMapped: true,
+      type: 'province',
+      name: provHit.name,
+      province: provHit.name,
+      provinceSlug: provHit.slug,
+      postalCode: 'Province-wide',
+      query: rawQ
+    });
+  }
+
+  // 4. O(1) Exact Town Match
+  const townHit = FAST_TOWN_MAP.get(lowerQ);
+  if (townHit) {
+    return cacheAndReturn({
+      isLocation: true,
+      isMapped: true,
+      type: 'town',
+      name: townHit.town,
+      town: townHit.town,
+      city: townHit.town,
+      province: townHit.province,
+      provinceSlug: townHit.provinceSlug,
+      postalCode: townHit.postalCode || undefined,
+      query: rawQ
+    });
+  }
+
+  // 5. O(1) Exact Suburb Match
+  const subHit = FAST_SUBURB_MAP.get(lowerQ);
+  if (subHit) {
+    return cacheAndReturn({
+      isLocation: true,
+      isMapped: true,
+      type: 'suburb',
+      name: subHit.suburb,
+      suburb: subHit.suburb,
+      town: subHit.town,
+      city: subHit.town,
+      province: subHit.province,
+      provinceSlug: subHit.provinceSlug,
+      postalCode: subHit.postalCode,
+      query: rawQ
+    });
+  }
+
+  // 6. Fast token/comma fallback for multi-part queries (e.g. "12 Main Rd, Sandton, Johannesburg")
+  if (lowerQ.includes(',')) {
+    const parts = lowerQ.split(',').map(p => p.trim()).filter(Boolean);
+    for (const part of parts) {
+      const sMatch = FAST_SUBURB_MAP.get(part);
+      if (sMatch) {
+        return cacheAndReturn({
           isLocation: true,
           isMapped: true,
           type: 'suburb',
-          name: partialSub.name,
-          suburb: partialSub.name,
-          town: townName,
-          city: townName,
-          province: entry.name,
-          provinceSlug: entry.slug,
-          postalCode: partialSub.postalCode,
+          name: sMatch.suburb,
+          suburb: sMatch.suburb,
+          town: sMatch.town,
+          city: sMatch.town,
+          province: sMatch.province,
+          provinceSlug: sMatch.provinceSlug,
+          postalCode: sMatch.postalCode,
           query: rawQ
-        };
+        });
+      }
+      const tMatch = FAST_TOWN_MAP.get(part);
+      if (tMatch) {
+        return cacheAndReturn({
+          isLocation: true,
+          isMapped: true,
+          type: 'town',
+          name: tMatch.town,
+          town: tMatch.town,
+          city: tMatch.town,
+          province: tMatch.province,
+          provinceSlug: tMatch.provinceSlug,
+          postalCode: tMatch.postalCode || undefined,
+          query: rawQ
+        });
       }
     }
   }
 
   // 7. Not in list of places mapped
-  return {
+  return cacheAndReturn({
     isLocation: false,
     isMapped: false,
     query: rawQ
-  };
+  });
 }

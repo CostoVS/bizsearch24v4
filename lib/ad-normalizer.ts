@@ -236,6 +236,24 @@ export function normalizeProvinceSlug(rawProvince?: string): string {
  */
 export function resolveAdGeographyAndCategory(ad: any): void {
   if (!ad || typeof ad !== 'object') return;
+  if (ad._geoNormalized || ad._indexedV3) return;
+  if (
+    ad.province &&
+    ad.provinceName &&
+    ad.town &&
+    ad.city &&
+    ad.location &&
+    ad.category &&
+    ad.categoryCode &&
+    ad.categoryGroup &&
+    ad.description &&
+    !ad.description.startsWith('Local business in ') &&
+    ad.isActive !== undefined &&
+    ad.status !== undefined
+  ) {
+    Object.defineProperty(ad, '_geoNormalized', { value: true, enumerable: false, writable: true, configurable: true });
+    return;
+  }
   ensureMapsInitialized();
 
   const rawCity = (ad.city || ad.town || ad.location || '').trim();

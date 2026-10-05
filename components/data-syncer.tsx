@@ -10,45 +10,55 @@ export function DataSyncer() {
       if (document.hidden || isSyncing) return;
       isSyncing = true;
       try {
-        // Single unified storage fetch (lightweight slice for fast background sync)
-        const res = await fetch('/api/storage?page=1&pageSize=48', { cache: 'no-store' });
+        // Lightweight O(1) background sync
+        const res = await fetch('/api/storage?syncOnly=true', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data) {
             const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
             const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
-            if (totalCnt !== undefined) {
+            const prevTotal = safeLocalStorage.getItem("searchbiz_total_ads_count");
+            const prevVer = safeLocalStorage.getItem("searchbiz_verified_count");
+            let adsChanged = false;
+
+            if (totalCnt !== undefined && String(totalCnt) !== prevTotal) {
               safeLocalStorage.setItem("searchbiz_total_ads_count", String(totalCnt));
+              adsChanged = true;
             }
-            if (verCnt !== undefined) {
+            if (verCnt !== undefined && String(verCnt) !== prevVer) {
               safeLocalStorage.setItem("searchbiz_verified_count", String(verCnt));
+              adsChanged = true;
             }
             if (data.adminStats?.byCategory) {
               saveCategoryAdsCounts(data.adminStats.byCategory);
             }
 
-            // 1. Ads sync
+            // 1. Ads sync (only write to localStorage if empty or counts changed)
             if (Array.isArray(data.ads)) {
-              const serverAds = data.ads.filter((a: any) => a && a.id);
-              const serverDeleted = Array.isArray(data.deletedAds) ? data.deletedAds : [];
-              const storedDeleted = safeLocalStorage.getItem("searchbiz_deleted_ads");
-              let localDeleted: string[] = [];
-              if (storedDeleted) { try { localDeleted = JSON.parse(storedDeleted); } catch (e) {} }
+              const existingLocalAds = safeLocalStorage.getItem("searchbiz_all_ads");
+              if (!existingLocalAds || adsChanged) {
+                const serverAds = data.ads.filter((a: any) => a && a.id);
+                const storedDeleted = safeLocalStorage.getItem("searchbiz_deleted_ads");
+                let localDeleted: string[] = [];
+                if (storedDeleted) { try { localDeleted = JSON.parse(storedDeleted); } catch (e) {} }
 
-              const combinedDeletedSet = new Set([...serverDeleted, ...localDeleted]);
-              const cleanedServerAds = cleanAdsArray(serverAds);
-              const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
+                const combinedDeletedSet = new Set(localDeleted);
+                const cleanedServerAds = cleanAdsArray(serverAds);
+                const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
-              safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds.slice(0, 100)));
-              safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(Array.from(combinedDeletedSet)));
+                safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(finalAds.slice(0, 48)));
+                adsChanged = true;
+              }
 
               if (data.customPartners) {
-                safeLocalStorage.setItem("searchbiz_custom_partners", JSON.stringify(data.customPartners));
+                const nextPartners = JSON.stringify(data.customPartners);
+                if (safeLocalStorage.getItem("searchbiz_custom_partners") !== nextPartners) {
+                  safeLocalStorage.setItem("searchbiz_custom_partners", nextPartners);
+                }
               }
-              if (Array.isArray(data.trashAds)) {
-                safeLocalStorage.setItem("searchbiz_trash_ads", JSON.stringify(data.trashAds));
+              if (adsChanged) {
+                window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
               }
-              window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
             }
 
             // 2. Community posts sync
@@ -62,16 +72,23 @@ export function DataSyncer() {
 
             if (localOnlyPosts.length > 0) {
               const mergedPosts = [...localOnlyPosts, ...serverPosts].sort((a, b) => b.id - a.id);
-              safeLocalStorage.setItem("searchbiz_community_posts_v1", JSON.stringify(mergedPosts));
+              const nextPostsStr = JSON.stringify(mergedPosts);
+              if (nextPostsStr !== storedPostsStr) {
+                safeLocalStorage.setItem("searchbiz_community_posts_v1", nextPostsStr);
+                window.dispatchEvent(new CustomEvent("searchbiz_posts_updated"));
+              }
               fetch('/api/storage', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ community_posts: mergedPosts })
               }).catch(() => null);
             } else {
-              safeLocalStorage.setItem("searchbiz_community_posts_v1", JSON.stringify(serverPosts));
+              const nextPostsStr = JSON.stringify(serverPosts);
+              if (nextPostsStr !== storedPostsStr) {
+                safeLocalStorage.setItem("searchbiz_community_posts_v1", nextPostsStr);
+                window.dispatchEvent(new CustomEvent("searchbiz_posts_updated"));
+              }
             }
-            window.dispatchEvent(new CustomEvent("searchbiz_posts_updated"));
 
             // 3. Messages sync
             const serverMsgs = Array.isArray(data.messages) ? data.messages : [];
@@ -102,8 +119,11 @@ export function DataSyncer() {
             });
 
             const finalMsgs = Array.from(mergedMap.values());
-            safeLocalStorage.setItem("searchbiz_messages_v1", JSON.stringify(finalMsgs));
-            window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+            const nextMsgsStr = JSON.stringify(finalMsgs);
+            if (nextMsgsStr !== storedMsgsStr) {
+              safeLocalStorage.setItem("searchbiz_messages_v1", nextMsgsStr);
+              window.dispatchEvent(new CustomEvent("searchbiz_messages_updated"));
+            }
 
             const serverHasDifferentReadState = serverMsgs.some((sm: any) => {
               const fm = mergedMap.get(sm.id);
@@ -126,9 +146,9 @@ export function DataSyncer() {
       }
     };
 
-    // Delay first background sync slightly so initial page render paints instantly
-    const initialTimer = setTimeout(performSync, 400);
-    const syncInterval = setInterval(performSync, 30000); // 30s background sync
+    // Delay first background sync so initial page render and interactions have 100% network priority
+    const initialTimer = setTimeout(performSync, 2500);
+    const syncInterval = setInterval(performSync, 45000); // 45s background sync
 
     const handleVisibilityChange = () => {
       if (!document.hidden) performSync();
