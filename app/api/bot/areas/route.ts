@@ -25,7 +25,46 @@ function getAreasDatabase() {
     const jsonPath = path.join(process.cwd(), 'public', 'sa_areas_database.json');
     if (fs.existsSync(jsonPath)) {
       const content = fs.readFileSync(jsonPath, 'utf-8');
-      cachedDb = JSON.parse(content);
+      const parsed = JSON.parse(content);
+
+      // Build suburbsByTown per provinceSlug so bot agents always get all 6,931 suburbs structured by province & town
+      const suburbsByProvAndTown: Record<string, Record<string, Array<{ name: string; postalCode: string; town: string }>>> = {};
+      const suburbCountsByProv: Record<string, number> = {};
+
+      if (Array.isArray(parsed.suburbs)) {
+        for (const s of parsed.suburbs) {
+          const pSlug = (s.provinceSlug || '').toLowerCase();
+          const tName = s.town || 'General';
+          if (!pSlug) continue;
+          if (!suburbsByProvAndTown[pSlug]) suburbsByProvAndTown[pSlug] = {};
+          if (!suburbsByProvAndTown[pSlug][tName]) suburbsByProvAndTown[pSlug][tName] = [];
+          suburbsByProvAndTown[pSlug][tName].push({
+            name: s.name,
+            postalCode: s.postalCode || '',
+            town: tName
+          });
+          suburbCountsByProv[pSlug] = (suburbCountsByProv[pSlug] || 0) + 1;
+        }
+      }
+
+      const rawProvinces = Array.isArray(parsed.provinces)
+        ? parsed.provinces
+        : SA_PROVINCES.filter(p => p.slug !== 'national');
+
+      parsed.enrichedProvinces = rawProvinces.map((p: any) => {
+        const slug = (p.slug || '').toLowerCase();
+        const townsList = Array.isArray(p.towns) ? p.towns : [];
+        return {
+          name: p.name,
+          slug: p.slug,
+          townCount: townsList.length,
+          suburbCount: suburbCountsByProv[slug] || 0,
+          towns: townsList,
+          suburbsByTown: suburbsByProvAndTown[slug] || {}
+        };
+      });
+
+      cachedDb = parsed;
       return cachedDb;
     }
   } catch (err) {
@@ -49,7 +88,11 @@ export async function GET(req: NextRequest) {
     const db = getAreasDatabase();
 
     if (full && db) {
-      return NextResponse.json(db);
+      return NextResponse.json({
+        ...db,
+        success: true,
+        provinces: db.enrichedProvinces || db.provinces
+      });
     }
 
     if (db && (q || province || town)) {
@@ -74,11 +117,11 @@ export async function GET(req: NextRequest) {
         success: true,
         query: { q, province, town },
         count: filteredSuburbs.length,
-        suburbs: filteredSuburbs.slice(0, 200)
+        suburbs: filteredSuburbs
       });
     }
 
-    // Summary response
+    // Full structured response with all 9 provinces, 666 towns, and 6,931 suburbs
     return NextResponse.json({
       success: true,
       totalProvinces: 9,
@@ -86,11 +129,15 @@ export async function GET(req: NextRequest) {
       totalSuburbs: TOTAL_SUBURBS_COUNT,
       totalAreas: TOTAL_SUBURBS_COUNT + TOTAL_MAJOR_TOWNS_COUNT,
       databaseUrl: 'https://searchbiz.co.za/sa_areas_database.json',
-      provinces: db?.provinceBreakdown || SA_PROVINCES.map(p => ({
+      provinces: db?.enrichedProvinces || SA_PROVINCES.filter(p => p.slug !== 'national').map(p => ({
         name: p.name,
         slug: p.slug,
-        townCount: p.towns.length
-      }))
+        townCount: p.towns.length,
+        towns: p.towns,
+        suburbsByTown: {}
+      })),
+      provinceBreakdown: db?.provinceBreakdown || {},
+      suburbs: db?.suburbs || []
     });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to fetch areas', details: error.message }, { status: 500 });

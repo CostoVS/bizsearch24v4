@@ -13,6 +13,66 @@ interface CatIndexEntry {
   keys: string[];
 }
 
+const FAST_NORM = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const PROV_ALIASES_BLOB: Record<string, string> = {
+  'kwazulu-natal': 'kzn kwazulu natal durban pmb',
+  'gauteng': 'gp jhb joburg johannesburg pta pretoria',
+  'western-cape': 'wc cpt capetown',
+  'eastern-cape': 'ec pe gqeberha portelizabeth eastlondon',
+  'free-state': 'fs bloem bloemfontein',
+  'mpumalanga': 'mp nelspruit mbombela witbank emalahleni',
+  'limpopo': 'lp polokwane pietersburg',
+  'north-west': 'nw rustenburg mahikeng potchefstroom',
+  'northern-cape': 'nc kimberley upington'
+};
+
+function getSearchTokenVariants(tok: string): string[] {
+  const clean = tok.toLowerCase().trim();
+  if (!clean) return [];
+  const variants = new Set<string>([clean]);
+  const norm = FAST_NORM(clean);
+  if (norm) variants.add(norm);
+
+  if (clean.length >= 4) {
+    if (clean.endsWith('ies') && clean.length >= 5) {
+      variants.add(clean.slice(0, -3) + 'y');
+      variants.add(clean.slice(0, -3));
+    }
+    if (clean.endsWith('es') && clean.length >= 5) {
+      variants.add(clean.slice(0, -2));
+      variants.add(clean.slice(0, -1));
+    } else if (clean.endsWith('s')) {
+      variants.add(clean.slice(0, -1));
+    }
+    if (clean.endsWith('ing') && clean.length >= 6) {
+      variants.add(clean.slice(0, -3));
+      variants.add(clean.slice(0, -3) + 'er');
+    }
+    if (clean.endsWith('er') && clean.length >= 5) {
+      variants.add(clean.slice(0, -2));
+      variants.add(clean.slice(0, -2) + 'ing');
+    }
+    if (clean.endsWith('ers') && clean.length >= 6) {
+      variants.add(clean.slice(0, -3));
+      variants.add(clean.slice(0, -3) + 'ing');
+      variants.add(clean.slice(0, -1));
+    }
+  }
+  if (clean.startsWith('plumb')) variants.add('plumb');
+  if (clean.startsWith('electr')) variants.add('electr');
+  if (clean.startsWith('mechanic')) variants.add('mechanic');
+  if (clean.startsWith('panelbeat')) {
+    variants.add('panel');
+    variants.add('panelbeat');
+  }
+  if (clean.startsWith('carwash')) {
+    variants.add('car wash');
+    variants.add('carwash');
+  }
+  return Array.from(variants).filter(v => v.length >= 2);
+}
+
 const CATEGORY_INDEX_MAP = new Map<string, CatIndexEntry>();
 for (const group of CATEGORIES_STRUCTURED) {
   const groupKeys = Array.from(new Set([
@@ -20,12 +80,16 @@ for (const group of CATEGORIES_STRUCTURED) {
     group.cleanName,
     group.name.toLowerCase(),
     group.cleanName.toLowerCase(),
+    FAST_NORM(group.name),
+    FAST_NORM(group.cleanName),
     group.code,
     `group_${group.code}`
   ]));
   const gEntry: CatIndexEntry = { keys: groupKeys };
   CATEGORY_INDEX_MAP.set(group.name.toLowerCase().trim(), gEntry);
   CATEGORY_INDEX_MAP.set(group.cleanName.toLowerCase().trim(), gEntry);
+  CATEGORY_INDEX_MAP.set(FAST_NORM(group.name), gEntry);
+  CATEGORY_INDEX_MAP.set(FAST_NORM(group.cleanName), gEntry);
   CATEGORY_INDEX_MAP.set(group.code, gEntry);
 
   for (const item of group.items) {
@@ -36,12 +100,16 @@ for (const group of CATEGORIES_STRUCTURED) {
       item.id,
       item.id.toLowerCase(),
       item.fullName.toLowerCase(),
-      item.name.toLowerCase()
+      item.name.toLowerCase(),
+      FAST_NORM(item.fullName),
+      FAST_NORM(item.name)
     ]));
     const iEntry: CatIndexEntry = { keys: itemKeys };
     CATEGORY_INDEX_MAP.set(item.id.toLowerCase().trim(), iEntry);
     CATEGORY_INDEX_MAP.set(item.name.toLowerCase().trim(), iEntry);
     CATEGORY_INDEX_MAP.set(item.fullName.toLowerCase().trim(), iEntry);
+    CATEGORY_INDEX_MAP.set(FAST_NORM(item.name), iEntry);
+    CATEGORY_INDEX_MAP.set(FAST_NORM(item.fullName), iEntry);
   }
 }
 
@@ -69,8 +137,6 @@ function getDiskMtime(): number {
   return 0;
 }
 
-const FAST_NORM = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
 const globalRef = global as any;
 if (globalRef.storageCache === undefined) {
   globalRef.storageCache = getLocalDataNoCache();
@@ -92,25 +158,27 @@ if (globalRef.dbOfflineUntil === undefined) {
 }
 
 function ensureAdFastIndexed(ad: any): void {
-  if (!ad || ad._indexedV3 === true) return;
+  if (!ad || ad._indexedV4 === true) return;
   resolveAdGeographyAndCategory(ad);
 
   const rawCat = String(ad.category || 'Other').trim();
   const lowerRaw = rawCat.toLowerCase();
   const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
+  const subCat = String(ad.subcategory || cleanCat || '').toLowerCase().trim();
   const catCode = String(ad.categoryCode || '').toLowerCase().trim();
 
   const matched =
     (catCode ? CATEGORY_INDEX_MAP.get(catCode) : undefined) ||
     CATEGORY_INDEX_MAP.get(lowerRaw) ||
     CATEGORY_INDEX_MAP.get(cleanCat) ||
+    CATEGORY_INDEX_MAP.get(FAST_NORM(cleanCat)) ||
     (ad.categoryGroup ? CATEGORY_INDEX_MAP.get(String(ad.categoryGroup).toLowerCase().trim()) : undefined);
 
   let sectorKeys: string[];
   if (matched) {
     sectorKeys = matched.keys;
   } else {
-    sectorKeys = [rawCat];
+    sectorKeys = [rawCat, cleanCat, FAST_NORM(cleanCat)].filter(Boolean);
     if (lowerRaw !== rawCat) sectorKeys.push(lowerRaw);
     if (rawCat !== 'Other' && lowerRaw !== 'other') {
       sectorKeys.push('Other', 'other');
@@ -119,32 +187,50 @@ function ensureAdFastIndexed(ad: any): void {
 
   const adProv = (ad.province || 'gauteng').toLowerCase();
   const adProvName = (ad.provinceName || '').toLowerCase();
+  const provAliases = PROV_ALIASES_BLOB[adProv] || '';
   const adTown = (ad.city || ad.town || ad.location || '').toLowerCase();
   const adLoc = (ad.location || '').toLowerCase();
   const adSuburb = (ad.suburb || '').toLowerCase();
   const adAddr = (ad.address || '').toLowerCase();
   const adGroup = (ad.categoryGroup || ad.parentCategory || '').toLowerCase();
-  const adPhone = (ad.phone || '').replace(/[^0-9]/g, '');
-  const title = (ad.title || '').toLowerCase();
-  const desc = (ad.description || '').toLowerCase();
-  const serv = (ad.servicesOffered || '').toLowerCase();
-  const kw = (ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
+  const adPhone = String(ad.phone || '').replace(/[^0-9]/g, '');
+  const adWhatsapp = String(ad.whatsapp || '').replace(/[^0-9]/g, '');
+  const adLandline = String(ad.landline || ad.telephone || '').replace(/[^0-9]/g, '');
+  const adEmail = String(ad.email || '').toLowerCase();
+  const adWeb = String(ad.website || '').toLowerCase();
+  const title = String(ad.title || '').toLowerCase();
+  const desc = String(ad.description || '').toLowerCase();
+  const serv = Array.isArray(ad.servicesOffered)
+    ? ad.servicesOffered.join(' ').toLowerCase()
+    : String(ad.servicesOffered || '').toLowerCase();
+  const kw = String(ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
+
+  const normTitle = FAST_NORM(title);
+  const normCat = FAST_NORM(lowerRaw);
+  const normSubCat = FAST_NORM(subCat);
+  const normGroup = FAST_NORM(adGroup);
+  const normTown = FAST_NORM(adTown);
+  const normLoc = FAST_NORM(adLoc);
+  const normSub = FAST_NORM(adSuburb);
+  const normAddr = FAST_NORM(adAddr);
+  const normProv = FAST_NORM(adProv);
+  const normProvName = FAST_NORM(adProvName);
 
   Object.defineProperties(ad, {
-    _indexedV3: { value: true, writable: true, enumerable: false },
+    _indexedV4: { value: true, writable: true, enumerable: false },
     _provLower: { value: adProv, writable: true, enumerable: false },
-    _provNorm: { value: FAST_NORM(adProv), writable: true, enumerable: false },
-    _provNameNorm: { value: FAST_NORM(adProvName), writable: true, enumerable: false },
-    _townNorm: { value: FAST_NORM(adTown), writable: true, enumerable: false },
-    _locNorm: { value: FAST_NORM(adLoc), writable: true, enumerable: false },
-    _subNorm: { value: FAST_NORM(adSuburb), writable: true, enumerable: false },
-    _addrNorm: { value: FAST_NORM(adAddr), writable: true, enumerable: false },
-    _catNorm: { value: FAST_NORM(lowerRaw), writable: true, enumerable: false },
+    _provNorm: { value: normProv, writable: true, enumerable: false },
+    _provNameNorm: { value: normProvName, writable: true, enumerable: false },
+    _townNorm: { value: normTown, writable: true, enumerable: false },
+    _locNorm: { value: normLoc, writable: true, enumerable: false },
+    _subNorm: { value: normSub, writable: true, enumerable: false },
+    _addrNorm: { value: normAddr, writable: true, enumerable: false },
+    _catNorm: { value: normCat, writable: true, enumerable: false },
     _codeNorm: { value: FAST_NORM(catCode), writable: true, enumerable: false },
-    _groupNorm: { value: FAST_NORM(adGroup), writable: true, enumerable: false },
+    _groupNorm: { value: normGroup, writable: true, enumerable: false },
     _sectorKeys: { value: sectorKeys, writable: true, enumerable: false },
     _searchBlob: {
-      value: `${title} ${desc} ${serv} ${lowerRaw} ${catCode} ${adGroup} ${adTown} ${adSuburb} ${adProv} ${adProvName} ${adAddr} ${kw} ${adPhone}`,
+      value: `${title} ${normTitle} ${desc} ${serv} ${lowerRaw} ${cleanCat} ${subCat} ${normCat} ${normSubCat} ${catCode} ${adGroup} ${normGroup} ${adTown} ${normTown} ${adLoc} ${adSuburb} ${normSub} ${adProv} ${adProvName} ${provAliases} ${adAddr} ${normAddr} ${kw} ${adPhone} ${adWhatsapp} ${adLandline} ${adEmail} ${adWeb}`,
       writable: true,
       enumerable: false
     }
@@ -849,8 +935,16 @@ export async function GET(req: Request) {
     let usedExactFreeIndex = Boolean(!includeInactive && freeOnly && !catParam && !targetProv);
 
     if (!includeInactive) {
-      if (catParam && catParam !== 'all' && (indexed.byCategoryActive.has(catParam) || CATEGORY_INDEX_MAP.has(catParam))) {
-        candidatePool = indexed.byCategoryActive.get(catParam) || [];
+      const normCatKey = catParam ? FAST_NORM(catParam) : '';
+      if (
+        catParam &&
+        catParam !== 'all' &&
+        (indexed.byCategoryActive.has(catParam) ||
+          indexed.byCategoryActive.has(normCatKey) ||
+          CATEGORY_INDEX_MAP.has(catParam) ||
+          CATEGORY_INDEX_MAP.has(normCatKey))
+      ) {
+        candidatePool = indexed.byCategoryActive.get(catParam) || indexed.byCategoryActive.get(normCatKey) || [];
         usedExactCategoryIndex = true;
       } else if (targetProv && indexed.byProvinceActive.has(targetProv)) {
         const provPool = indexed.byProvinceActive.get(targetProv)!;
@@ -880,6 +974,7 @@ export async function GET(req: Request) {
       const rawTokens = qParam ? qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean) : [];
       const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
       const searchTokens = meaningfulTokens.length > 0 ? meaningfulTokens : rawTokens;
+      const tokenVariantSets = searchTokens.map(tok => getSearchTokenVariants(tok));
 
       filtered = candidatePool.filter((ad: any) => {
         if (!ad) return false;
@@ -1009,10 +1104,18 @@ export async function GET(req: Request) {
           if (!catMatch) return false;
         }
 
-        if (searchTokens.length > 0) {
+        if (tokenVariantSets.length > 0) {
           const blob = ad._searchBlob || '';
-          for (let t = 0; t < searchTokens.length; t++) {
-            if (!blob.includes(searchTokens[t])) return false;
+          for (let t = 0; t < tokenVariantSets.length; t++) {
+            const variants = tokenVariantSets[t];
+            let matchedVariant = false;
+            for (let v = 0; v < variants.length; v++) {
+              if (blob.includes(variants[v])) {
+                matchedVariant = true;
+                break;
+              }
+            }
+            if (!matchedVariant) return false;
           }
         }
 

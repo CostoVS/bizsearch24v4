@@ -216,7 +216,7 @@ function DirectoryContent() {
     };
   }, [hasFilters, isAdmin, isAdVisible]);
 
-  const filteredResults = allAds.filter(ad => {
+  const filteredResults = serverFilteredAds !== null ? [] : allAds.filter(ad => {
     if (!isAdVisible(ad)) return false;
     let match = true;
     
@@ -250,7 +250,8 @@ function DirectoryContent() {
       
       const titleMatch = ad.title?.toLowerCase().includes(lowerQ);
       const descMatch = ad.description?.toLowerCase().includes(lowerQ);
-      const servMatch = ad.servicesOffered?.toLowerCase().includes(lowerQ);
+      const servStr = Array.isArray(ad.servicesOffered) ? ad.servicesOffered.join(' ') : String(ad.servicesOffered || '');
+      const servMatch = servStr.toLowerCase().includes(lowerQ);
       const addrMatch = ad.address?.toLowerCase().includes(lowerQ);
       const codeMatch = ad.categoryCode?.toLowerCase() === lowerQ || ad.categoryCode?.toLowerCase().startsWith(lowerQ);
       const groupMatch = ad.categoryGroup?.toLowerCase().includes(lowerQ) || ad.parentCategory?.toLowerCase().includes(lowerQ);

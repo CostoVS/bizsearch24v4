@@ -59,10 +59,22 @@ interface Ad {
   whatsapp?: string;
   email?: string;
   socialTikTok?: string;
+  tiktok?: string;
   socialX?: string;
+  twitter?: string;
+  x?: string;
   socialInstagram?: string;
+  instagram?: string;
   socialFacebook?: string;
+  facebook?: string;
   socialYoutube?: string;
+  youtube?: string;
+  socialLinkedin?: string;
+  linkedin?: string;
+  pinterest?: string;
+  threads?: string;
+  telegram?: string;
+  socialLinks?: string;
   tradingHours?: string;
   servicesOffered?: string;
   suburb?: string;
@@ -2254,49 +2266,21 @@ Business Bank Statement:${claimBankStatement}
                         </a>
                       )}
 
-                      {(ad.isPremium || isAdmin) && (ad.socialTikTok ||
-                        ad.socialX ||
-                        ad.socialInstagram ||
-                        ad.socialFacebook ||
-                        ad.socialYoutube) && (
+                      {(ad.socialTikTok || ad.tiktok ||
+                        ad.socialX || ad.twitter || ad.x ||
+                        ad.socialInstagram || ad.instagram ||
+                        ad.socialFacebook || ad.facebook ||
+                        ad.socialYoutube || ad.youtube ||
+                        ad.socialLinkedin || ad.linkedin ||
+                        ad.pinterest || ad.threads || ad.telegram) && (
                         <div className="pt-4 border-t border-slate-100 mt-2">
                           <span className="block text-[10px] uppercase font-bold text-slate-400 mb-3">
                             Connect via Social Channels
                           </span>
                           <div className="flex flex-wrap gap-2">
-                            {ad.socialTikTok && (
+                            {(ad.socialFacebook || ad.facebook) && (
                               <a
-                                href={ad.socialTikTok}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-black hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                TikTok
-                              </a>
-                            )}
-                            {ad.socialX && (
-                              <a
-                                href={ad.socialX}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-slate-800 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                X / Twitter
-                              </a>
-                            )}
-                            {ad.socialInstagram && (
-                              <a
-                                href={ad.socialInstagram}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Instagram
-                              </a>
-                            )}
-                            {ad.socialFacebook && (
-                              <a
-                                href={ad.socialFacebook}
+                                href={ad.socialFacebook || ad.facebook}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="px-3 py-2 bg-blue-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
@@ -2304,14 +2288,84 @@ Business Bank Statement:${claimBankStatement}
                                 Facebook
                               </a>
                             )}
-                            {ad.socialYoutube && (
+                            {(ad.socialInstagram || ad.instagram) && (
                               <a
-                                href={ad.socialYoutube}
+                                href={ad.socialInstagram || ad.instagram}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                Instagram
+                              </a>
+                            )}
+                            {(ad.socialTikTok || ad.tiktok) && (
+                              <a
+                                href={ad.socialTikTok || ad.tiktok}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-black hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                TikTok
+                              </a>
+                            )}
+                            {(ad.socialYoutube || ad.youtube) && (
+                              <a
+                                href={ad.socialYoutube || ad.youtube}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="px-3 py-2 bg-rose-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
                               >
                                 YouTube
+                              </a>
+                            )}
+                            {(ad.socialX || ad.twitter || ad.x) && (
+                              <a
+                                href={ad.socialX || ad.twitter || ad.x}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-slate-800 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                X / Twitter
+                              </a>
+                            )}
+                            {(ad.socialLinkedin || ad.linkedin) && (
+                              <a
+                                href={ad.socialLinkedin || ad.linkedin}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-sky-700 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                LinkedIn
+                              </a>
+                            )}
+                            {ad.pinterest && (
+                              <a
+                                href={ad.pinterest}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-red-700 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                Pinterest
+                              </a>
+                            )}
+                            {ad.threads && (
+                              <a
+                                href={ad.threads}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-zinc-900 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                Threads
+                              </a>
+                            )}
+                            {ad.telegram && (
+                              <a
+                                href={ad.telegram}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-sky-500 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                Telegram
                               </a>
                             )}
                           </div>

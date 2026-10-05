@@ -45,18 +45,44 @@ function safeAtomicWrite(targetPath: string, content: string): void {
 export interface BotAdPayload {
   title: string;
   category: string;
+  subcategory?: string;
+  categoryCode?: string;
   province?: string;
   city?: string;
+  town?: string;
   location?: string;
   suburb?: string;
   address?: string;
   phone: string;
+  landline?: string;
+  telephone?: string;
   whatsapp?: string;
   email?: string;
   website?: string;
+  socialLinks?: string;
+  facebook?: string;
+  socialFacebook?: string;
+  instagram?: string;
+  socialInstagram?: string;
+  tiktok?: string;
+  socialTikTok?: string;
+  youtube?: string;
+  socialYoutube?: string;
+  twitter?: string;
+  x?: string;
+  socialX?: string;
+  linkedin?: string;
+  socialLinkedin?: string;
+  pinterest?: string;
+  threads?: string;
+  telegram?: string;
+  googleMapsUrl?: string;
+  rating?: string | number;
+  reviewsCount?: string | number;
   description: string;
   tradingHours?: string;
-  servicesOffered?: string;
+  operatingHours?: string;
+  servicesOffered?: string | string[];
   preferredContact?: string;
   verified?: boolean;
   isPremium?: boolean;
@@ -303,21 +329,32 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   const verified = false; // Uploaded ads are NEVER verified
   const plan = isPremium ? 'PREMIUM' : 'free';
 
+  const rawServices = Array.isArray(payload.servicesOffered)
+    ? payload.servicesOffered.filter(Boolean).join(', ')
+    : (payload.servicesOffered || payload.category || 'Professional Services');
+  const rawHours = payload.tradingHours || payload.operatingHours || 'Mon-Fri: 08:00 - 17:00';
+  const rawLandline = (payload.landline || payload.telephone || '').trim();
+  const rawWhatsapp = (payload.whatsapp || payload.phone || '').trim();
+
   const newAd: any = {
     id: adId,
     userId: 'agent-bot',
     isActive: true,
     title: payload.title.trim(),
     category: payload.category ? payload.category.trim() : 'General Services',
+    subcategory: payload.subcategory ? payload.subcategory.trim() : (payload.category ? payload.category.trim() : 'General Services'),
+    categoryCode: payload.categoryCode || '',
     location: town.toLowerCase(),
     city: town,
+    town: payload.town || town,
     province: province,
     suburb: payload.suburb ? payload.suburb.trim() : '',
     serviceAreas: [],
     description: defaultDescription,
-    tradingHours: isFree ? (payload.tradingHours || 'Contact business for operating hours') : (payload.tradingHours || 'Mon-Fri: 08:00 - 17:00'),
-    servicesOffered: payload.servicesOffered || payload.category || 'Professional Services',
-    preferredContact: isFree ? 'Phone' : (payload.preferredContact || (payload.whatsapp ? 'WhatsApp' : 'Phone')),
+    tradingHours: rawHours,
+    operatingHours: rawHours,
+    servicesOffered: rawServices,
+    preferredContact: payload.preferredContact || (rawWhatsapp ? 'WhatsApp' : 'Phone'),
     showCallOption: true,
     verified: verified,
     isPremium: isPremium,
@@ -333,9 +370,38 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     images: isFree ? [] : ((payload as any).images || []),
     address: payload.address ? payload.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
     phone: payload.phone.trim(),
-    whatsapp: isFree ? '' : (payload.whatsapp ? payload.whatsapp.trim() : payload.phone.trim()),
-    email: isFree ? '' : (payload.email ? payload.email.trim() : ''),
-    website: isFree ? '' : (payload.website ? payload.website.trim() : ''),
+    landline: rawLandline,
+    telephone: rawLandline,
+    whatsapp: rawWhatsapp,
+    email: payload.email ? payload.email.trim() : '',
+    website: payload.website ? payload.website.trim() : '',
+    facebook: (payload.facebook || payload.socialFacebook || '').trim(),
+    socialFacebook: (payload.socialFacebook || payload.facebook || '').trim(),
+    instagram: (payload.instagram || payload.socialInstagram || '').trim(),
+    socialInstagram: (payload.socialInstagram || payload.instagram || '').trim(),
+    tiktok: (payload.tiktok || payload.socialTikTok || '').trim(),
+    socialTikTok: (payload.socialTikTok || payload.tiktok || '').trim(),
+    youtube: (payload.youtube || payload.socialYoutube || '').trim(),
+    socialYoutube: (payload.socialYoutube || payload.youtube || '').trim(),
+    twitter: (payload.twitter || payload.x || payload.socialX || '').trim(),
+    socialX: (payload.socialX || payload.twitter || payload.x || '').trim(),
+    linkedin: (payload.linkedin || payload.socialLinkedin || '').trim(),
+    socialLinkedin: (payload.socialLinkedin || payload.linkedin || '').trim(),
+    pinterest: (payload.pinterest || '').trim(),
+    threads: (payload.threads || '').trim(),
+    telegram: (payload.telegram || '').trim(),
+    googleMapsUrl: (payload.googleMapsUrl || '').trim(),
+    socialLinks: payload.socialLinks ? payload.socialLinks.trim() : [
+      payload.facebook || payload.socialFacebook,
+      payload.instagram || payload.socialInstagram,
+      payload.tiktok || payload.socialTikTok,
+      payload.youtube || payload.socialYoutube,
+      payload.twitter || payload.x || payload.socialX,
+      payload.linkedin || payload.socialLinkedin,
+      payload.pinterest,
+      payload.threads,
+      payload.telegram
+    ].filter(Boolean).join(' | '),
     price: payload.price !== undefined ? payload.price : undefined,
     createdAt: nowIso,
     updatedAt: nowIso
@@ -445,25 +511,35 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
     if (!item || !item.title || !item.title.trim()) continue;
 
     // Pre-build candidate ad and resolve its true South African geography & category first
-    const rawTown = item.city || item.location || 'Johannesburg';
+    const rawTown = item.city || item.town || item.location || 'Johannesburg';
     const isFree = item.isClaimed === false || item.plan === 'free' || item.isPremium === false || !item.plan;
     const isClaimed = item.isClaimed === true;
     const isPremium = item.isPremium === true;
+    const rawServices = Array.isArray(item.servicesOffered)
+      ? item.servicesOffered.filter(Boolean).join(', ')
+      : (item.servicesOffered || item.category || 'Professional Services');
+    const rawHours = item.tradingHours || item.operatingHours || 'Mon-Fri: 08:00 - 17:00';
+    const rawLandline = (item.landline || item.telephone || '').trim();
+    const rawWhatsapp = (item.whatsapp || item.phone || '').trim();
 
     const candidateAd: any = {
       userId: 'agent-bot',
       isActive: true,
       title: item.title.trim(),
       category: item.category ? item.category.trim() : 'General Services',
+      subcategory: item.subcategory ? item.subcategory.trim() : (item.category ? item.category.trim() : 'General Services'),
+      categoryCode: item.categoryCode || '',
       location: rawTown.toLowerCase(),
       city: rawTown,
+      town: item.town || rawTown,
       province: item.province || '',
       suburb: item.suburb ? item.suburb.trim() : '',
       serviceAreas: [],
       description: item.description ? item.description.trim() : '',
-      tradingHours: isFree ? (item.tradingHours || 'Contact business for operating hours') : (item.tradingHours || 'Mon-Fri: 08:00 - 17:00'),
-      servicesOffered: item.servicesOffered || item.category || 'Professional Services',
-      preferredContact: isFree ? 'Phone' : (item.preferredContact || (item.whatsapp ? 'WhatsApp' : 'Phone')),
+      tradingHours: rawHours,
+      operatingHours: rawHours,
+      servicesOffered: rawServices,
+      preferredContact: item.preferredContact || (rawWhatsapp ? 'WhatsApp' : 'Phone'),
       showCallOption: true,
       verified: false,
       isPremium: isPremium,
@@ -479,9 +555,38 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       images: isFree ? [] : ((item as any).images || []),
       address: item.address ? item.address.trim() : '',
       phone: item.phone ? item.phone.trim() : '',
-      whatsapp: isFree ? '' : (item.whatsapp ? item.whatsapp.trim() : (item.phone ? item.phone.trim() : '')),
-      email: isFree ? '' : (item.email ? item.email.trim() : ''),
-      website: isFree ? '' : (item.website ? item.website.trim() : ''),
+      landline: rawLandline,
+      telephone: rawLandline,
+      whatsapp: rawWhatsapp,
+      email: item.email ? item.email.trim() : '',
+      website: item.website ? item.website.trim() : '',
+      facebook: (item.facebook || item.socialFacebook || '').trim(),
+      socialFacebook: (item.socialFacebook || item.facebook || '').trim(),
+      instagram: (item.instagram || item.socialInstagram || '').trim(),
+      socialInstagram: (item.socialInstagram || item.instagram || '').trim(),
+      tiktok: (item.tiktok || item.socialTikTok || '').trim(),
+      socialTikTok: (item.socialTikTok || item.tiktok || '').trim(),
+      youtube: (item.youtube || item.socialYoutube || '').trim(),
+      socialYoutube: (item.socialYoutube || item.youtube || '').trim(),
+      twitter: (item.twitter || item.x || item.socialX || '').trim(),
+      socialX: (item.socialX || item.twitter || item.x || '').trim(),
+      linkedin: (item.linkedin || item.socialLinkedin || '').trim(),
+      socialLinkedin: (item.socialLinkedin || item.linkedin || '').trim(),
+      pinterest: (item.pinterest || '').trim(),
+      threads: (item.threads || '').trim(),
+      telegram: (item.telegram || '').trim(),
+      googleMapsUrl: (item.googleMapsUrl || '').trim(),
+      socialLinks: item.socialLinks ? item.socialLinks.trim() : [
+        item.facebook || item.socialFacebook,
+        item.instagram || item.socialInstagram,
+        item.tiktok || item.socialTikTok,
+        item.youtube || item.socialYoutube,
+        item.twitter || item.x || item.socialX,
+        item.linkedin || item.socialLinkedin,
+        item.pinterest,
+        item.threads,
+        item.telegram
+      ].filter(Boolean).join(' | '),
       price: item.price !== undefined ? item.price : undefined,
       createdAt: nowIso,
       updatedAt: nowIso
@@ -504,7 +609,7 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
 
     const existingAd = existingAdMap.get(compositeKey) || existingAdMap.get(fallbackKey);
     if (existingAd) {
-      // Enrich existing ad in-place so its province, town, city, suburb, and category are 100% accurate
+      // Enrich existing ad in-place so its province, town, city, suburb, category, and contacts are 100% accurate
       existingAd.province = candidateAd.province;
       existingAd.provinceName = candidateAd.provinceName;
       existingAd.city = candidateAd.city;
@@ -513,9 +618,56 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       if (candidateAd.suburb && !existingAd.suburb) existingAd.suburb = candidateAd.suburb;
       if (candidateAd.category && candidateAd.category !== 'General Services') {
         existingAd.category = candidateAd.category;
+        existingAd.subcategory = candidateAd.subcategory;
         existingAd.categoryCode = candidateAd.categoryCode;
         existingAd.categoryGroup = candidateAd.categoryGroup;
         existingAd.parentCategory = candidateAd.parentCategory;
+      }
+      if (candidateAd.address && (!existingAd.address || existingAd.address.length < candidateAd.address.length)) {
+        existingAd.address = candidateAd.address;
+      }
+      if (candidateAd.phone && !existingAd.phone) existingAd.phone = candidateAd.phone;
+      if (candidateAd.landline && !existingAd.landline) {
+        existingAd.landline = candidateAd.landline;
+        existingAd.telephone = candidateAd.landline;
+      }
+      if (candidateAd.whatsapp && !existingAd.whatsapp) existingAd.whatsapp = candidateAd.whatsapp;
+      if (candidateAd.email && !existingAd.email) existingAd.email = candidateAd.email;
+      if (candidateAd.website && !existingAd.website) existingAd.website = candidateAd.website;
+      if (candidateAd.facebook && !existingAd.facebook) {
+        existingAd.facebook = candidateAd.facebook;
+        existingAd.socialFacebook = candidateAd.facebook;
+      }
+      if (candidateAd.instagram && !existingAd.instagram) {
+        existingAd.instagram = candidateAd.instagram;
+        existingAd.socialInstagram = candidateAd.instagram;
+      }
+      if (candidateAd.tiktok && !existingAd.tiktok) {
+        existingAd.tiktok = candidateAd.tiktok;
+        existingAd.socialTikTok = candidateAd.tiktok;
+      }
+      if (candidateAd.youtube && !existingAd.youtube) {
+        existingAd.youtube = candidateAd.youtube;
+        existingAd.socialYoutube = candidateAd.youtube;
+      }
+      if (candidateAd.twitter && !existingAd.twitter) {
+        existingAd.twitter = candidateAd.twitter;
+        existingAd.socialX = candidateAd.twitter;
+      }
+      if (candidateAd.linkedin && !existingAd.linkedin) {
+        existingAd.linkedin = candidateAd.linkedin;
+        existingAd.socialLinkedin = candidateAd.linkedin;
+      }
+      if (candidateAd.pinterest && !existingAd.pinterest) existingAd.pinterest = candidateAd.pinterest;
+      if (candidateAd.threads && !existingAd.threads) existingAd.threads = candidateAd.threads;
+      if (candidateAd.telegram && !existingAd.telegram) existingAd.telegram = candidateAd.telegram;
+      if (candidateAd.socialLinks && !existingAd.socialLinks) existingAd.socialLinks = candidateAd.socialLinks;
+      if (candidateAd.tradingHours && (!existingAd.tradingHours || existingAd.tradingHours.includes('Contact business'))) {
+        existingAd.tradingHours = candidateAd.tradingHours;
+        existingAd.operatingHours = candidateAd.tradingHours;
+      }
+      if (candidateAd.servicesOffered && (!existingAd.servicesOffered || existingAd.servicesOffered === 'Professional Services')) {
+        existingAd.servicesOffered = candidateAd.servicesOffered;
       }
       if (!existingAd.description || existingAd.description.startsWith('Local business in ')) {
         existingAd.description = candidateAd.description;
@@ -979,6 +1131,31 @@ export async function upgradeBotAd(
     if (updates.address) targetAd.address = updates.address.trim();
     if (updates.phone) targetAd.phone = updates.phone.trim();
     if (updates.category) targetAd.category = updates.category.trim();
+    if (updates.facebook || updates.socialFacebook) {
+      targetAd.facebook = (updates.facebook || updates.socialFacebook || '').trim();
+      targetAd.socialFacebook = targetAd.facebook;
+    }
+    if (updates.instagram || updates.socialInstagram) {
+      targetAd.instagram = (updates.instagram || updates.socialInstagram || '').trim();
+      targetAd.socialInstagram = targetAd.instagram;
+    }
+    if (updates.tiktok || updates.socialTikTok) {
+      targetAd.tiktok = (updates.tiktok || updates.socialTikTok || '').trim();
+      targetAd.socialTikTok = targetAd.tiktok;
+    }
+    if (updates.youtube || updates.socialYoutube) {
+      targetAd.youtube = (updates.youtube || updates.socialYoutube || '').trim();
+      targetAd.socialYoutube = targetAd.youtube;
+    }
+    if (updates.twitter || updates.x || updates.socialX) {
+      targetAd.twitter = (updates.twitter || updates.x || updates.socialX || '').trim();
+      targetAd.socialX = targetAd.twitter;
+    }
+    if (updates.linkedin || updates.socialLinkedin) {
+      targetAd.linkedin = (updates.linkedin || updates.socialLinkedin || '').trim();
+      targetAd.socialLinkedin = targetAd.linkedin;
+    }
+    if (updates.socialLinks) targetAd.socialLinks = updates.socialLinks.trim();
   }
 
   ads[adIndex] = targetAd;
