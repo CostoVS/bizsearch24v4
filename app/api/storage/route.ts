@@ -20,6 +20,7 @@ for (const group of CATEGORIES_STRUCTURED) {
     group.cleanName,
     group.name.toLowerCase(),
     group.cleanName.toLowerCase(),
+    group.code,
     `group_${group.code}`
   ]));
   const gEntry: CatIndexEntry = { keys: groupKeys };
@@ -33,6 +34,7 @@ for (const group of CATEGORIES_STRUCTURED) {
       item.fullName,
       item.name,
       item.id,
+      item.id.toLowerCase(),
       item.fullName.toLowerCase(),
       item.name.toLowerCase()
     ]));
@@ -847,8 +849,8 @@ export async function GET(req: Request) {
     let usedExactFreeIndex = Boolean(!includeInactive && freeOnly && !catParam && !targetProv);
 
     if (!includeInactive) {
-      if (catParam && catParam !== 'all' && indexed.byCategoryActive.has(catParam)) {
-        candidatePool = indexed.byCategoryActive.get(catParam)!;
+      if (catParam && catParam !== 'all' && (indexed.byCategoryActive.has(catParam) || CATEGORY_INDEX_MAP.has(catParam))) {
+        candidatePool = indexed.byCategoryActive.get(catParam) || [];
         usedExactCategoryIndex = true;
       } else if (targetProv && indexed.byProvinceActive.has(targetProv)) {
         const provPool = indexed.byProvinceActive.get(targetProv)!;

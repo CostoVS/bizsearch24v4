@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { 
   Search, 
@@ -54,6 +54,29 @@ const POPULAR_CATEGORIES = [
   { name: "17. REAL ESTATE & HOUSING", label: "🏢 17. Real Estate" }
 ];
 
+let _cachedCustomSlugs: any[] | null = null;
+let _fetchingCustomSlugs = false;
+
+function preloadCustomSlugs() {
+  if (typeof window === 'undefined' || _cachedCustomSlugs !== null || _fetchingCustomSlugs) return;
+  _fetchingCustomSlugs = true;
+  fetch('/api/slugs')
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => {
+      if (data && Array.isArray(data.slugs)) {
+        _cachedCustomSlugs = data.slugs;
+      } else {
+        _cachedCustomSlugs = [];
+      }
+    })
+    .catch(() => {
+      _cachedCustomSlugs = [];
+    })
+    .finally(() => {
+      _fetchingCustomSlugs = false;
+    });
+}
+
 function SearchBarForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -101,6 +124,7 @@ function SearchBarForm() {
 
     syncFromLocal();
     fetchLiveCounts(false);
+    preloadCustomSlugs();
 
     const handleAdsUpdated = () => {
       syncFromLocal();
@@ -177,18 +201,37 @@ function SearchBarForm() {
       if (s) setSuburb(s);
       if (q) setKeyword(q);
       if (c) {
-        const isGroup = CATEGORIES_STRUCTURED.some(
-          g => g.name.toLowerCase() === c.toLowerCase() || g.name.toLowerCase().replace(/&/g, 'and') === c.toLowerCase()
+        const lowerC = c.toLowerCase().trim();
+        const matchedGroup = CATEGORIES_STRUCTURED.find(
+          g =>
+            g.name.toLowerCase() === lowerC ||
+            g.cleanName.toLowerCase() === lowerC ||
+            g.name.toLowerCase().replace(/&/g, 'and') === lowerC
         );
-        const isSub = CATEGORIES_STRUCTURED.some(g => g.subcategories.some(sub => sub.toLowerCase() === c.toLowerCase()));
-        
-        if (isGroup || isSub) {
-          setCategory(c);
-        } else if (c.toLowerCase() === 'all categories') {
-          setCategory('');
+        if (matchedGroup) {
+          setCategory(matchedGroup.name);
         } else {
-          setCategory('Other');
-          setCustomCategory(c);
+          let matchedSub: string | null = null;
+          for (const g of CATEGORIES_STRUCTURED) {
+            const foundItem = g.items.find(
+              it =>
+                it.fullName.toLowerCase() === lowerC ||
+                it.name.toLowerCase() === lowerC ||
+                it.id.toLowerCase() === lowerC
+            );
+            if (foundItem) {
+              matchedSub = foundItem.fullName;
+              break;
+            }
+          }
+          if (matchedSub) {
+            setCategory(matchedSub);
+          } else if (lowerC === 'all categories') {
+            setCategory('');
+          } else {
+            setCategory('Other');
+            setCustomCategory(c);
+          }
         }
       }
     }
@@ -216,86 +259,88 @@ function SearchBarForm() {
                     : null;
   const hasSuburbs = provinceSuburbs && selectedTown && provinceSuburbs[selectedTown];
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     const activeCategory = category === 'Other' ? customCategory.trim() : category;
 
     // Record search analytics query
     trackSearch(keyword, selectedProvince, selectedTown || suburb, activeCategory);
 
     const cleanKeyword = keyword.trim().toLowerCase();
-    if (cleanKeyword) {
-      try {
-        const res = await fetch("/api/slugs");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.slugs && Array.isArray(data.slugs)) {
-            const matchedSlug = data.slugs.find(
-              (s: any) => s.slug === cleanKeyword || s.properName.toLowerCase() === cleanKeyword
-            );
-            if (matchedSlug) {
-              router.push(`/${matchedSlug.slug}`);
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to check custom slugs during search:", err);
+    if (cleanKeyword && Array.isArray(_cachedCustomSlugs) && _cachedCustomSlugs.length > 0) {
+      const matchedSlug = _cachedCustomSlugs.find(
+        (s: any) => s.slug === cleanKeyword || (s.properName && s.properName.toLowerCase() === cleanKeyword)
+      );
+      if (matchedSlug) {
+        router.push(`/${matchedSlug.slug}`);
+        return;
       }
     }
 
     let url = '/directory?';
     if (selectedProvince) url += `province=${selectedProvince}&`;
-    if (selectedTown) url += `town=${selectedTown}&`;
-    if (suburb) url += `suburb=${suburb}&`;
+    if (selectedTown) url += `town=${encodeURIComponent(selectedTown)}&`;
+    if (suburb) url += `suburb=${encodeURIComponent(suburb)}&`;
     if (activeCategory) url += `category=${encodeURIComponent(activeCategory)}&`;
-    if (keyword) url += `q=${keyword}`;
+    if (keyword) url += `q=${encodeURIComponent(keyword)}`;
     router.push(url);
   };
 
   const selectedProvinceName = PROVINCES.find(p => p.slug === selectedProvince)?.name || '';
 
-  // Filtered lists for popovers
-  const filteredProvinces = PROVINCES.filter(p => 
-    p.name.toLowerCase().includes(provinceSearch.toLowerCase()) ||
-    p.slug.toLowerCase().includes(provinceSearch.toLowerCase())
-  );
+  // Memoized filtered lists for zero-lag popovers
+  const filteredProvinces = useMemo(() => {
+    const q = provinceSearch.toLowerCase().trim();
+    if (!q) return PROVINCES;
+    return PROVINCES.filter(p => 
+      p.name.toLowerCase().includes(q) ||
+      p.slug.toLowerCase().includes(q)
+    );
+  }, [provinceSearch]);
 
-  const filteredTowns = towns.filter(t => 
-    t.toLowerCase().includes(townSearch.toLowerCase())
-  );
+  const filteredTowns = useMemo(() => {
+    const q = townSearch.toLowerCase().trim();
+    if (!q) return towns;
+    return towns.filter(t => t.toLowerCase().includes(q));
+  }, [towns, townSearch]);
 
   const rawSuburbsList = hasSuburbs ? provinceSuburbs[selectedTown] : [];
-  const filteredSuburbs = rawSuburbsList.filter(sub => 
-    sub.name.toLowerCase().includes(suburbSearch.toLowerCase()) ||
-    sub.postalCode.includes(suburbSearch)
-  );
-
-  const filteredCategoriesStructured = CATEGORIES_STRUCTURED.map(group => {
-    const q = categorySearch.toLowerCase().trim();
-    const groupCodeMatches = group.code === q || group.code.startsWith(q);
-    const groupMatches = !q || group.name.toLowerCase().includes(q) || group.cleanName.toLowerCase().includes(q) || groupCodeMatches;
-    
-    const matchedItems = group.items.filter(item => 
-      !q || 
-      item.id.toLowerCase().includes(q) || 
-      item.name.toLowerCase().includes(q) || 
-      item.fullName.toLowerCase().includes(q) || 
-      groupMatches
+  const filteredSuburbs = useMemo(() => {
+    const q = suburbSearch.toLowerCase().trim();
+    if (!q) return rawSuburbsList;
+    return rawSuburbsList.filter(sub => 
+      sub.name.toLowerCase().includes(q) ||
+      sub.postalCode.includes(q)
     );
+  }, [rawSuburbsList, suburbSearch]);
 
-    return {
-      id: group.id,
-      code: group.code,
-      name: group.name,
-      cleanName: group.cleanName,
-      icon: getCategoryIcon(group.cleanName),
-      groupMatches,
-      items: matchedItems,
-      allItems: group.items,
-      subcategories: matchedItems.map(item => item.fullName),
-      isVisible: groupMatches || matchedItems.length > 0
-    };
-  }).filter(g => g.isVisible);
+  const filteredCategoriesStructured = useMemo(() => {
+    const q = categorySearch.toLowerCase().trim();
+    return CATEGORIES_STRUCTURED.map(group => {
+      const groupCodeMatches = group.code === q || group.code.startsWith(q);
+      const groupMatches = !q || group.name.toLowerCase().includes(q) || group.cleanName.toLowerCase().includes(q) || groupCodeMatches;
+      
+      const matchedItems = !q || groupMatches
+        ? group.items
+        : group.items.filter(item => 
+            item.id.toLowerCase().includes(q) || 
+            item.name.toLowerCase().includes(q) || 
+            item.fullName.toLowerCase().includes(q)
+          );
+
+      return {
+        id: group.id,
+        code: group.code,
+        name: group.name,
+        cleanName: group.cleanName,
+        icon: getCategoryIcon(group.cleanName),
+        groupMatches,
+        items: matchedItems,
+        allItems: group.items,
+        subcategories: matchedItems.map(item => item.fullName),
+        isVisible: groupMatches || matchedItems.length > 0
+      };
+    }).filter(g => g.isVisible);
+  }, [categorySearch]);
 
   return (
     <div 
@@ -637,6 +682,12 @@ function SearchBarForm() {
               type="text" 
               value={suburb}
               onChange={(e) => setSuburb(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearch();
+                }
+              }}
               placeholder="Suburb (optional)"
               className="w-full bg-transparent border-none text-slate-900 placeholder-slate-500 outline-none text-xs font-semibold"
             />
@@ -661,6 +712,12 @@ function SearchBarForm() {
           type="text" 
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleSearch();
+            }
+          }}
           placeholder="Keywords (e.g. plumber, repair)"
           className="w-full bg-transparent border-none text-slate-900 placeholder-slate-500 outline-none text-xs font-semibold"
         />
@@ -721,10 +778,11 @@ function SearchBarForm() {
             <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">20 Business Sectors &amp; Ad Counts</span>
+                <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">Categories, Subcategories &amp; Ad Counts</span>
               </div>
               <Link 
                 href="/categories" 
+                prefetch={false}
                 onClick={() => setOpenDropdown(null)}
                 className="text-xs font-bold text-emerald-600 hover:text-emerald-700 hover:underline flex items-center gap-1 shrink-0"
               >
@@ -740,7 +798,7 @@ function SearchBarForm() {
                 type="text"
                 value={categorySearch}
                 onChange={(e) => setCategorySearch(e.target.value)}
-                placeholder="Search any of the 20 business sectors (e.g. 1, automotive, construction, legal)..."
+                placeholder="Search category or subcategory (e.g. 1.1, plumber, automotive, legal)..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
                 autoFocus
               />
@@ -751,8 +809,8 @@ function SearchBarForm() {
               )}
             </div>
 
-            {/* 20 Industry Sectors List Evenly Spaced Out */}
-            <div className="max-h-[60vh] md:max-h-[460px] overflow-y-auto space-y-2 pr-1 text-xs [scrollbar-width:thin]">
+            {/* 20 Industry Sectors & All Subcategories List Evenly Spaced Out */}
+            <div className="max-h-[62vh] md:max-h-[480px] overflow-y-auto space-y-3 pr-1 text-xs [scrollbar-width:thin]">
               
               {/* Option 1: All Categories */}
               <button
@@ -762,7 +820,7 @@ function SearchBarForm() {
                   setCustomCategory('');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border ${
+                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border cursor-pointer ${
                   !category
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : 'bg-slate-100 hover:bg-emerald-50 text-slate-900 border-slate-200/80 hover:border-emerald-300'
@@ -784,46 +842,114 @@ function SearchBarForm() {
                 </div>
               </button>
 
-              {/* ONLY THE 20 SECTORS / 20 GROUPS EVENLY SPACED OUT */}
-              <div className="grid grid-cols-1 gap-2">
+              {/* 20 SECTORS WITH ALL SUBCATEGORIES & LIVE AD COUNTS */}
+              <div className="space-y-3">
                 {filteredCategoriesStructured.map((group) => {
                   const isGroupSelected = category === group.name;
                   const icon = group.icon;
                   const groupCount = getCountForCategory(categoryCounts, group.name);
 
                   return (
-                    <button
+                    <div
                       key={group.name}
-                      type="button"
-                      onClick={() => {
-                        setCategory(group.name);
-                        setCustomCategory('');
-                        setOpenDropdown(null);
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-2xl font-extrabold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-between gap-4 transition border ${
-                        isGroupSelected
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                          : 'bg-slate-50/90 hover:bg-emerald-50/90 text-slate-900 hover:text-emerald-950 border-slate-200/90 hover:border-emerald-300'
-                      }`}
-                      title={`Select ${group.name}`}
+                      className="rounded-2xl border border-slate-200/90 overflow-hidden bg-white shadow-2xs"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <span className="text-base shrink-0">{icon}</span>
-                        <span className="font-extrabold break-words leading-snug">{group.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
+                      {/* Parent Sector Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategory(group.name);
+                          setCustomCategory('');
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full text-left px-3.5 py-2.5 font-extrabold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-between gap-3 transition cursor-pointer ${
                           isGroupSelected
-                            ? 'bg-white/25 text-white border-white/30'
-                            : groupCount > 0
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                              : 'bg-white text-slate-500 border-slate-200'
-                        }`}>
-                          {groupCount.toLocaleString()} Ads
-                        </span>
-                        {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0" />}
-                      </div>
-                    </button>
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100/90 hover:bg-emerald-50/90 text-slate-900 hover:text-emerald-950'
+                        }`}
+                        title={`Select all listings in ${group.name}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
+                          <span className="text-base shrink-0">{icon}</span>
+                          <span className="font-extrabold break-words leading-snug">{group.name}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg normal-case tracking-normal ${
+                            isGroupSelected
+                              ? 'bg-white/20 text-white'
+                              : 'bg-white text-slate-500 border border-slate-200/80'
+                          }`}>
+                            All {group.allItems.length} Subcategories
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`font-mono text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
+                            isGroupSelected
+                              ? 'bg-white/25 text-white border-white/30'
+                              : groupCount > 0
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : 'bg-white text-slate-500 border-slate-200'
+                          }`}>
+                            {groupCount.toLocaleString()} Ads
+                          </span>
+                          {isGroupSelected && <Check className="w-4 h-4 text-white shrink-0" />}
+                        </div>
+                      </button>
+
+                      {/* Subcategories Grid under Parent Sector */}
+                      {group.items.length > 0 && (
+                        <div className="p-2 bg-white border-t border-slate-200/70 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {group.items.map((item) => {
+                            const isSubSelected = category === item.fullName || category === item.name;
+                            const subCount =
+                              getCountForCategory(categoryCounts, item.fullName) ||
+                              getCountForCategory(categoryCounts, item.name) ||
+                              getCountForCategory(categoryCounts, item.id);
+
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setCategory(item.fullName);
+                                  setCustomCategory('');
+                                  setOpenDropdown(null);
+                                }}
+                                className={`w-full text-left px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 transition border cursor-pointer ${
+                                  isSubSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-xs'
+                                    : 'bg-slate-50/70 hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-950 border-slate-200/60 hover:border-emerald-300 font-semibold'
+                                }`}
+                                title={`Filter by ${item.fullName}`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 border ${
+                                    isSubSelected
+                                      ? 'bg-white/25 text-white border-white/30'
+                                      : 'bg-emerald-100/80 text-emerald-800 border-emerald-200/80'
+                                  }`}>
+                                    {item.id}
+                                  </span>
+                                  <span className="text-xs leading-snug break-words">
+                                    {item.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-lg border ${
+                                    isSubSelected
+                                      ? 'bg-white/25 text-white border-white/30'
+                                      : subCount > 0
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                        : 'bg-white text-slate-400 border-slate-200/80'
+                                  }`}>
+                                    {subCount.toLocaleString()} Ads
+                                  </span>
+                                  {isSubSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -835,7 +961,7 @@ function SearchBarForm() {
                   setCategory('Other');
                   setOpenDropdown(null);
                 }}
-                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border ${
+                className={`w-full text-left px-4 py-3 rounded-2xl font-bold flex items-center justify-between gap-4 transition border cursor-pointer ${
                   category === 'Other'
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : 'bg-slate-100 hover:bg-emerald-50 text-slate-800 border-slate-200/80 hover:border-emerald-300'
@@ -857,19 +983,20 @@ function SearchBarForm() {
               </button>
 
               {filteredCategoriesStructured.length === 0 && (
-                <div className="p-4 text-center text-slate-400 text-xs font-semibold">No sectors found matching &quot;{categorySearch}&quot;</div>
+                <div className="p-4 text-center text-slate-400 text-xs font-semibold">No categories or subcategories found matching &quot;{categorySearch}&quot;</div>
               )}
             </div>
 
             {/* Bottom Footer inside Popover */}
             <div className="pt-2.5 mt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-              <span>{CATEGORIES_STRUCTURED.length} Business Industry Sectors</span>
+              <span>{CATEGORIES_STRUCTURED.length} Sectors &bull; {CATEGORIES_STRUCTURED.reduce((acc, g) => acc + g.items.length, 0)} Subcategories</span>
               <Link
                 href="/categories"
+                prefetch={false}
                 onClick={() => setOpenDropdown(null)}
                 className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline"
               >
-                View All Sectors →
+                View All Categories →
               </Link>
             </div>
 

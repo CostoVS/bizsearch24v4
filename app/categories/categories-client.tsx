@@ -30,6 +30,7 @@ import {
   saveCategoryAdsCounts,
   getCountForCategory,
   getTotalAdsCount,
+  fetchDirectoryStats,
   safeLocalStorage
 } from '@/lib/data';
 import { motion, AnimatePresence } from 'motion/react';
@@ -64,31 +65,26 @@ export default function CategoriesClient() {
       setAllAdsCount(getTotalAdsCount());
     };
 
-    const fetchServerCounts = async () => {
+    const fetchServerCounts = async (force: boolean = false) => {
       try {
-        const res = await fetch('/api/storage?page=1&pageSize=1', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await fetchDirectoryStats(force);
+        if (!data) return;
         if (data?.adminStats?.byCategory) {
-          saveCategoryAdsCounts(data.adminStats.byCategory);
           setAdCategoryCounts(data.adminStats.byCategory);
         }
         const liveTotal = data?.adminStats?.active ?? data?.globalTotalAdsCount ?? data?.totalAdsCount;
         if (typeof liveTotal === 'number') {
-          safeLocalStorage.setItem('searchbiz_total_ads_count', String(liveTotal));
           setAllAdsCount(liveTotal);
         }
-      } catch (e) {
-        console.error('Failed to fetch live category counts:', e);
-      }
+      } catch (e) {}
     };
 
     syncLocalCounts();
-    fetchServerCounts();
+    fetchServerCounts(false);
 
     const handleAdsUpdated = () => {
       syncLocalCounts();
-      fetchServerCounts();
+      fetchServerCounts(true);
     };
     const handleStorage = (e: StorageEvent) => {
       if (
@@ -282,6 +278,7 @@ export default function CategoriesClient() {
                 <Link
                   key={g.id}
                   href={`/directory?category=${encodeURIComponent(g.name)}`}
+                  prefetch={false}
                   className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-slate-50 hover:bg-emerald-50/90 border border-slate-200/90 hover:border-emerald-300 transition-all group h-full shadow-2xs"
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -473,6 +470,7 @@ export default function CategoriesClient() {
                     <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
                       <Link
                         href={`/directory?category=${encodeURIComponent(group.name)}`}
+                        prefetch={false}
                         className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl transition shadow-sm"
                         title={`Search all ${group.name} listings`}
                       >
@@ -512,6 +510,7 @@ export default function CategoriesClient() {
                               <Link
                                 key={item.id}
                                 href={`/directory?category=${encodeURIComponent(item.fullName)}`}
+                                prefetch={false}
                                 className="group p-3 rounded-2xl bg-slate-50 hover:bg-emerald-50/80 border border-slate-200/80 hover:border-emerald-300 transition-all flex items-center justify-between gap-2 shadow-xs hover:shadow-sm"
                               >
                                 <div className="flex items-center gap-2.5 min-w-0">
@@ -578,6 +577,7 @@ export default function CategoriesClient() {
                 <Link
                   key={p.slug}
                   href={`/${p.slug}`}
+                  prefetch={false}
                   className="bg-white/10 hover:bg-emerald-500 text-white hover:text-slate-950 font-bold text-xs sm:text-sm px-4 py-2 rounded-xl transition border border-white/20 backdrop-blur-sm shadow-sm"
                 >
                   {p.name}
