@@ -274,6 +274,26 @@ let _activeStatsPromise: Promise<any> | null = null;
 let _lastStatsData: any = null;
 let _lastStatsTime = 0;
 
+export function clearLocalAdsCache(): void {
+  _memStoredAds = [];
+  _memStoredAdsRaw = "[]";
+  _memCategoryCounts = {};
+  _memCategoryCountsRaw = "{}";
+  _lastStatsData = null;
+  _lastStatsTime = 0;
+  if (typeof window !== "undefined") {
+    safeLocalStorage.setItem("searchbiz_all_ads", "[]");
+    safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
+    safeLocalStorage.setItem("searchbiz_trash_ads", "[]");
+    safeLocalStorage.setItem("searchbiz_deleted_ads", "[]");
+    safeLocalStorage.setItem("searchbiz_total_ads_count", "0");
+    safeLocalStorage.setItem("searchbiz_verified_count", "0");
+    safeLocalStorage.setItem("searchbiz_category_counts", "{}");
+    window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
+    window.dispatchEvent(new CustomEvent("searchbiz_trash_updated"));
+  }
+}
+
 export async function fetchDirectoryStats(force: boolean = false): Promise<any> {
   if (typeof window === "undefined") return null;
   const now = Date.now();
@@ -292,6 +312,13 @@ export async function fetchDirectoryStats(force: boolean = false): Promise<any> 
         _lastStatsTime = Date.now();
         if (typeof data.totalAdsCount === "number") {
           safeLocalStorage.setItem("searchbiz_total_ads_count", String(data.totalAdsCount));
+          if (data.totalAdsCount === 0) {
+            _memStoredAds = [];
+            _memStoredAdsRaw = "[]";
+            safeLocalStorage.setItem("searchbiz_all_ads", "[]");
+            safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
+            safeLocalStorage.setItem("searchbiz_deleted_ads", "[]");
+          }
         }
         if (typeof data.verifiedCount === "number") {
           safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
@@ -434,8 +461,10 @@ export async function fetchAndStoreAds(): Promise<any[]> {
       const data = await res.json();
       if (data && Array.isArray(data.ads)) {
         const serverAds = data.ads.filter((a: any) => a && a.id);
+        const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
+        const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
         const serverDeleted = Array.isArray(data.deletedAds) ? data.deletedAds : [];
-        const localDeleted = getDeletedAdIds();
+        const localDeleted = totalCnt === 0 ? [] : getDeletedAdIds();
         
         // Merge deleted IDs from server and local client
         const combinedDeletedSet = new Set([...serverDeleted, ...localDeleted]);
@@ -447,8 +476,6 @@ export async function fetchAndStoreAds(): Promise<any[]> {
         const cleanedServerAds = cleanAdsArray(serverAds);
         const finalAds = cleanedServerAds.filter((a: any) => a && a.id && !combinedDeletedSet.has(a.id));
 
-        const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
-        const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
         if (totalCnt !== undefined) {
           safeLocalStorage.setItem("searchbiz_total_ads_count", String(totalCnt));
         }
@@ -459,14 +486,13 @@ export async function fetchAndStoreAds(): Promise<any[]> {
           saveCategoryAdsCounts(data.adminStats.byCategory);
         }
 
-        const currentLocal = getStoredAds();
-        // Protect local ads if server returned empty due to sync lag
-        if (finalAds.length > 0 || currentLocal.length === 0) {
-          _memStoredAds = finalAds;
-          const localSlice = finalAds.length > 120 ? finalAds.slice(0, 120) : finalAds;
-          const serialized = JSON.stringify(localSlice);
-          safeLocalStorage.setItem("searchbiz_all_ads", serialized);
-          _memStoredAdsRaw = serialized;
+        _memStoredAds = finalAds;
+        const localSlice = finalAds.length > 120 ? finalAds.slice(0, 120) : finalAds;
+        const serialized = JSON.stringify(localSlice);
+        safeLocalStorage.setItem("searchbiz_all_ads", serialized);
+        _memStoredAdsRaw = serialized;
+        if (totalCnt === 0 || finalAds.length === 0) {
+          safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
         }
         
         if (data.customPartners) {
@@ -805,29 +831,40 @@ export async function purgeStoredAdsBulk(idsToDelete: string[]): Promise<any[]> 
   const idSet = new Set(idsToDelete);
   const updated = current.filter(ad => ad && ad.id && !idSet.has(ad.id));
   
-  // Track deleted IDs
-  const localDeleted = getDeletedAdIds();
-  const combinedDeleted = Array.from(new Set([...localDeleted, ...idsToDelete]));
-  safeLocalStorage.setItem("searchbiz_deleted_ads", JSON.stringify(combinedDeleted));
-  safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(updated));
+  _memStoredAds = updated;
+  const serialized = JSON.stringify(updated);
+  _memStoredAdsRaw = serialized;
+  safeLocalStorage.setItem("searchbiz_all_ads", serialized);
   safeLocalStorage.setItem("searchbiz_custom_ads", JSON.stringify(updated.filter(ad => ad.id.startsWith("custom_") || !ad.id.startsWith("ad"))));
   window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
 
-  // Send to server with forceSyncAds
   try {
     const res = await fetch('/api/storage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ads: updated,
-        deletedAds: combinedDeleted,
-        forceSyncAds: true
+        adminAction: 'bulk_purge',
+        scope: 'selected',
+        adIds: idsToDelete
       })
     });
     if (res.ok) {
       const data = await res.json();
+      if (typeof data.totalAdsCount === "number") {
+        safeLocalStorage.setItem("searchbiz_total_ads_count", String(data.totalAdsCount));
+      }
+      if (typeof data.verifiedCount === "number") {
+        safeLocalStorage.setItem("searchbiz_verified_count", String(data.verifiedCount));
+      }
+      if (data.adminStats?.byCategory) {
+        saveCategoryAdsCounts(data.adminStats.byCategory);
+      }
       if (data.data && Array.isArray(data.data.ads)) {
-        safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(data.data.ads));
+        _memStoredAds = data.data.ads;
+        const resSerialized = JSON.stringify(data.data.ads);
+        _memStoredAdsRaw = resSerialized;
+        safeLocalStorage.setItem("searchbiz_all_ads", resSerialized);
+        window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
         return data.data.ads;
       }
     }

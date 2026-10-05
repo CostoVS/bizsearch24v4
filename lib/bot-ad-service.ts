@@ -94,13 +94,34 @@ export interface BotAdPayload {
 }
 
 export function readServerDb(): any {
-  // Instant O(1) memory hit if globalRef.storageCache is already populated in RAM
+  // Instant O(1) memory hit if globalRef.storageCache is already populated in RAM (even if 0 ads after an admin purge)
   if (
     globalRef.storageCache &&
-    Array.isArray(globalRef.storageCache.ads) &&
-    globalRef.storageCache.ads.length > 0
+    Array.isArray(globalRef.storageCache.ads)
   ) {
     return globalRef.storageCache;
+  }
+
+  const primaryPaths = [PERSIST_PATH, JSON_PATH];
+  let latestPurgedData: any = null;
+  let latestPurgeTime = 0;
+
+  for (const p of primaryPaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const st = fs.statSync(p);
+        if (st.size > 2 && st.size < 5000000) {
+          const raw = fs.readFileSync(p, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ads) && parsed.lastPurgeAt) {
+            if (parsed.lastPurgeAt > latestPurgeTime) {
+              latestPurgeTime = parsed.lastPurgeAt;
+              latestPurgedData = parsed;
+            }
+          }
+        }
+      }
+    } catch (e) {}
   }
 
   const candidatePaths = [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP];
@@ -131,12 +152,19 @@ export function readServerDb(): any {
       const fileContent = fs.readFileSync(candidate.path, 'utf-8');
       const data = JSON.parse(fileContent);
       if (data && typeof data === 'object' && Array.isArray(data.ads)) {
+        if (latestPurgedData && latestPurgeTime > (data.updatedAt || 0) && latestPurgeTime > (data.lastPurgeAt || 0)) {
+          continue;
+        }
         bestData = data;
         break; // Parse only the single best file!
       }
     } catch (e) {
       console.error(`[BotAdService] Failed to read ${candidate.path}:`, e);
     }
+  }
+
+  if (!bestData && latestPurgedData) {
+    bestData = latestPurgedData;
   }
 
   if (bestData) {
@@ -208,8 +236,8 @@ async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promi
 
 export { writeStorageJsonNonBlocking };
 
-async function flushToDiskAsync(data: any): Promise<void> {
-  if (globalRef.isFlushingToDisk) {
+async function flushToDiskAsync(data: any, forceAllBackups: boolean = false): Promise<void> {
+  if (globalRef.isFlushingToDisk && !forceAllBackups) {
     globalRef.needsAnotherFlush = true;
     return;
   }
@@ -219,27 +247,32 @@ async function flushToDiskAsync(data: any): Promise<void> {
   try {
     await writeStorageJsonNonBlocking(PERSIST_PATH, data);
 
-    try {
-      const jsonDir = path.dirname(JSON_PATH);
-      if (!fs.existsSync(jsonDir)) {
-        await fs.promises.mkdir(jsonDir, { recursive: true });
+    const copyTargets = [JSON_PATH];
+    const now = Date.now();
+    const shouldWriteBackups =
+      forceAllBackups ||
+      Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
+      !globalRef.lastBackupWriteTime ||
+      now - globalRef.lastBackupWriteTime > 600000;
+
+    if (shouldWriteBackups) {
+      globalRef.lastBackupWriteTime = now;
+      copyTargets.push(BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP);
+      if (fs.existsSync('/opt/hermes-searchbiz/leads_storage')) {
+        copyTargets.push('/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json');
       }
-      const tempCopy = `${JSON_PATH}.tmp.${process.pid}.${Date.now()}`;
-      await fs.promises.copyFile(PERSIST_PATH, tempCopy);
-      await fs.promises.rename(tempCopy, JSON_PATH);
-    } catch (copyErr) {
-      console.error(`[BotAdService] Failed copy to ${JSON_PATH}:`, copyErr);
     }
 
-    const now = Date.now();
-    // Only write backup copy at most once every 10 minutes
-    if (!globalRef.lastBackupWriteTime || now - globalRef.lastBackupWriteTime > 600000) {
-      globalRef.lastBackupWriteTime = now;
+    for (const destPath of copyTargets) {
       try {
-        const tempBk = `${BACKUP_PATH}.tmp.${process.pid}.${Date.now()}`;
-        await fs.promises.copyFile(PERSIST_PATH, tempBk);
-        await fs.promises.rename(tempBk, BACKUP_PATH);
-      } catch (bkErr) {}
+        const destDir = path.dirname(destPath);
+        if (!fs.existsSync(destDir)) {
+          await fs.promises.mkdir(destDir, { recursive: true });
+        }
+        const tempCopy = `${destPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
+        await fs.promises.copyFile(PERSIST_PATH, tempCopy);
+        await fs.promises.rename(tempCopy, destPath);
+      } catch (copyErr) {}
     }
 
     globalRef.lastSelfWriteTime = Date.now();

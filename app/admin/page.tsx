@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/map-picker"), { ssr: false });
-import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, getStoredBanners, saveStoredBanners, Banner, getTrashAds, restoreAdFromTrash, permanentlyDeleteAdFromTrash, emptyTrashPermanently } from "@/lib/data";
+import { MOCK_USERS, MOCK_ADS, getStoredAds, saveStoredAds, deleteAd, purgeStoredAdsBulk, fetchAndStoreAds, clearLocalAdsCache, getStoredBanners, saveStoredBanners, Banner, getTrashAds, restoreAdFromTrash, permanentlyDeleteAdFromTrash, emptyTrashPermanently } from "@/lib/data";
 import { ShieldAlert, Users, Database, Globe, MonitorSmartphone, Settings, Edit, Trash2, LayoutTemplate, Activity, Eye, MousePointerClick, BarChart3, Trash, Search, Sparkles, Filter, ChevronRight, CornerDownRight, X, Plus, Copy, Layers, RefreshCw, Lock, KeyRound, CheckSquare, Square, AlertTriangle, ShieldCheck, Check, CheckCircle2, MapPin, MessageSquare, Phone, BellRing, Undo2, RotateCcw, ArchiveRestore, History } from "lucide-react";
 import { getAnalyticsEvents, clearAnalyticsStorage, AnalyticsEvent } from "@/lib/analytics-utils";
 import AdDetailModal from "@/components/ad-detail-modal";
@@ -250,6 +250,10 @@ export default function AdminDashboard() {
           setAdminStats(data.adminStats);
           if (data.adminStats.byCategory) {
             localStorage.setItem("searchbiz_category_counts", JSON.stringify(data.adminStats.byCategory));
+          }
+          if (data.adminStats.total === 0) {
+            setAds([]);
+            clearLocalAdsCache();
           }
         }
         return data;
@@ -831,26 +835,43 @@ export default function AdminDashboard() {
       });
       if (res.ok) {
         const data = await res.json();
+        const totalCnt = data.globalTotalAdsCount ?? data.totalAdsCount;
+        const verCnt = data.globalVerifiedCount ?? data.verifiedCount;
+
         if (data.adminStats) {
           setAdminStats(data.adminStats);
           if (data.adminStats.byCategory) {
             localStorage.setItem("searchbiz_category_counts", JSON.stringify(data.adminStats.byCategory));
           }
         }
-        if (typeof data.globalTotalAdsCount === "number") {
-          localStorage.setItem("searchbiz_total_ads_count", String(data.globalTotalAdsCount));
+        if (typeof totalCnt === "number") {
+          localStorage.setItem("searchbiz_total_ads_count", String(totalCnt));
         }
-        if (typeof data.globalVerifiedCount === "number") {
-          localStorage.setItem("searchbiz_verified_count", String(data.globalVerifiedCount));
+        if (typeof verCnt === "number") {
+          localStorage.setItem("searchbiz_verified_count", String(verCnt));
+        }
+        if (payload.adminAction === "bulk_purge") {
+          if (payload.scope === "all" || totalCnt === 0) {
+            setAds([]);
+            setAdminPageAds([]);
+            setAdminFilteredTotal(0);
+            setTrashAds([]);
+            clearLocalAdsCache();
+          } else if (Array.isArray(data?.data?.ads)) {
+            setAds(data.data.ads);
+          }
         }
         await refreshAdminServerAds();
         window.dispatchEvent(new CustomEvent("searchbiz_ads_updated"));
         return data;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.details || errData.error || `Server returned ${res.status}`);
       }
     } catch (err) {
       console.error("Admin action failed:", err);
+      throw err;
     }
-    return null;
   };
 
   const removeAd = (id: string) => {
@@ -1247,8 +1268,8 @@ export default function AdminDashboard() {
     }
 
     const purgeCount = getAdsToPurgeCount();
-    if (purgeCount === 0) {
-      alert("No advertisements matched the selected deletion criteria.");
+    if (deleteScope === "selected" && selectedAdIds.length === 0) {
+      alert("No advertisements selected for deletion.");
       return;
     }
 
@@ -1271,7 +1292,7 @@ export default function AdminDashboard() {
       setIsDeleteModalOpen(false);
       setDeletePasswordInput("");
       setDeletePasswordError("");
-      const remainingCount = res?.globalTotalAdsCount ?? 0;
+      const remainingCount = res?.globalTotalAdsCount ?? res?.totalAdsCount ?? 0;
       alert(
         `Operation Complete: Successfully deleted and purged ${purgeCount.toLocaleString()} listing(s) from SearchBiz database. Remaining live ads: ${remainingCount.toLocaleString()}`
       );
@@ -5322,7 +5343,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={handleExecuteBulkPurge}
-                disabled={isDeletingBulk || getAdsToPurgeCount() === 0}
+                disabled={isDeletingBulk || (deleteScope === "selected" && selectedAdIds.length === 0)}
                 className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {isDeletingBulk ? (

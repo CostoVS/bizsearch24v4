@@ -6079,6 +6079,47 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
                 pass
             os.makedirs(d, exist_ok=True)
 
+    # Stop any active swarm or bulk sync and reset in-memory pool
+    try:
+        GLOBAL_SUBAGENT_POOL.stop()
+        GLOBAL_SUBAGENT_POOL.reset()
+        GLOBAL_BULK_SYNC["is_running"] = False
+    except Exception:
+        pass
+
+    # Also purge live SearchBiz web database and all disk backup files so 0 stale ads resurrect
+    try:
+        api_request("/api/storage", method="POST", payload={"adminAction": "bulk_purge", "scope": "all"})
+    except Exception:
+        pass
+
+    now_ms = int(time.time() * 1000)
+    empty_db_payload = json.dumps({
+        "ads": [],
+        "trashAds": [],
+        "deletedAds": [],
+        "lastPurgeAt": now_ms,
+        "updatedAt": now_ms
+    })
+    db_wipe_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".data", "backup_db.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "backup_db.json"),
+        "/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json",
+        "/home/thehightable/bizsearch24v4/.data/db.json",
+        "/home/thehightable/bizsearch24v4/data/db.json",
+        "/home/thehightable/bizsearch24v4/.data/backup_db.json",
+        "/home/thehightable/bizsearch24v4/data/backup_db.json"
+    ]
+    for p in db_wipe_paths:
+        try:
+            if os.path.exists(p) or os.path.exists(os.path.dirname(p)):
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(empty_db_payload)
+        except Exception:
+            pass
+
     msg = f"""🗑️ <b>[All VPS Stored Listings Deleted & Purged]</b>
 
 🧹 <b>Database Records Cleared:</b>
@@ -7273,6 +7314,7 @@ def scrape_province_suburbs_pipeline(chat_id: int, query_directive: str) -> dict
     towns_visited = []
 
     reset_stop_flag()
+    reset_scraped_locations_registry()
 
     for prov_idx, prov_info in enumerate(provinces_to_scrape, 1):
         if check_stop_requested():
@@ -7833,6 +7875,7 @@ class SubAgentPoolManager:
             self.current_group_name = ""
             self.current_group_total_subcats = 0
             self.current_group_completed_subcats = 0
+            self.groups_completed.clear()
             self.workers_status.clear()
             while not self.work_queue.empty():
                 try:
@@ -7844,6 +7887,7 @@ class SubAgentPoolManager:
             self.total_ads = 0
             self.start_time = 0.0
             self.is_pipeline_running = False
+        reset_scraped_locations_registry()
 
     def pause(self):
         with self.lock:
@@ -10269,6 +10313,20 @@ def direct_db_insert_ad_batch(items: list) -> dict:
 
     existing_ads = []
     existing_data = {}
+    latest_purge_at = 0
+
+    for p in target_paths:
+        if os.path.exists(p):
+            try:
+                if os.path.getsize(p) < 5000000:
+                    with open(p, "r", encoding="utf-8") as f:
+                        d_check = json.load(f)
+                        if isinstance(d_check, dict) and d_check.get("lastPurgeAt", 0) > latest_purge_at:
+                            latest_purge_at = d_check.get("lastPurgeAt", 0)
+                            existing_data = d_check
+                            existing_ads = d_check.get("ads", []) if isinstance(d_check.get("ads"), list) else []
+            except Exception:
+                pass
     
     for p in target_paths:
         if os.path.exists(p):
@@ -10276,6 +10334,8 @@ def direct_db_insert_ad_batch(items: list) -> dict:
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict) and isinstance(data.get("ads"), list):
+                        if latest_purge_at > 0 and data.get("updatedAt", 0) < latest_purge_at and data.get("lastPurgeAt", 0) < latest_purge_at:
+                            continue
                         if len(data.get("ads", [])) > len(existing_ads):
                             existing_ads = data["ads"]
                             existing_data = data

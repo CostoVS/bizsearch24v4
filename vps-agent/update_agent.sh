@@ -136,6 +136,20 @@ paths = [
     '../.data/backup_db.json',
     '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json'
 ]
+latest_purge_at = 0
+purged_path = None
+for p in ['../.data/db.json', '../data/db.json']:
+    if os.path.exists(p):
+        try:
+            if os.path.getsize(p) < 5000000:
+                with open(p, 'r', encoding='utf-8') as f:
+                    d = json.load(f)
+                    if isinstance(d, dict) and d.get('lastPurgeAt', 0) > latest_purge_at:
+                        latest_purge_at = d.get('lastPurgeAt', 0)
+                        purged_path = p
+        except Exception:
+            pass
+
 best_path = None
 best_count = -1
 best_size = -1
@@ -147,20 +161,28 @@ for p in paths:
                 continue
             with open(p, 'r', encoding='utf-8') as f:
                 d = json.load(f)
-                c = len(d.get('ads', [])) if isinstance(d, dict) and isinstance(d.get('ads'), list) else 0
+                if not isinstance(d, dict) or not isinstance(d.get('ads'), list):
+                    continue
+                if latest_purge_at > 0 and d.get('updatedAt', 0) < latest_purge_at and d.get('lastPurgeAt', 0) < latest_purge_at:
+                    continue
+                c = len(d.get('ads', []))
                 if c > best_count or (c == best_count and sz > best_size):
                     best_count = c
                     best_size = sz
                     best_path = p
         except Exception:
             pass
-if best_path and best_count > 0:
+if not best_path and purged_path:
+    best_path = purged_path
+    best_count = 0
+    best_size = os.path.getsize(purged_path)
+
+if best_path and best_count >= 0:
     print(f'✅ Found master SearchBiz database with {best_count:,} ads at {best_path}. Syncing any out-of-date paths...')
     for p in paths:
         if p != best_path:
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
-                # Only copy if target file does not exist or differs in size so we do not needlessly bump mtime
                 if not os.path.exists(p) or abs(os.path.getsize(p) - best_size) > 64:
                     shutil.copy2(best_path, p)
             except Exception:

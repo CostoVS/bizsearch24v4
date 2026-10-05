@@ -232,6 +232,29 @@ function ensureAdFastIndexed(ad: any): void {
 }
 
 function getLocalDataNoCache() {
+  // First check primary persistence files to see if an intentional admin purge occurred recently
+  const primaryPaths = [PERSIST_PATH, JSON_PATH];
+  let latestPurgedData: any = null;
+  let latestPurgeTime = 0;
+
+  for (const p of primaryPaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const st = fs.statSync(p);
+        if (st.size > 2 && st.size < 5000000) {
+          const raw = fs.readFileSync(p, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ads) && parsed.lastPurgeAt) {
+            if (parsed.lastPurgeAt > latestPurgeTime) {
+              latestPurgeTime = parsed.lastPurgeAt;
+              latestPurgedData = parsed;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
   const candidatePaths = [
     PERSIST_PATH,
     JSON_PATH,
@@ -266,12 +289,20 @@ function getLocalDataNoCache() {
       const fileContent = fs.readFileSync(candidate.path, 'utf-8');
       const data = JSON.parse(fileContent);
       if (data && typeof data === 'object' && Array.isArray(data.ads)) {
+        // Never allow an old backup file to resurrect ads that were intentionally purged more recently
+        if (latestPurgedData && latestPurgeTime > (data.updatedAt || 0) && latestPurgeTime > (data.lastPurgeAt || 0)) {
+          continue;
+        }
         bestData = data;
         break;
       }
     } catch (e) {
       console.error(`Failed to read json data from ${candidate.path}:`, e);
     }
+  }
+
+  if (!bestData && latestPurgedData) {
+    bestData = latestPurgedData;
   }
 
   if (bestData) {
@@ -295,8 +326,8 @@ function getLocalDataNoCache() {
   };
 }
 
-async function flushStorageToDiskAsync(data: any): Promise<void> {
-  if (globalRef.isFlushingToDisk) {
+async function flushStorageToDiskAsync(data: any, forceAllBackups: boolean = false): Promise<void> {
+  if (globalRef.isFlushingToDisk && !forceAllBackups) {
     globalRef.needsAnotherFlush = true;
     return;
   }
@@ -306,25 +337,31 @@ async function flushStorageToDiskAsync(data: any): Promise<void> {
   try {
     await writeStorageJsonNonBlocking(PERSIST_PATH, data);
 
-    try {
-      const jsonDir = path.dirname(JSON_PATH);
-      if (!fs.existsSync(jsonDir)) {
-        await fs.promises.mkdir(jsonDir, { recursive: true });
+    const copyTargets = [JSON_PATH];
+    const now = Date.now();
+    const shouldWriteBackups =
+      forceAllBackups ||
+      Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
+      !globalRef.lastBackupWriteTime ||
+      now - globalRef.lastBackupWriteTime > 600000;
+
+    if (shouldWriteBackups) {
+      globalRef.lastBackupWriteTime = now;
+      copyTargets.push(BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP);
+      if (fs.existsSync('/opt/hermes-searchbiz/leads_storage')) {
+        copyTargets.push('/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json');
       }
-      const tempCopy = `${JSON_PATH}.tmp.${process.pid}.${Date.now()}`;
-      await fs.promises.copyFile(PERSIST_PATH, tempCopy);
-      await fs.promises.rename(tempCopy, JSON_PATH);
-    } catch (e) {
-      console.error(`Failed async copy to ${JSON_PATH}:`, e);
     }
 
-    const now = Date.now();
-    if (!globalRef.lastBackupWriteTime || now - globalRef.lastBackupWriteTime > 600000) {
-      globalRef.lastBackupWriteTime = now;
+    for (const destPath of copyTargets) {
       try {
-        const tempBk = `${BACKUP_PATH}.tmp.${process.pid}.${Date.now()}`;
-        await fs.promises.copyFile(PERSIST_PATH, tempBk);
-        await fs.promises.rename(tempBk, BACKUP_PATH);
+        const destDir = path.dirname(destPath);
+        if (!fs.existsSync(destDir)) {
+          await fs.promises.mkdir(destDir, { recursive: true });
+        }
+        const tempCopy = `${destPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
+        await fs.promises.copyFile(PERSIST_PATH, tempCopy);
+        await fs.promises.rename(tempCopy, destPath);
       } catch (e) {}
     }
 
@@ -344,7 +381,7 @@ async function flushStorageToDiskAsync(data: any): Promise<void> {
   }
 }
 
-function saveLocalDataNoCache(data: any) {
+function saveLocalDataNoCache(data: any, immediateAllBackups: boolean = false) {
   if (!data.updatedAt) {
     data.updatedAt = Date.now();
   }
@@ -356,6 +393,15 @@ function saveLocalDataNoCache(data: any) {
   globalRef.indexedDataset = null;
   globalRef.pendingDiskFlush = true;
   globalRef.lastSelfWriteTime = Date.now();
+
+  if (immediateAllBackups) {
+    if (globalRef.flushTimer) {
+      clearTimeout(globalRef.flushTimer);
+      globalRef.flushTimer = null;
+    }
+    flushStorageToDiskAsync(data, true);
+    return;
+  }
 
   const adCount = Array.isArray(data.ads) ? data.ads.length : 0;
   const debounceMs = adCount < 1000 ? 250 : adCount > 5000 ? 10000 : 2500;
@@ -509,7 +555,7 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
     const currentMtime = getDiskMtime();
     if (currentMtime <= (globalRef.storageMtime || 0)) return;
 
-    const candidatePaths = [PERSIST_PATH, JSON_PATH, BACKUP_PATH];
+    const candidatePaths = [PERSIST_PATH, JSON_PATH];
     let targetPathToRead = '';
     let maxSize = 0;
     for (const p of candidatePaths) {
@@ -529,6 +575,14 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
     const diskData = JSON.parse(raw);
     const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const memCount = Array.isArray(globalRef.storageCache?.ads) ? globalRef.storageCache.ads.length : 0;
+    const memPurgeTime = globalRef.storageCache?.lastPurgeAt || 0;
+    const diskUpdatedAt = diskData?.updatedAt || 0;
+
+    // Never overwrite memory if memory has a newer purge timestamp than the file on disk
+    if (memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskCount > memCount) {
+      globalRef.storageMtime = currentMtime;
+      return;
+    }
 
     if (diskCount >= memCount && diskCount > 0) {
       const CHUNK = 4000;
@@ -560,7 +614,7 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
 
 function getFastBaseData(): any {
   const now = Date.now();
-  const hasMemCache = globalRef.storageCache && Array.isArray(globalRef.storageCache.ads) && globalRef.storageCache.ads.length > 0;
+  const hasMemCache = Boolean(globalRef.storageCache && Array.isArray(globalRef.storageCache.ads));
 
   if (hasMemCache) {
     // Check disk asynchronously in background at most once every 30s so HTTP requests NEVER block on disk I/O
@@ -1426,40 +1480,62 @@ export async function POST(req: Request) {
         newData.ads = ads;
       } else if (action === 'bulk_purge') {
         const scope = body.scope || 'selected';
-        const selectedSet = new Set(Array.isArray(body.adIds) ? body.adIds : []);
-        const targetProv = (body.province || '').toLowerCase().trim();
-        const targetCat = (body.category || '').toLowerCase().trim();
-        const purgedIds: string[] = [];
+        const nowTs = Date.now();
+        newData.lastPurgeAt = nowTs;
 
-        newData.ads = ads.filter((a: any) => {
-          if (!a || !a.id) return false;
-          let shouldDelete = false;
-          if (scope === 'all') {
-            shouldDelete = true;
-          } else if (scope === 'selected' || scope === 'filtered') {
-            shouldDelete = selectedSet.has(a.id);
-          } else if (scope === 'csv') {
-            shouldDelete = isBotOrCsvListing(a);
-          } else if (scope === 'unclaimed') {
-            shouldDelete = a.isClaimed !== true && !a.verified;
-          } else if (scope === 'province' && targetProv) {
-            const p = (a.province || '').toLowerCase();
-            shouldDelete = p === targetProv || p.includes(targetProv);
-          } else if (scope === 'category' && targetCat) {
-            const c = (a.category || '').toLowerCase();
-            const cleanTarget = stripCategoryNumber(targetCat).toLowerCase().trim();
-            const cleanAdCat = stripCategoryNumber(c).toLowerCase().trim();
-            shouldDelete = c === targetCat || cleanAdCat === cleanTarget || isSubcategoryOf(a.category || '', targetCat);
-          }
-          if (shouldDelete) {
-            purgedIds.push(a.id);
-            return false;
-          }
-          return true;
-        });
+        if (scope === 'all') {
+          newData.ads = [];
+          newData.trashAds = [];
+          newData.deletedAds = [];
+          newData.lastCreatedAdId = null;
+          newData.lastCreatedAd = null;
+        } else {
+          const selectedSet = new Set(Array.isArray(body.adIds) ? body.adIds : []);
+          const targetProv = (body.province || '').toLowerCase().trim();
+          const targetCat = (body.category || '').toLowerCase().trim();
+          const purgedIds: string[] = [];
 
-        const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
-        newData.deletedAds = Array.from(new Set([...currentDeleted, ...purgedIds]));
+          newData.ads = ads.filter((a: any) => {
+            if (!a || !a.id) return false;
+            let shouldDelete = false;
+            if (scope === 'selected' || scope === 'filtered') {
+              shouldDelete = selectedSet.has(a.id);
+            } else if (scope === 'csv') {
+              shouldDelete = isBotOrCsvListing(a);
+            } else if (scope === 'unclaimed') {
+              shouldDelete = a.isClaimed !== true && !a.verified;
+            } else if (scope === 'province' && targetProv) {
+              const p = (a.province || '').toLowerCase();
+              shouldDelete = p === targetProv || p.includes(targetProv);
+            } else if (scope === 'category' && targetCat) {
+              const c = (a.category || '').toLowerCase();
+              const cleanTarget = stripCategoryNumber(targetCat).toLowerCase().trim();
+              const cleanAdCat = stripCategoryNumber(c).toLowerCase().trim();
+              shouldDelete = c === targetCat || cleanAdCat === cleanTarget || isSubcategoryOf(a.category || '', targetCat);
+            }
+            if (shouldDelete) {
+              if (purgedIds.length < 500) {
+                purgedIds.push(a.id);
+              }
+              return false;
+            }
+            return true;
+          });
+
+          if (newData.ads.length === 0) {
+            newData.deletedAds = [];
+            newData.trashAds = [];
+            newData.lastCreatedAdId = null;
+            newData.lastCreatedAd = null;
+          } else {
+            const currentDeleted = Array.isArray(currentData.deletedAds) ? currentData.deletedAds.slice(-500) : [];
+            const delSet = new Set<string>(currentDeleted);
+            for (let i = 0; i < purgedIds.length; i++) {
+              delSet.add(purgedIds[i]);
+            }
+            newData.deletedAds = Array.from(delSet).slice(-500);
+          }
+        }
       }
     } else if (body.deleteAdId) {
       const ads = Array.isArray(currentData.ads) ? currentData.ads : [];
@@ -1548,7 +1624,13 @@ export async function POST(req: Request) {
 
     newData.updatedAt = Date.now();
     globalRef.adminStatsCache = null;
-    saveLocalDataNoCache(newData);
+    const isPurgeAction = body.adminAction === 'bulk_purge' || Boolean(body.deleteAdId);
+    saveLocalDataNoCache(newData, isPurgeAction);
+    if (isPurgeAction) {
+      await flushStorageToDiskAsync(newData, true);
+      globalRef.indexedDataset = buildIndexedDatasetSync(newData);
+      globalRef.adminStatsCache = globalRef.indexedDataset.adminStats;
+    }
 
     if (!(globalRef.isDbOffline && (Date.now() < globalRef.dbOfflineUntil))) {
       saveDbData(newData).catch(err => {
@@ -1559,16 +1641,20 @@ export async function POST(req: Request) {
     }
 
     const updatedAdsList = Array.isArray(newData.ads) ? newData.ads : [];
-    const updatedStats = getAdminStats(updatedAdsList, newData.updatedAt);
+    const updatedStats = globalRef.adminStatsCache || getAdminStats(updatedAdsList, newData.updatedAt);
 
     return NextResponse.json({
       success: true,
       totalAdsCount: updatedAdsList.length,
       verifiedCount: updatedStats.approved,
+      globalTotalAdsCount: updatedAdsList.length,
+      globalVerifiedCount: updatedStats.approved,
       adminStats: updatedStats,
       data: {
         ...newData,
-        ads: updatedAdsList.slice(0, 100)
+        ads: updatedAdsList.slice(0, 100),
+        trashAds: Array.isArray(newData.trashAds) ? newData.trashAds.slice(0, 50) : [],
+        deletedAds: Array.isArray(newData.deletedAds) ? newData.deletedAds.slice(-100) : []
       }
     }, {
       headers: {
