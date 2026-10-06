@@ -62,7 +62,12 @@ fi
 chmod +x *.sh 2>/dev/null || true
 
 echo "Updating /opt/hermes-searchbiz scripts and tools..."
-cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
+if [ -f "hermes_searchbiz_agent.py" ] && [ "$(realpath hermes_searchbiz_agent.py)" != "${APP_DIR}/hermes_searchbiz_agent.py" ]; then
+    cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
+else
+    curl -fsSL https://searchbiz.co.za/api/bot/agent-script -o "${APP_DIR}/hermes_searchbiz_agent.py.tmp" 2>/dev/null && \
+    mv "${APP_DIR}/hermes_searchbiz_agent.py.tmp" "${APP_DIR}/hermes_searchbiz_agent.py" || true
+fi
 chmod +x "${APP_DIR}/hermes_searchbiz_agent.py"
 
 # Deploy 6000+ South African Areas Database
