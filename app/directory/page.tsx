@@ -729,21 +729,52 @@ function DirectoryContent() {
                   <h3 className="font-bold text-lg text-slate-900 leading-tight tracking-tight flex-1 min-w-0">{ad.title}</h3>
                   <div className="flex flex-wrap gap-1.5 justify-start items-center">
                     <PremiumBadge isPremium={ad.isPremium} />
-                    <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
+                    <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} isRecommended={(ad as any).isRecommended} />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 mb-3 text-xs font-semibold">
-                   <span className="flex items-center bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg capitalize"><MapPin className="w-3.5 h-3.5 mr-1 text-slate-400"/>{ad.location}</span>
-                   <span className="bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[150px]">{ad.category}</span>
+                <div className="flex flex-col gap-1.5 mb-3 text-xs font-semibold">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="flex items-center bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg capitalize">
+                      <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0"/>
+                      <span className="truncate max-w-[220px]">{ad.address || ad.location}</span>
+                    </span>
+                    <span className="bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[150px]">{ad.category}</span>
+                  </div>
+                  {(ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp) && (
+                    <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-mono font-bold text-xs">
+                      <span>📞 Phone:</span>
+                      <span>{ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="text-slate-500 text-sm flex-grow mb-4 leading-relaxed">
-                  <AdDescription description={ad.description} />
-                  
-                  {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
-                      <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
-                      <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
+                  {!(ad.isPremium && (ad.verified || (ad as any).isVerified || ad.isClaimed === true) && (ad as any).isLockedLevel1 !== true) ? (
+                    <div className="relative rounded-xl border border-amber-200/80 bg-amber-50/30 p-3 overflow-hidden">
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                          🔒 Locked Details (Level 2 — R199/mo)
+                        </span>
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                          Admin Unlock
+                        </span>
+                      </div>
+                      <div className="blur-[5px] select-none pointer-events-none opacity-60 text-xs space-y-1.5">
+                        <AdDescription description={ad.description || `${ad.title} in ${ad.location}`} />
+                        <p className="font-medium text-slate-500">
+                          Services: {ad.servicesOffered || ad.category} | Hours, Website, Socials &amp; Email Locked
+                        </p>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      <AdDescription description={ad.description} />
+                      {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
+                          <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
+                          <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {ad.serviceAreas && ad.serviceAreas.length > 0 && (

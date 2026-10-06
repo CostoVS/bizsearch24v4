@@ -236,21 +236,52 @@ export default function LocationListings({ ads: propAds, properName, initialTota
                   <h3 className="font-bold text-lg text-slate-900 leading-tight tracking-tight flex-1 min-w-0">{item.title}</h3>
                   <div className="flex flex-wrap gap-1.5 justify-start items-center">
                     <PremiumBadge isPremium={item.isPremium} />
-                    <VerificationBadge verified={item.verified} isGoogleImport={item.isGoogleImport || item.id?.startsWith('csv-') || item.id?.startsWith('csv_')} isPremium={item.isPremium} isClaimed={item.isClaimed} />
+                    <VerificationBadge verified={item.verified} isGoogleImport={item.isGoogleImport || item.id?.startsWith('csv-') || item.id?.startsWith('csv_')} isPremium={item.isPremium} isClaimed={item.isClaimed} isRecommended={item.isRecommended} />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 mb-3 text-xs font-semibold">
-                   <span className="flex items-center bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg capitalize"><MapPin className="w-3.5 h-3.5 mr-1 text-slate-400"/>{item.location}</span>
-                   <span className="bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[150px]">{item.category}</span>
-                </div>
-                <div className="text-slate-500 text-sm flex-grow mb-4 leading-relaxed">
-                  <AdDescription description={item.description} />
-                  
-                  {item.servicesOffered && !isCustomerReviewOrGarbage(item.servicesOffered) && (
-                    <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
-                      <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
-                      <p className="whitespace-pre-line font-medium text-slate-500">{item.servicesOffered}</p>
+                <div className="flex flex-col gap-1.5 mb-3 text-xs font-semibold">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="flex items-center bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg capitalize">
+                      <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0"/>
+                      <span className="truncate max-w-[220px]">{item.address || item.location}</span>
+                    </span>
+                    <span className="bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[150px]">{item.category}</span>
+                  </div>
+                  {(item.phone || item.telephone || item.landline || item.whatsapp) && (
+                    <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-mono font-bold text-xs">
+                      <span>📞 Phone:</span>
+                      <span>{item.phone || item.telephone || item.landline || item.whatsapp}</span>
                     </div>
+                  )}
+                </div>
+                <div className="text-slate-500 text-sm flex-grow mb-4 leading-relaxed relative">
+                  {!(item.isPremium && (item.verified || item.isVerified || item.isClaimed === true) && item.isLockedLevel1 !== true) ? (
+                    <div className="relative rounded-xl border border-amber-200/80 bg-amber-50/30 p-3 overflow-hidden">
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                          🔒 Locked Details (Level 2 — R199/mo)
+                        </span>
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                          Admin Unlock
+                        </span>
+                      </div>
+                      <div className="blur-[5px] select-none pointer-events-none opacity-60 text-xs space-y-1.5">
+                        <AdDescription description={item.description || `${item.title} in ${item.location}`} />
+                        <p className="font-medium text-slate-500">
+                          Services: {item.servicesOffered || item.category} | Hours, Website, Socials &amp; Email Locked
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <AdDescription description={item.description} />
+                      {item.servicesOffered && !isCustomerReviewOrGarbage(item.servicesOffered) && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 text-xs leading-relaxed">
+                          <span className="font-extrabold uppercase text-[10px] text-emerald-600 tracking-wider block mb-1">Services Offered:</span>
+                          <p className="whitespace-pre-line font-medium text-slate-500">{item.servicesOffered}</p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <div 

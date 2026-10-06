@@ -10,16 +10,35 @@ export const VerificationBadge = ({
   verified, 
   isGoogleImport,
   isPremium,
-  isClaimed
+  isClaimed,
+  isRecommended
 }: { 
   verified?: boolean; 
   isGoogleImport?: boolean;
   isPremium?: boolean;
   isClaimed?: boolean;
+  isRecommended?: boolean;
 }) => {
-  // If claimed & paid premium, do not show unclaimed/unverified badges (never show "Verified Business")
-  if (isClaimed === true && isPremium) {
-    return null;
+  // If upgraded to Level 2 by Admin (paid R199/mo + verified), show Verified & Recommended badges
+  if (isPremium && (verified || isClaimed)) {
+    return (
+      <div className="flex flex-wrap gap-1.5 items-center shrink-0 my-1">
+        <div 
+          className="inline-flex items-center text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border border-emerald-300 shadow-xs"
+          title="Admin Verified Level 2 Business"
+        >
+          <BadgeCheck className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
+          <span>Verified Business</span>
+        </div>
+        <div 
+          className="inline-flex items-center text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border border-amber-300 shadow-xs"
+          title="SearchBiz Recommended Business (Level 2 — R199/mo)"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 mr-1 text-amber-600 shrink-0" />
+          <span>Recommended</span>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -48,13 +67,13 @@ export const VerificationBadge = ({
       {/* 3. Free Listing (in red pulsing) */}
       <div 
         className="inline-flex items-center text-red-600 bg-red-50/95 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-red-300 shadow-xs animate-pulse"
-        title="Free Listing"
+        title="Free Listing — Details Locked Until Level 2 Upgrade"
       >
         <span className="relative flex h-2 w-2 mr-1.5 shrink-0">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
           <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
         </span>
-        <span>Free Listing</span>
+        <span>Free Listing (Level 1 Locked)</span>
       </div>
     </div>
   );

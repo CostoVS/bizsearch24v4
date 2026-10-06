@@ -340,8 +340,40 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   if (!payload.title || !payload.title.trim()) {
     return { success: false, error: 'Business title is required.' };
   }
-  if (!payload.phone || !payload.phone.trim()) {
-    return { success: false, error: 'Phone number is required.' };
+
+  // Check if business is marked permanently closed
+  const combinedTextCheck = `${payload.title || ''} ${payload.description || ''} ${(payload as any).tradingHours || ''}`.toLowerCase();
+  if (
+    (payload as any).permanentlyClosed === true ||
+    combinedTextCheck.includes('permanently closed') ||
+    combinedTextCheck.includes('closed permanently') ||
+    combinedTextCheck.includes('no longer operating') ||
+    combinedTextCheck.includes('out of business')
+  ) {
+    return { success: false, error: 'Business is permanently closed and cannot be listed.' };
+  }
+
+  const rawPhone = (payload.phone || '').trim();
+  const rawLandline = (payload.landline || payload.telephone || '').trim();
+  const rawWhatsapp = (payload.whatsapp || '').trim();
+
+  // Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+  const resolvedPublicPhone = rawPhone || rawLandline || rawWhatsapp;
+
+  const hasAlternativeContact = Boolean(
+    resolvedPublicPhone ||
+    (payload.email && payload.email.trim()) ||
+    (payload.website && payload.website.trim()) ||
+    (payload.facebook || payload.socialFacebook) ||
+    (payload.instagram || payload.socialInstagram) ||
+    (payload.tiktok || payload.socialTikTok) ||
+    (payload.twitter || payload.x || payload.socialX) ||
+    (payload.youtube || payload.socialYoutube) ||
+    (payload.socialLinks && payload.socialLinks.trim())
+  );
+
+  if (!hasAlternativeContact) {
+    return { success: false, error: 'Business has no phone, telephone, WhatsApp, or other contact information.' };
   }
 
   const dbData = readServerDb();
@@ -360,15 +392,13 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   const isFree = payload.isClaimed === false || payload.plan === 'free' || payload.isPremium === false || !payload.plan;
   const isClaimed = payload.isClaimed === true;
   const isPremium = payload.isPremium === true;
-  const verified = false; // Uploaded ads are NEVER verified
+  const verified = false; // Uploaded ads are NEVER verified until Admin upgrades to Level 2
   const plan = isPremium ? 'PREMIUM' : 'free';
 
   const rawServices = Array.isArray(payload.servicesOffered)
     ? payload.servicesOffered.filter(Boolean).join(', ')
     : (payload.servicesOffered || payload.category || 'Professional Services');
   const rawHours = payload.tradingHours || payload.operatingHours || 'Mon-Fri: 08:00 - 17:00';
-  const rawLandline = (payload.landline || payload.telephone || '').trim();
-  const rawWhatsapp = (payload.whatsapp || payload.phone || '').trim();
 
   const newAd: any = {
     id: adId,
@@ -388,10 +418,13 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     tradingHours: rawHours,
     operatingHours: rawHours,
     servicesOffered: rawServices,
-    preferredContact: payload.preferredContact || (rawWhatsapp ? 'WhatsApp' : 'Phone'),
+    preferredContact: payload.preferredContact || 'Phone',
     showCallOption: true,
     verified: verified,
+    isVerified: verified,
+    isRecommended: false,
     isPremium: isPremium,
+    isLockedLevel1: isFree,
     isApproved: false,
     adminApproved: false,
     status: 'pending',
@@ -403,9 +436,9 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     image: isFree ? '' : (payload.image || ''),
     images: isFree ? [] : ((payload as any).images || []),
     address: payload.address ? payload.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
-    phone: payload.phone.trim(),
-    landline: rawLandline,
-    telephone: rawLandline,
+    phone: resolvedPublicPhone,
+    landline: rawLandline || resolvedPublicPhone,
+    telephone: rawLandline || resolvedPublicPhone,
     whatsapp: rawWhatsapp,
     email: payload.email ? payload.email.trim() : '',
     website: payload.website ? payload.website.trim() : '',
@@ -544,6 +577,39 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
   for (const item of items) {
     if (!item || !item.title || !item.title.trim()) continue;
 
+    // Skip permanently closed businesses
+    const combinedTextCheck = `${item.title || ''} ${item.description || ''} ${item.tradingHours || ''}`.toLowerCase();
+    if (
+      (item as any).permanentlyClosed === true ||
+      combinedTextCheck.includes('permanently closed') ||
+      combinedTextCheck.includes('closed permanently') ||
+      combinedTextCheck.includes('no longer operating') ||
+      combinedTextCheck.includes('out of business')
+    ) {
+      continue;
+    }
+
+    const rawPhone = (item.phone || '').trim();
+    const rawLandline = (item.landline || item.telephone || '').trim();
+    const rawWhatsapp = (item.whatsapp || '').trim();
+    // Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+    const resolvedPublicPhone = rawPhone || rawLandline || rawWhatsapp;
+
+    const hasAnyContact = Boolean(
+      resolvedPublicPhone ||
+      (item.email && item.email.trim()) ||
+      (item.website && item.website.trim()) ||
+      (item.facebook || item.socialFacebook) ||
+      (item.instagram || item.socialInstagram) ||
+      (item.tiktok || item.socialTikTok) ||
+      (item.twitter || item.x || item.socialX) ||
+      (item.youtube || item.socialYoutube) ||
+      (item.socialLinks && item.socialLinks.trim())
+    );
+    if (!hasAnyContact) {
+      continue;
+    }
+
     // Pre-build candidate ad and resolve its true South African geography & category first
     const rawTown = item.city || item.town || item.location || 'Johannesburg';
     const isFree = item.isClaimed === false || item.plan === 'free' || item.isPremium === false || !item.plan;
@@ -553,8 +619,6 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       ? item.servicesOffered.filter(Boolean).join(', ')
       : (item.servicesOffered || item.category || 'Professional Services');
     const rawHours = item.tradingHours || item.operatingHours || 'Mon-Fri: 08:00 - 17:00';
-    const rawLandline = (item.landline || item.telephone || '').trim();
-    const rawWhatsapp = (item.whatsapp || item.phone || '').trim();
 
     const candidateAd: any = {
       userId: 'agent-bot',
@@ -573,10 +637,13 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       tradingHours: rawHours,
       operatingHours: rawHours,
       servicesOffered: rawServices,
-      preferredContact: item.preferredContact || (rawWhatsapp ? 'WhatsApp' : 'Phone'),
+      preferredContact: item.preferredContact || 'Phone',
       showCallOption: true,
       verified: false,
+      isVerified: false,
+      isRecommended: false,
       isPremium: isPremium,
+      isLockedLevel1: isFree,
       isApproved: false,
       adminApproved: false,
       status: 'pending',
@@ -588,9 +655,9 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       image: isFree ? '' : (item.image || ''),
       images: isFree ? [] : ((item as any).images || []),
       address: item.address ? item.address.trim() : '',
-      phone: item.phone ? item.phone.trim() : '',
-      landline: rawLandline,
-      telephone: rawLandline,
+      phone: resolvedPublicPhone,
+      landline: rawLandline || resolvedPublicPhone,
+      telephone: rawLandline || resolvedPublicPhone,
       whatsapp: rawWhatsapp,
       email: item.email ? item.email.trim() : '',
       website: item.website ? item.website.trim() : '',
@@ -1147,10 +1214,17 @@ export async function upgradeBotAd(
   const targetAd = ads[adIndex];
   const nowIso = new Date().toISOString();
 
-  // Upgrade status to full Premium
+  // Upgrade status to full Level 2 Premium (R199/month) with Recommended & Verified Badge
   targetAd.isClaimed = true;
   targetAd.isPremium = true;
   targetAd.verified = true;
+  targetAd.isVerified = true;
+  targetAd.isRecommended = true;
+  targetAd.isLockedLevel1 = false;
+  targetAd.isApproved = true;
+  targetAd.adminApproved = true;
+  targetAd.status = 'approved';
+  targetAd.approvalStatus = 'approved';
   targetAd.plan = 'PREMIUM';
   targetAd.updatedAt = nowIso;
 

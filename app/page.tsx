@@ -428,21 +428,49 @@ export default function HomePage() {
                     <h3 className="font-bold text-base text-slate-900 leading-snug truncate flex-1 min-w-0">{ad.title}</h3>
                     <div className="flex flex-wrap gap-1 justify-start items-center">
                       <PremiumBadge isPremium={ad.isPremium} />
-                      <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} />
+                      <VerificationBadge verified={ad.verified} isGoogleImport={ad.isGoogleImport || ad.id?.startsWith('csv-') || ad.id?.startsWith('csv_')} isPremium={ad.isPremium} isClaimed={ad.isClaimed} isRecommended={(ad as any).isRecommended} />
                     </div>
                   </div>
-                  <div className="flex space-x-2 mb-2 text-xs font-medium">
-                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg capitalize flex items-center"><MapPin className="w-3 h-3 mr-1 opacity-50"/>{ad.location}</span>
-                    <span className="bg-slate-50 text-slate-500 px-2 py-0.5 rounded-lg border border-slate-100 truncate">{ad.category}</span>
+                  <div className="flex flex-col gap-1.5 mb-2 text-xs font-medium">
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg capitalize flex items-center">
+                        <MapPin className="w-3 h-3 mr-1 text-emerald-600 shrink-0"/>
+                        <span className="truncate max-w-[160px]">{ad.address || ad.location}</span>
+                      </span>
+                      <span className="bg-slate-50 text-slate-500 px-2 py-0.5 rounded-lg border border-slate-100 truncate">{ad.category}</span>
+                    </div>
+                    {(ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp) && (
+                      <div className="flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2 py-1 rounded-lg font-mono font-bold text-[11px]">
+                        <span>📞</span>
+                        <span>{ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-slate-500 text-xs leading-relaxed mt-auto">
-                    <AdDescription description={ad.description} />
-                    
-                    {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 text-slate-600 text-[10px] leading-relaxed">
-                        <span className="font-extrabold uppercase text-[9px] text-emerald-600 tracking-wider block mb-0.5">Services Offered:</span>
-                        <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
+                    {!(ad.isPremium && (ad.verified || (ad as any).isVerified || ad.isClaimed === true) && (ad as any).isLockedLevel1 !== true) ? (
+                      <div className="relative rounded-xl border border-amber-200/80 bg-amber-50/30 p-2.5 overflow-hidden">
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-900">
+                            🔒 Locked (Level 2 — R199/mo)
+                          </span>
+                        </div>
+                        <div className="blur-[4px] select-none pointer-events-none opacity-60 text-[10px] space-y-1">
+                          <AdDescription description={ad.description || `${ad.title} in ${ad.location}`} />
+                          <p className="font-medium text-slate-500">
+                            Services: {ad.servicesOffered || ad.category}
+                          </p>
+                        </div>
                       </div>
+                    ) : (
+                      <>
+                        <AdDescription description={ad.description} />
+                        {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 text-slate-600 text-[10px] leading-relaxed">
+                            <span className="font-extrabold uppercase text-[9px] text-emerald-600 tracking-wider block mb-0.5">Services Offered:</span>
+                            <p className="whitespace-pre-line font-medium text-slate-500">{ad.servicesOffered}</p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <div 

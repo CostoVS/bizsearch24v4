@@ -1316,9 +1316,14 @@ export default function AdminDashboard() {
       isSpotlight: isSpotlightValue,
       isBannerPlacement: isBannerValue,
       isVideoPromo: isVideoValue,
+      isClaimed: isPremiumValue,
       verified: isPremiumValue,
+      isVerified: isPremiumValue,
+      isRecommended: isPremiumValue,
+      isLockedLevel1: !isPremiumValue,
       adminApproved: isPremiumValue,
       isApproved: isPremiumValue,
+      plan: isPremiumValue ? "LEVEL_2_R199" : "FREE",
     };
 
     const applyUpdate = (list: any[]) =>
@@ -4418,6 +4423,19 @@ export default function AdminDashboard() {
                                     </div>
                                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{ad.isActive !== false ? "LIVE" : "HIDDEN"}</span>
                                   </label>
+
+                                  {/* 1-CLICK ADMIN LEVEL 2 (R199/MO) UNLOCK & VERIFY */}
+                                  <button
+                                    type="button"
+                                    onClick={() => changeAdTier(ad.id, ad.isPremium ? "BASIC" : "PREMIUM")}
+                                    className={`mt-1.5 w-full px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer border ${
+                                      ad.isPremium
+                                        ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
+                                        : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm"
+                                    }`}
+                                  >
+                                    {ad.isPremium ? "🔒 Lock Back to Level 1" : "🔓 Unlock Level 2 (R199/mo)"}
+                                  </button>
                                 </div>
                               </td>
                               <td className="px-8 py-5 whitespace-nowrap text-right">

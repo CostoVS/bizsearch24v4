@@ -53,9 +53,13 @@ interface Ad {
   image: string | null;
   address?: string;
   phone?: string;
+  telephone?: string;
+  landline?: string;
   website?: string;
   plan?: string;
   isVerified?: boolean;
+  isRecommended?: boolean;
+  isLockedLevel1?: boolean;
   whatsapp?: string;
   email?: string;
   socialTikTok?: string;
@@ -137,7 +141,7 @@ export default function AdDetailModal({ ad, onClose }: AdDetailModalProps) {
   // Calculated Price for Claim Level 2 Interactive Builder
   let claimCalculatedMonthly = 0;
   let claimCalculatedAnnual = 0;
-  if (claimL2Verified) claimCalculatedMonthly += 199.99;
+  if (claimL2Verified) claimCalculatedMonthly += 199;
   if (claimL2Extra) claimCalculatedMonthly += 199;
   if (claimL2Listings) claimCalculatedMonthly += 199 * claimL2ListingCount;
   if (claimL2Domain) claimCalculatedAnnual += 99;
@@ -411,6 +415,72 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
   };
 
   if (!ad) return null;
+
+  // Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+  const resolvedDisplayPhone = (
+    ad.phone ||
+    ad.telephone ||
+    ad.landline ||
+    ad.whatsapp ||
+    ""
+  ).trim();
+
+  // Level 2 Unlock check: Only unlocked once upgraded by Admin to Level 2 (R199/mo)
+  const isLevel2Unlocked = Boolean(
+    (editIsPremium || ad.isPremium || ad.isSponsor || ad.plan === "PREMIUM") &&
+      (editVerified || ad.verified || ad.isVerified || ad.isClaimed === true) &&
+      (ad as any).isLockedLevel1 !== true
+  );
+
+  const handleAdminUnlockLevel2 = async (unlock: boolean) => {
+    setEditVerified(unlock);
+    setEditIsPremium(unlock);
+    const updatedFields = unlock
+      ? {
+          verified: true,
+          isVerified: true,
+          isRecommended: true,
+          isPremium: true,
+          isClaimed: true,
+          isLockedLevel1: false,
+          plan: "PREMIUM",
+          status: "approved",
+          approvalStatus: "approved",
+          isApproved: true,
+          adminApproved: true,
+        }
+      : {
+          verified: false,
+          isVerified: false,
+          isRecommended: false,
+          isPremium: false,
+          isClaimed: false,
+          isLockedLevel1: true,
+          plan: "free",
+        };
+
+    const currentAds = getStoredAds();
+    saveStoredAds(
+      currentAds.map((item) =>
+        item.id === ad.id ? { ...item, ...updatedFields } : item
+      )
+    );
+    Object.assign(ad, updatedFields);
+
+    try {
+      await fetch("/api/bot/ad", {
+        method: unlock ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          unlock
+            ? { action: "upgrade", id: ad.id, updates: updatedFields }
+            : { id: ad.id, ...updatedFields }
+        ),
+      });
+    } catch (e) {
+      console.error("Failed to sync Level 2 status with server:", e);
+    }
+  };
 
   const handleAdminSave = () => {
     const currentAds = getStoredAds();
@@ -740,6 +810,22 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                 </div>
 
                 {/* Sub-toggles for Verification & Tiers */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => handleAdminUnlockLevel2(!isLevel2Unlocked)}
+                    className={`w-full py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-sm ${
+                      isLevel2Unlocked
+                        ? "bg-amber-600 hover:bg-amber-700 text-white"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" />
+                    {isLevel2Unlocked
+                      ? "Level 2 Active (Unlocked) — Click to Re-Lock as Level 1 Free Ad"
+                      : "Admin Unlock: Upgrade to Level 2 (R199/mo) + Recommended & Verified Badge"}
+                  </button>
+                </div>
                 <div className="grid grid-cols-3 gap-2.5 pt-2 border-t border-slate-200">
                   <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50">
                     <input
@@ -1134,7 +1220,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
             ) : (
               <>
                 {/* Main Visual Image (Premium Only - Zero Images for Free Listings) */}
-                {ad.image && (ad.isPremium || ad.plan === 'PREMIUM' || isAdmin) && (
+                {ad.image && (isLevel2Unlocked || isAdmin) && (
                   <div className="relative w-full h-56 md:h-80 rounded-2xl overflow-hidden shadow-md">
                     <Image
                       src={ad.image}
@@ -1148,17 +1234,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                   </div>
                 )}
 
-                {/* Business Description */}
-                <div className="space-y-3 bg-slate-50/50 p-6 rounded-2xl border border-slate-100 shadow-sm">
-                  <h3 className="text-[10px] font-black uppercase text-indigo-600 tracking-[0.2em]">
-                    About This Entity
-                  </h3>
-                  <div className="text-slate-700 text-base leading-[1.8] whitespace-pre-line font-medium break-words">
-                    <AdDescription description={ad.description} />
-                  </div>
-                </div>
-
-                {/* Quick Stats Metadata Layout */}
+                {/* PUBLIC LEVEL 1 FIELDS: Business Name, Address & Phone Number (with Telephone / WhatsApp fallback) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-slate-100 pb-5">
                   <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                     <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
@@ -1188,7 +1264,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                     </div>
                   </div>
 
-                  {ad.address && (
+                  {(ad.address || ad.location) && (
                     <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm sm:col-span-2">
                       <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
                         <MapPin className="w-5 h-5 text-slate-600" />
@@ -1198,9 +1274,34 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                           Physical Business Address
                         </span>
                         <span className="text-sm font-bold text-slate-800 break-words line-clamp-2">
-                          {ad.address} {ad.suburb ? `(${ad.suburb})` : ""}
+                          {ad.address || ad.location} {ad.suburb ? `(${ad.suburb})` : ""}
                         </span>
                       </div>
+                    </div>
+                  )}
+
+                  {resolvedDisplayPhone && ad.showCallOption !== false && (
+                    <div className="sm:col-span-2">
+                      <a
+                        href={`tel:${resolvedDisplayPhone}`}
+                        onClick={() => trackCallClick(resolvedDisplayPhone, ad.id, ad.title, ad.category, ad.location)}
+                        className="flex items-center gap-4 p-4 bg-emerald-50 hover:bg-emerald-100 text-slate-800 hover:text-emerald-900 rounded-2xl transition border border-emerald-200/80 shadow-sm group"
+                      >
+                        <div className="bg-emerald-600 p-2.5 rounded-xl shadow-sm group-hover:scale-105 transition shrink-0 text-white">
+                          <Phone className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <span className="block text-[10px] uppercase font-black text-emerald-800 tracking-wider">
+                            Phone Number
+                          </span>
+                          <span className="text-base font-bold font-mono text-slate-900">
+                            {resolvedDisplayPhone}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl group-hover:bg-emerald-700 transition">
+                          Call Now
+                        </span>
+                      </a>
                     </div>
                   )}
 
@@ -1227,67 +1328,111 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
                   )}
                 </div>
 
-                {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered) && (
-                  <div className="space-y-2 mt-6">
-                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                      Services Offered
-                    </h3>
-                    <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line bg-slate-50 p-4 rounded-xl border border-slate-100">
-                      {ad.servicesOffered}
-                    </p>
-                  </div>
-                )}
+                {/* LEVEL 1 LOCKED & BLURRED OR LEVEL 2 UNLOCKED: About the Business, Services Offered & Trading Hours */}
+                <div className="relative rounded-2xl border border-slate-200 bg-slate-50/70 p-5 overflow-hidden">
+                  {!isLevel2Unlocked && (
+                    <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative z-20 shadow-xs">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5">
+                          <Lock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black uppercase tracking-wider text-amber-950">
+                              Additional Business Information Locked
+                            </span>
+                            <span className="text-[10px] font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-md">
+                              Level 2 Upgrade: R199.00 / month
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-amber-900 mt-1 leading-relaxed">
+                            About the Business, Services Offered, Trading Hours, Website Link, Social Media Links (X, Instagram, Facebook, TikTok, YouTube), WhatsApp &amp; Emails are captured on this profile but blurred out. Only Admin can unlock them once upgraded to <strong>Level 2 (R199.00/mo)</strong> with business verification for the <strong>Recommended &amp; Verified Badge</strong>.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsClaiming(true);
+                          setClaimIntention("level2");
+                          setClaimStep(1);
+                        }}
+                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shrink-0 transition shadow-sm"
+                      >
+                        Upgrade to Level 2 (R199/mo)
+                      </button>
+                    </div>
+                  )}
 
-                {ad.tradingHours && (
-                  <div className="space-y-2 mt-6">
-                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                      Trading Hours
-                    </h3>
-                    <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line bg-slate-50 p-4 rounded-xl border border-slate-100">
-                      {ad.tradingHours}
-                    </p>
-                  </div>
-                )}
+                  <div className={!isLevel2Unlocked ? "blur-[6px] select-none pointer-events-none opacity-65 space-y-5" : "space-y-5"}>
+                    {/* Business Description */}
+                    <div className="space-y-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[10px] font-black uppercase text-indigo-600 tracking-[0.2em]">
+                          About The Business
+                        </h3>
+                        {!isLevel2Unlocked && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
+                            <Lock className="w-3 h-3" /> Locked (Level 2)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-slate-700 text-sm sm:text-base leading-[1.8] whitespace-pre-line font-medium break-words">
+                        <AdDescription description={ad.description || `${ad.title} operates in ${ad.location}. Upgrade to Level 2 to unlock full business description.`} />
+                      </div>
+                    </div>
 
-                {/* Map was here, removed */}
+                    {/* Services Offered */}
+                    <div className="space-y-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
+                          Services Offered
+                        </h3>
+                        {!isLevel2Unlocked && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
+                            <Lock className="w-3 h-3" /> Locked (Level 2)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
+                        {ad.servicesOffered && !isCustomerReviewOrGarbage(ad.servicesOffered)
+                          ? ad.servicesOffered
+                          : `${ad.category} services, quotes, and consultations in ${ad.location}.`}
+                      </p>
+                    </div>
+
+                    {/* Trading Hours */}
+                    <div className="space-y-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
+                          Trading Hours
+                        </h3>
+                        {!isLevel2Unlocked && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
+                            <Lock className="w-3 h-3" /> Locked (Level 2)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
+                        {ad.tradingHours || "Mon-Fri: 08:00 - 17:00, Sat: 08:00 - 13:00"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Contact Details & Inquiry Panel */}
                 <div className="pt-6 border-t border-slate-100 font-sans flex flex-col gap-6 max-w-2xl mx-auto w-full">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                        {ad.isClaimed === false ? "Manage & Contact Listing" : "Direct Contact Channels"}
+                        {!isLevel2Unlocked ? "Verify & Unlock Full Business Profile (Level 2)" : "Direct Contact Channels"}
                       </h4>
-                      {ad.preferredContact && ad.isClaimed !== false && (
+                      {ad.preferredContact && isLevel2Unlocked && (
                         <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
                           Prefers: {ad.preferredContact === "Direct Message" ? "SearchBiz Chat" : ad.preferredContact}
                         </span>
                       )}
                     </div>
-
-                    {/* PHONE SUPPORT MOVED ABOVE CLAIM AD PART */}
-                    {ad.phone && ad.showCallOption !== false && (
-                      <a
-                        href={`tel:${ad.phone}`}
-                        onClick={() => trackCallClick(ad.phone || "", ad.id, ad.title, ad.category, ad.location)}
-                        className="flex items-center gap-4 p-4 bg-emerald-50 hover:bg-emerald-100 text-slate-800 hover:text-emerald-900 rounded-2xl transition border border-emerald-200/80 shadow-sm group"
-                      >
-                        <div className="bg-emerald-600 p-2.5 rounded-xl shadow-sm group-hover:scale-105 transition shrink-0 text-white">
-                          <Phone className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <span className="block text-[10px] uppercase font-black text-emerald-800 tracking-wider">
-                            Phone Support / Direct Call
-                          </span>
-                          <span className="text-base font-bold font-mono text-slate-900">
-                            {ad.phone}
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl group-hover:bg-emerald-700 transition">
-                          Call Now
-                        </span>
-                      </a>
-                    )}
 
                     {ad.isClaimed === false ? (
                       <div className="bg-amber-50 rounded-2xl p-5 border border-amber-200">
@@ -2201,173 +2346,203 @@ Business Bank Statement:${claimBankStatement}
                         </div>
                       </Link>
 
-                      {!isEmailHidden && ad.email && (
-                        <a
-                          href={`mailto:${ad.email}`}
-                          className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
-                        >
-                          <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
-                            <Mail className="w-5 h-5 text-slate-500 group-hover:text-emerald-600" />
-                          </div>
-                          <div>
-                            <span className="block text-[10px] uppercase font-bold text-slate-400">
-                              Email Direct
-                            </span>
-                            <span className="text-sm font-bold break-all">
-                              {ad.email}
-                            </span>
-                          </div>
-                        </a>
-                      )}
+                      {/* LEVEL 1 LOCKED & BLURRED OR LEVEL 2 UNLOCKED: Email, WhatsApp, Website & Social Media Links (X, Instagram, Facebook, TikTok, YouTube) */}
+                      {isLevel2Unlocked ? (
+                        <>
+                          {!isEmailHidden && ad.email && (
+                            <a
+                              href={`mailto:${ad.email}`}
+                              className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl transition border border-slate-100 hover:border-emerald-100 group"
+                            >
+                              <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 group-hover:border-emerald-200 group-hover:scale-110 transition shrink-0">
+                                <Mail className="w-5 h-5 text-slate-500 group-hover:text-emerald-600" />
+                              </div>
+                              <div>
+                                <span className="block text-[10px] uppercase font-bold text-slate-400">
+                                  Email Direct
+                                </span>
+                                <span className="text-sm font-bold break-all">
+                                  {ad.email}
+                                </span>
+                              </div>
+                            </a>
+                          )}
 
-                      {ad.whatsapp && (
-                        <a
-                          href={`https://wa.me/${ad.whatsapp.replace(/[^0-9]/g, "")}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => trackWhatsAppClick(ad.whatsapp || "", ad.id, ad.title, ad.category, ad.location)}
-                          className="flex items-center gap-4 p-4 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-2xl transition shadow-sm group"
-                        >
-                          <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
-                            <span className="text-xl leading-none block">
-                              💬
-                            </span>
-                          </div>
-                          <div>
-                            <span className="block text-[10px] uppercase font-bold text-green-100">
-                              WhatsApp Live Chat
-                            </span>
-                            <span className="text-sm font-mono font-bold">
-                              {ad.whatsapp}
-                            </span>
-                          </div>
-                        </a>
-                      )}
+                          {ad.whatsapp && (
+                            <a
+                              href={`https://wa.me/${ad.whatsapp.replace(/[^0-9]/g, "")}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => trackWhatsAppClick(ad.whatsapp || "", ad.id, ad.title, ad.category, ad.location)}
+                              className="flex items-center gap-4 p-4 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-2xl transition shadow-sm group"
+                            >
+                              <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
+                                <span className="text-xl leading-none block">
+                                  💬
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[10px] uppercase font-bold text-green-100">
+                                  WhatsApp Live Chat
+                                </span>
+                                <span className="text-sm font-mono font-bold">
+                                  {ad.whatsapp}
+                                </span>
+                              </div>
+                            </a>
+                          )}
 
-                      {((ad.isPremium || ad.isSponsor || ad.verified || ad.isVerified || ad.plan === 'PREMIUM' || ad.plan === 'SPONSOR' || ad.plan === 'ESSENTIAL') && ad.website) && (
-                        <a
-                          href={ad.website.startsWith('http') ? ad.website : `https://${ad.website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => trackAdClick(ad.id, ad.title, ad.category, ad.location, "website_click")}
-                          className="flex items-center gap-4 p-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition shadow-sm group"
-                        >
-                          <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
-                            <Globe className="w-5 h-5 text-white" />
-                          </div>
-                          <div className="overflow-hidden">
-                            <span className="block text-[10px] uppercase font-bold text-indigo-100">
-                              Official Business Website (Paid Member)
-                            </span>
-                            <span className="text-sm font-bold text-white truncate block">
-                              {ad.website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
-                            </span>
-                          </div>
-                        </a>
-                      )}
+                          {ad.website && (
+                            <a
+                              href={ad.website.startsWith('http') ? ad.website : `https://${ad.website}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => trackAdClick(ad.id, ad.title, ad.category, ad.location, "website_click")}
+                              className="flex items-center gap-4 p-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl transition shadow-sm group"
+                            >
+                              <div className="bg-white/20 p-2 rounded-xl group-hover:scale-110 transition shrink-0">
+                                <Globe className="w-5 h-5 text-white" />
+                              </div>
+                              <div className="overflow-hidden">
+                                <span className="block text-[10px] uppercase font-bold text-indigo-100">
+                                  Official Business Website (Level 2 Verified)
+                                </span>
+                                <span className="text-sm font-bold text-white truncate block">
+                                  {ad.website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
+                                </span>
+                              </div>
+                            </a>
+                          )}
 
-                      {(ad.socialTikTok || ad.tiktok ||
-                        ad.socialX || ad.twitter || ad.x ||
-                        ad.socialInstagram || ad.instagram ||
-                        ad.socialFacebook || ad.facebook ||
-                        ad.socialYoutube || ad.youtube ||
-                        ad.socialLinkedin || ad.linkedin ||
-                        ad.pinterest || ad.threads || ad.telegram) && (
-                        <div className="pt-4 border-t border-slate-100 mt-2">
-                          <span className="block text-[10px] uppercase font-bold text-slate-400 mb-3">
-                            Connect via Social Channels
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {(ad.socialFacebook || ad.facebook) && (
-                              <a
-                                href={ad.socialFacebook || ad.facebook}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-blue-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Facebook
-                              </a>
-                            )}
-                            {(ad.socialInstagram || ad.instagram) && (
-                              <a
-                                href={ad.socialInstagram || ad.instagram}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Instagram
-                              </a>
-                            )}
-                            {(ad.socialTikTok || ad.tiktok) && (
-                              <a
-                                href={ad.socialTikTok || ad.tiktok}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-black hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                TikTok
-                              </a>
-                            )}
-                            {(ad.socialYoutube || ad.youtube) && (
-                              <a
-                                href={ad.socialYoutube || ad.youtube}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-rose-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                YouTube
-                              </a>
-                            )}
-                            {(ad.socialX || ad.twitter || ad.x) && (
-                              <a
-                                href={ad.socialX || ad.twitter || ad.x}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-slate-800 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                X / Twitter
-                              </a>
-                            )}
-                            {(ad.socialLinkedin || ad.linkedin) && (
-                              <a
-                                href={ad.socialLinkedin || ad.linkedin}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-sky-700 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                LinkedIn
-                              </a>
-                            )}
-                            {ad.pinterest && (
-                              <a
-                                href={ad.pinterest}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-red-700 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Pinterest
-                              </a>
-                            )}
-                            {ad.threads && (
-                              <a
-                                href={ad.threads}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-zinc-900 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Threads
-                              </a>
-                            )}
-                            {ad.telegram && (
-                              <a
-                                href={ad.telegram}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-2 bg-sky-500 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                              >
-                                Telegram
-                              </a>
-                            )}
+                          {(ad.socialTikTok || ad.tiktok ||
+                            ad.socialX || ad.twitter || ad.x ||
+                            ad.socialInstagram || ad.instagram ||
+                            ad.socialFacebook || ad.facebook ||
+                            ad.socialYoutube || ad.youtube ||
+                            ad.socialLinkedin || ad.linkedin ||
+                            ad.pinterest || ad.threads || ad.telegram) && (
+                            <div className="pt-4 border-t border-slate-100 mt-2">
+                              <span className="block text-[10px] uppercase font-bold text-slate-400 mb-3">
+                                Connect via Social Channels
+                              </span>
+                              <div className="flex flex-wrap gap-2">
+                                {(ad.socialFacebook || ad.facebook) && (
+                                  <a
+                                    href={ad.socialFacebook || ad.facebook}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-blue-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    Facebook
+                                  </a>
+                                )}
+                                {(ad.socialInstagram || ad.instagram) && (
+                                  <a
+                                    href={ad.socialInstagram || ad.instagram}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-gradient-to-tr from-yellow-500 via-pink-600 to-purple-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    Instagram
+                                  </a>
+                                )}
+                                {(ad.socialTikTok || ad.tiktok) && (
+                                  <a
+                                    href={ad.socialTikTok || ad.tiktok}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-black hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    TikTok
+                                  </a>
+                                )}
+                                {(ad.socialYoutube || ad.youtube) && (
+                                  <a
+                                    href={ad.socialYoutube || ad.youtube}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-rose-600 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    YouTube
+                                  </a>
+                                )}
+                                {(ad.socialX || ad.twitter || ad.x) && (
+                                  <a
+                                    href={ad.socialX || ad.twitter || ad.x}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-slate-800 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    X / Twitter
+                                  </a>
+                                )}
+                                {(ad.socialLinkedin || ad.linkedin) && (
+                                  <a
+                                    href={ad.socialLinkedin || ad.linkedin}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-2 bg-sky-700 hover:opacity-90 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                                  >
+                                    LinkedIn
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="relative rounded-2xl border border-amber-200 bg-slate-50 p-4 overflow-hidden">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900">
+                              <Lock className="w-3.5 h-3.5 text-amber-600" />
+                              Locked Contact &amp; Social Media Channels (Level 2 — R199.00/mo)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsClaiming(true);
+                                setClaimIntention("level2");
+                                setClaimStep(1);
+                              }}
+                              className="text-[11px] font-bold text-emerald-700 hover:underline"
+                            >
+                              Unlock via Admin Verification &rarr;
+                            </button>
+                          </div>
+                          <div className="blur-[5px] select-none pointer-events-none opacity-65 space-y-2.5">
+                            <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200">
+                              <Mail className="w-4 h-4 text-slate-500" />
+                              <div>
+                                <span className="block text-[9px] uppercase font-bold text-slate-400">Email or Emails</span>
+                                <span className="text-xs font-bold text-slate-700">{ad.email || "info@verified-business.co.za"}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-[#25D366]/90 text-white rounded-xl">
+                              <span className="text-sm">💬</span>
+                              <div>
+                                <span className="block text-[9px] uppercase font-bold text-green-100">WhatsApp Number</span>
+                                <span className="text-xs font-mono font-bold">{ad.whatsapp || resolvedDisplayPhone || "+27 82 000 0000"}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-indigo-600/90 text-white rounded-xl">
+                              <Globe className="w-4 h-4 text-white" />
+                              <div>
+                                <span className="block text-[9px] uppercase font-bold text-indigo-100">Website Link</span>
+                                <span className="text-xs font-bold">{ad.website || "https://www.business-website.co.za"}</span>
+                              </div>
+                            </div>
+                            <div className="pt-2">
+                              <span className="block text-[9px] uppercase font-bold text-slate-400 mb-1.5">
+                                Social Media Links (X, Instagram, Facebook, TikTok, YouTube)
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className="px-2.5 py-1 bg-slate-800 text-white rounded-lg text-[10px] font-bold">X</span>
+                                <span className="px-2.5 py-1 bg-pink-600 text-white rounded-lg text-[10px] font-bold">Instagram</span>
+                                <span className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-bold">Facebook</span>
+                                <span className="px-2.5 py-1 bg-black text-white rounded-lg text-[10px] font-bold">TikTok</span>
+                                <span className="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-[10px] font-bold">YouTube</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )}

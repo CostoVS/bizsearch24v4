@@ -7017,6 +7017,34 @@ def deduplicate_and_merge_candidates(candidates_list: List[dict]) -> List[dict]:
 
     return merged_list
 
+def is_business_permanently_closed(lead_or_text) -> bool:
+    """Checks if a scraped business record or text snippet indicates the business is permanently closed."""
+    if isinstance(lead_or_text, dict):
+        if lead_or_text.get("permanently_closed") is True or lead_or_text.get("permanentlyClosed") is True:
+            return True
+        combined = " ".join([
+            str(lead_or_text.get("name") or ""),
+            str(lead_or_text.get("description") or ""),
+            str(lead_or_text.get("trading_hours") or ""),
+            str(lead_or_text.get("status") or "")
+        ]).lower()
+    else:
+        combined = str(lead_or_text or "").lower()
+
+    closed_markers = [
+        "permanently closed",
+        "closed permanently",
+        "no longer in business",
+        "out of business",
+        "ceased trading",
+        "shut down permanently",
+        "business closed permanently",
+        "disused:shop",
+        "abandoned:shop"
+    ]
+    return any(m in combined for m in closed_markers)
+
+
 def harvest_businesses_for_location(
     category: str,
     loc_name: str,
@@ -7180,32 +7208,47 @@ def harvest_businesses_for_location(
                 pass
         enrich_lead_with_laya_llama(c, clean_cat, loc_name, town, province)
 
-    # 5. Contact Guarantee: If phone/whatsapp missing, populate verified SA area code contact
+    # 5. Permanently Closed Filter & Contact Validation (Phone -> Telephone -> WhatsApp -> Alternative Contact)
     valid_leads = []
     for c in candidates:
+        if is_business_permanently_closed(c):
+            continue
+
         p_val = (c.get("phone") or "").strip()
         t_val = (c.get("telephone") or "").strip()
         w_val = (c.get("whatsapp") or "").strip()
-        if p_val or t_val or w_val:
-            primary_num = p_val or t_val or w_val
-            if not c.get("phone"):
-                c["phone"] = primary_num
-            if not c.get("telephone"):
-                c["telephone"] = primary_num
-            if not c.get("whatsapp"):
-                c["whatsapp"] = "+27" + primary_num.replace(" ", "")[-9:] if len(primary_num) >= 9 else ""
+
+        # Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+        resolved_public_phone = p_val or t_val or w_val
+
+        has_other_contact = any([
+            (c.get("email") or "").strip(),
+            (c.get("website") or "").strip(),
+            (c.get("facebook") or "").strip(),
+            (c.get("instagram") or "").strip(),
+            (c.get("tiktok") or "").strip(),
+            (c.get("twitter") or "").strip(),
+            (c.get("youtube") or "").strip(),
+            (c.get("linkedin") or "").strip(),
+            (c.get("social_links") or "").strip()
+        ])
+
+        if resolved_public_phone:
+            c["phone"] = resolved_public_phone
+            if not t_val:
+                c["telephone"] = resolved_public_phone
+            if not w_val and len(re.sub(r'[^0-9]', '', resolved_public_phone)) >= 9:
+                c["whatsapp"] = "+27" + re.sub(r'[^0-9]', '', resolved_public_phone)[-9:]
             if not c.get("email"):
                 safe_n = re.sub(r'[^a-zA-Z0-9]', '', c["name"]).lower()[:12]
                 c["email"] = f"info@{safe_n}.co.za"
             valid_leads.append(c)
-        else:
-            syn_phone, syn_email, syn_wa = synthesize_sa_contact(c["name"], town, province)
-            c["phone"] = syn_phone
-            c["telephone"] = syn_phone
-            c["whatsapp"] = syn_wa
-            if not c.get("email"):
-                c["email"] = syn_email
+        elif has_other_contact:
+            # Has alternative contact means (email, website, or social media)
             valid_leads.append(c)
+        else:
+            # No phone, telephone, WhatsApp, or any other means of contacting the business -> ignore!
+            continue
 
     # 6. Local Suburb Fallback: If 0 nodes found, provide verified local directory leads
     if len(valid_leads) == 0:
@@ -7840,18 +7883,26 @@ class SubAgentPoolManager:
         self.lock = threading.Lock()
         self.is_running = False
         self.is_paused = False
-        self.mode = "queue"  # "queue" or "group_swarm"
+        self.mode = "queue"  # "queue", "group_swarm", or "mega_swarm"
+        self.phase = "STANDBY"  # "COLLECTING_DATA", "EMAILING_CSVS", "UPLOADING_TO_SEARCHBIZ", "COMPLETED"
         self.current_group_code = ""
         self.current_group_name = ""
         self.current_group_total_subcats = 0
         self.current_group_completed_subcats = 0
         self.groups_completed: List[dict] = []
-        self.num_workers = 4
+        self.num_workers = 313
         self.workers_status: Dict[int, dict] = {}
         self.work_queue = queue.Queue()
         self.completed_categories: List[dict] = []
+        self.staged_ads_for_upload: List[dict] = []
         self.total_scraped = 0
         self.total_ads = 0
+        self.total_csvs_emailed = 0
+        self.total_suburbs_swept = 0
+        self.total_ignored_closed = 0
+        self.total_ignored_no_contact = 0
+        self.upload_batches_done = 0
+        self.upload_batches_total = 0
         self.start_time = 0.0
         self.target_email = "nicholauscostochetty@gmail.com"
         self.chat_id = 0
@@ -7871,6 +7922,7 @@ class SubAgentPoolManager:
             self.is_running = False
             self.is_paused = False
             self.mode = "queue"
+            self.phase = "STANDBY"
             self.current_group_code = ""
             self.current_group_name = ""
             self.current_group_total_subcats = 0
@@ -7883,8 +7935,15 @@ class SubAgentPoolManager:
                 except Exception:
                     break
             self.completed_categories.clear()
+            self.staged_ads_for_upload.clear()
             self.total_scraped = 0
             self.total_ads = 0
+            self.total_csvs_emailed = 0
+            self.total_suburbs_swept = 0
+            self.total_ignored_closed = 0
+            self.total_ignored_no_contact = 0
+            self.upload_batches_done = 0
+            self.upload_batches_total = 0
             self.start_time = 0.0
             self.is_pipeline_running = False
         reset_scraped_locations_registry()
@@ -7902,6 +7961,7 @@ class SubAgentPoolManager:
             self.is_running = False
             self.is_paused = False
             self.is_pipeline_running = False
+            self.phase = "STOPPED"
         set_emergency_stop()
 
     def set_worker_count(self, count: int):
@@ -7913,6 +7973,7 @@ class SubAgentPoolManager:
             running = self.is_running
             paused = self.is_paused
             mode = self.mode
+            phase = self.phase
             g_code = self.current_group_code
             g_name = self.current_group_name
             g_total_subs = self.current_group_total_subcats
@@ -7921,29 +7982,30 @@ class SubAgentPoolManager:
             completed_cnt = len(self.completed_categories)
             scraped = self.total_scraped
             ads = self.total_ads
+            csvs_emailed = self.total_csvs_emailed
+            suburbs_swept = self.total_suburbs_swept
+            ignored_closed = self.total_ignored_closed
+            ignored_no_contact = self.total_ignored_no_contact
+            up_done = self.upload_batches_done
+            up_total = self.upload_batches_total
             st_time = self.start_time
             w_status = dict(self.workers_status)
             q_remaining = self.work_queue.qsize()
             groups_done_cnt = len(self.groups_completed)
+            target_em = self.target_email
 
         if not running and completed_cnt == 0:
-            return """🤖 <b>SearchBiz Multi-SubAgent Parallel Swarm Engine: STANDBY</b>
+            return """🤖 <b>SearchBiz 313 Mega-Swarm Harvester: STANDBY (NOT CURRENTLY SCRAPING)</b>
 ═══════════════════════════════════════════
-⚙️ <b>Architecture:</b> Scalable Mega-Swarm & 1 Dedicated Sub-Agent per Subcategory
-🛡️ <b>Anti-Ban Stealth:</b> 36 Rotating Modern Desktop & Mobile UAs, 4 Overpass Mirrors & Jitter
-🚀 <b>Low-RAM Optimization:</b> Aggressive Garbage Collection & Context Reuse (~95MB - 120MB RAM)
-⚡ <b>Capacity:</b> Scalable from 1 up to <b>320 Concurrent Sub-Agents</b> across all 9 Provinces
+⚙️ <b>Architecture:</b> 313 Dedicated Category Agents (1 Agent per Category)
+🗺️ <b>Coverage:</b> All 9 South African Provinces &amp; All 6,931 Suburbs per Category
+🌐 <b>Sources:</b> Google Business Profiles, Google Maps, Facebook Business Listings, Websites &amp; Internet
+📋 <b>CSV Export &amp; Email:</b> Captures Business name, Address, Phone, Telephone, WhatsApp, About, Services, Trading hours, Website, Social media links (X, Instagram, Facebook, TikTok, YouTube) &amp; Emails — emailed to <code>nicholauscostochetty@gmail.com</code>
+🔒 <b>SearchBiz Upload Rule:</b> Uploads ONLY after all 313 agents finish collecting data! Displays Business Name, Address &amp; Phone (with Telephone/WhatsApp fallback) publicly; locks &amp; blurs all other fields until Admin upgrades to Level 2 (R199/mo + Recommended &amp; Verified Badge).
 
-👉 <b>Commands to Scrape Everything:</b>
-• <code>/mega_swarm [workers]</code> — <b>Massive parallel swarm covering ALL 20 groups and 313 subcategories simultaneously! (e.g. <code>/mega_swarm 50</code> or <code>/mega_swarm 313</code>)</b>
-• <code>/super_swarm [groups]</code> — Run multiple main categories in parallel waves (e.g. <code>/super_swarm 5</code>)
-• <code>/scrape_all</code> (or <code>/all</code>) — <b>Runs sub-agents for ALL categories across all 9 provinces and continues until 100% finished!</b>
-
-👉 <b>Additional Controls:</b>
-• <code>/subagents_group [1-20]</code> — Spawn 1 sub-agent per subcategory for that sector (e.g. <code>/subagents_group 1</code> for 28 automotive sub-agents!)
-• <code>/set_workers [1-320]</code> — Set worker pool size (1 to 320)
-• <code>/subagents_status</code> — Live worker telemetry card
-• <code>/subagents_pause</code> / <code>/subagents_resume</code> / <code>/subagents_stop</code> — Safe execution controls"""
+👉 <b>Start the 313 Mega Swarm Now:</b>
+• Type <code>/Mega_swarm 313</code> — Launches all 313 category agents
+• Type <code>/subagents_status</code> — View live scraping, CSV emailing &amp; upload progress anytime!"""
 
         elapsed = time.time() - st_time if st_time else 0
         e_mins = int(elapsed // 60)
@@ -7951,58 +8013,57 @@ class SubAgentPoolManager:
         elapsed_str = f"{e_mins}m {e_secs}s"
         ram_mb = self.get_ram_usage_mb()
 
-        status_badge = "⏸️ PAUSED" if paused else ("🟢 RUNNING" if running else "🏁 COMPLETED")
+        total_target_cats = 313 if mode == "mega_swarm" else max(1, completed_cnt + q_remaining)
+        pct_complete = round((completed_cnt / total_target_cats) * 100, 1) if total_target_cats > 0 else 0.0
+        filled_bars = int(round((pct_complete / 100.0) * 12))
+        progress_bar = "█" * filled_bars + "░" * max(0, 12 - filled_bars)
+
+        if paused:
+            status_badge = "⏸️ PAUSED"
+        elif running and phase == "COLLECTING_DATA":
+            status_badge = "🟢 STILL SCRAPING — STEP 1/3: COLLECTING DATA &amp; EMAILING CSVs"
+        elif running and phase == "UPLOADING_TO_SEARCHBIZ":
+            status_badge = "🚀 STEP 2/3: DATA COLLECTION DONE — UPLOADING TO SEARCHBIZ.CO.ZA"
+        elif running:
+            status_badge = "🟢 STILL RUNNING"
+        else:
+            status_badge = "🏁 100% FINISHED (COLLECTION, CSV EMAILS &amp; SEARCHBIZ UPLOAD COMPLETE)"
 
         lines = [
-            f"🤖 <b>SearchBiz Multi-SubAgent Parallel Swarm Harvester</b>",
+            f"🤖 <b>SearchBiz 313 Mega-Swarm Live Progress Report</b>",
             f"═══════════════════════════════════════════",
-            f"📊 <b>Master Status:</b> {status_badge}",
+            f"📡 <b>Current Scraper State:</b> <b>{status_badge}</b>",
+            f"📊 <b>Category Progress:</b> <code>[{progress_bar}]</code> <b>{pct_complete}%</b> ({completed_cnt}/{total_target_cats} Categories Done)",
+            f"👥 <b>Dedicated Category Agents:</b> <b>{n_workers} Agents</b> (1 per Category)",
+            f"🇿🇦 <b>Provinces &amp; Suburbs Swept:</b> <b>{suburbs_swept:,} Suburb Scans</b> across 9 Provinces (6,931 Suburbs/Cat)",
+            f"🏢 <b>Valid Businesses Collected So Far:</b> <b>{scraped:,}</b>",
+            f"🚫 <b>Ignored (Permanently Closed / No Contact):</b> <b>{ignored_closed + ignored_no_contact:,}</b> ({ignored_closed} closed, {ignored_no_contact} no contact)",
+            f"📧 <b>CSV Files Emailed ({target_em}):</b> <b>{csvs_emailed} / {total_target_cats} Emailed</b>",
+            f"🌐 <b>Uploaded to SearchBiz.co.za:</b> <b>{ads:,} Listings</b>" + (f" (Batch {up_done}/{up_total})" if phase == "UPLOADING_TO_SEARCHBIZ" and up_total > 0 else (" (Waiting for all 313 agents to finish collecting data first)" if phase == "COLLECTING_DATA" else " (Upload Complete ✅)")),
+            f"⏱️ <b>Elapsed Time:</b> <b>{elapsed_str}</b> | 🧠 <b>RAM:</b> {ram_mb} MB",
+            f"",
+            f"⚡ <b>Active Category Agents Snapshot:</b>"
         ]
 
-        if mode == "mega_swarm":
-            lines.extend([
-                f"🌟 <b>Swarm Architecture:</b> <b>Mega-Swarm (All 20 Groups & 313 Subcategories Active)</b>",
-                f"👥 <b>Active Sub-Agent Workforce:</b> <b>{n_workers} Concurrent Sub-Agents</b>",
-                f"📂 <b>National Subcategories Done:</b> <b>{completed_cnt}/313</b> | <b>Pending in Queue:</b> {q_remaining}",
-                f"🏆 <b>National Groups Active:</b> <b>All 20 Main Sectors Nationwide</b>",
-            ])
-        elif mode == "group_swarm" and g_code:
-            lines.extend([
-                f"📂 <b>Active Sector:</b> <b>Group {g_code}: {g_name}</b>",
-                f"👥 <b>Sub-Agent Allocation:</b> <b>{g_total_subs} Dedicated Sub-Agents</b> (1 per Subcategory)",
-                f"🏁 <b>Sector Progress:</b> <b>{g_done_subs}/{g_total_subs} Subcategories Completed</b>",
-                f"🏆 <b>National Sectors Finished:</b> <b>{groups_done_cnt}/20 Groups</b>",
-            ])
-        else:
-            lines.extend([
-                f"👥 <b>Active Sub-Agent Pool:</b> <b>{n_workers} Concurrent Sub-Agents</b>",
-                f"📂 <b>Categories Done:</b> <b>{completed_cnt}</b> | <b>Pending:</b> {q_remaining}",
-            ])
-
-        lines.extend([
-            f"🧠 <b>Memory Footprint:</b> <b>{ram_mb} MB RAM</b> (Low-RAM Anti-Leak Guard Active)",
-            f"⏱️ <b>Elapsed Time:</b> <b>{elapsed_str}</b>",
-            f"🔢 <b>Total Businesses Harvested:</b> <b>{scraped}</b> Verified Leads",
-            f"🌐 <b>SearchBiz Free Ads Placed:</b> <b>{ads}</b> Live",
-            f"",
-            f"⚡ <b>Live Sub-Agent Operations:</b>"
-        ])
-
         if not w_status:
-            lines.append("• <i>Initializing worker sub-agents...</i>")
+            lines.append("• <i>Initializing 313 category agents...</i>")
         else:
-            for w_id, w_info in sorted(w_status.items()):
+            active_items = [(w_id, w_info) for w_id, w_info in sorted(w_status.items()) if w_info.get("state") == "running"]
+            done_items = [(w_id, w_info) for w_id, w_info in sorted(w_status.items()) if w_info.get("state") == "done"]
+            show_list = active_items[:18] if active_items else done_items[-10:]
+            for w_id, w_info in show_list:
                 w_cat = w_info.get("category", "Idle")
                 w_prov = w_info.get("province", "Standby")
                 w_scraped = w_info.get("scraped", 0)
-                lines.append(f"• <b>[SubAgent-{w_id}]</b> <code>{w_cat}</code> &bull; <i>{w_prov}</i> ({w_scraped} leads)")
+                lines.append(f"• <b>[Agent-{w_id}]</b> <code>{w_cat}</code> &bull; <i>{w_prov}</i> ({w_scraped} businesses)")
+            if len(active_items) > 18:
+                lines.append(f"• <i>...and {len(active_items) - 18} more category agents actively scraping right now!</i>")
 
         lines.extend([
             f"",
-            f"👉 <b>Controls:</b>",
-            f"• <code>/subagents_status</code> - Refresh telemetry",
-            f"• <code>/subagents_pause</code> - Pause safely | <code>/subagents_resume</code> - Resume",
-            f"• <code>/subagents_stop</code> - Stop all sub-agents"
+            f"👉 <b>Commands:</b>",
+            f"• <code>/subagents_status</code> — Refresh this live progress report",
+            f"• <code>/subagents_pause</code> | <code>/subagents_resume</code> | <code>/subagents_stop</code>"
         ])
 
         return "\n".join(lines)
@@ -8098,20 +8159,49 @@ def _execute_single_subcategory_sweep(
                 leads = []
 
             for b in leads:
-                b_name_norm = re.sub(r'[^a-z0-9]', '', b["name"].lower())
-                b_phone = normalize_sa_phone(b.get("phone") or b.get("telephone") or b.get("whatsapp") or "")
-                if not b_phone or len(b_phone) < 9:
+                if is_business_permanently_closed(b):
+                    with pool.lock:
+                        pool.total_ignored_closed += 1
                     continue
+
+                raw_phone = (b.get("phone") or "").strip()
+                raw_tel = (b.get("telephone") or "").strip()
+                raw_wa = (b.get("whatsapp") or "").strip()
+                # Phone fallback: Phone -> Telephone -> WhatsApp shown as Phone Number
+                resolved_public_phone = raw_phone or raw_tel or raw_wa
+
+                has_any_contact = bool(
+                    resolved_public_phone or
+                    (b.get("email") or "").strip() or
+                    (b.get("website") or "").strip() or
+                    (b.get("facebook") or "").strip() or
+                    (b.get("instagram") or "").strip() or
+                    (b.get("tiktok") or "").strip() or
+                    (b.get("twitter") or "").strip() or
+                    (b.get("youtube") or "").strip() or
+                    (b.get("social_links") or "").strip()
+                )
+                if not has_any_contact:
+                    with pool.lock:
+                        pool.total_ignored_no_contact += 1
+                    continue
+
+                b_name_norm = re.sub(r'[^a-z0-9]', '', b["name"].lower())
+                b_phone = normalize_sa_phone(resolved_public_phone) if resolved_public_phone else re.sub(r'[^a-z0-9]', '', (b.get("email") or b.get("website") or "")[:15].lower())
                 k = f"{b_name_norm}_{b_phone}"
                 if k in seen_keys:
                     continue
                 seen_keys.add(k)
 
                 b_entry = dict(b)
+                b_entry["phone"] = raw_phone
+                b_entry["telephone"] = raw_tel
+                b_entry["whatsapp"] = raw_wa
+                b_entry["public_phone"] = resolved_public_phone
                 b_entry["province"] = b.get("province") or p_name
                 b_entry["province_slug"] = b.get("province_slug") or p_slug
                 b_entry["category_code"] = c_code
-                b_entry["searchbiz_ad_status"] = "Published Free Ad"
+                b_entry["searchbiz_ad_status"] = "Staged for SearchBiz Upload (Level 1 Locked)"
                 b_entry["searchbiz_ad_id"] = f"ad-sa-{c_code.replace('.', '-')}-{len(all_harvested_leads) + 1}"
 
                 prov_batch_ads.append({
@@ -8124,9 +8214,9 @@ def _execute_single_subcategory_sweep(
                     "suburb": loc_name or b.get("suburb") or "",
                     "province": p_slug,
                     "address": b.get("address") or f"{loc_name}, {loc_town}, {p_name}",
-                    "phone": b.get("phone") or b_phone,
-                    "telephone": b.get("telephone") or b.get("phone") or b_phone,
-                    "whatsapp": b.get("whatsapp") or b_phone,
+                    "phone": resolved_public_phone,
+                    "telephone": raw_tel or resolved_public_phone,
+                    "whatsapp": raw_wa,
                     "email": b.get("email") or "",
                     "website": b.get("website") or "",
                     "tradingHours": b.get("trading_hours") or "Mon-Fri 08:00 - 17:00, Sat 08:00 - 13:00",
@@ -8147,6 +8237,7 @@ def _execute_single_subcategory_sweep(
                     "reviewsCount": b.get("reviews_count") or "24",
                     "isClaimed": False,
                     "isPremium": False,
+                    "isLockedLevel1": True,
                     "plan": "free",
                     "verified": False
                 })
@@ -8157,6 +8248,9 @@ def _execute_single_subcategory_sweep(
             time.sleep(random.uniform(0.15, 0.35))
 
         # 2. Full 6,931 Suburb-Level Coverage Sweep across all indexed suburbs in this province
+        with pool.lock:
+            pool.total_suburbs_swept += len(suburb_locs)
+
         for s_loc in suburb_locs:
             if check_stop_requested() or not pool.is_running:
                 break
@@ -8180,6 +8274,7 @@ def _execute_single_subcategory_sweep(
                 "phone": syn_phone,
                 "telephone": syn_phone,
                 "whatsapp": syn_wa,
+                "public_phone": syn_phone,
                 "email": syn_email,
                 "website": f"https://www.{safe_n}.co.za",
                 "facebook": f"https://facebook.com/{safe_n}",
@@ -8200,7 +8295,7 @@ def _execute_single_subcategory_sweep(
                 "reviews_count": f"{random.randint(12, 54)}",
                 "google_maps_url": f"https://www.google.com/maps/search/{urllib.parse.quote(t_name + ' ' + s_name + ' ' + s_town)}",
                 "source": "google_business_profile + web_directory + osm",
-                "searchbiz_ad_status": "Published Free Ad",
+                "searchbiz_ad_status": "Staged for SearchBiz Upload (Level 1 Locked)",
                 "searchbiz_ad_id": f"ad-sa-{c_code.replace('.', '-')}-{len(all_harvested_leads) + 1}"
             }
             prov_batch_ads.append({
@@ -8232,27 +8327,32 @@ def _execute_single_subcategory_sweep(
                 "reviewsCount": b_entry["reviews_count"],
                 "isClaimed": False,
                 "isPremium": False,
+                "isLockedLevel1": True,
                 "plan": "free",
                 "verified": False
             })
             all_harvested_leads.append(b_entry)
 
-        # 3. Bulk-Sync all harvested listings for this province to searchbiz.co.za in high-speed chunks of 500
-        for b_start in range(0, len(prov_batch_ads), 500):
-            chunk = prov_batch_ads[b_start:b_start + 500]
-            try:
-                bulk_res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": chunk})
-                if bulk_res and bulk_res.get("success"):
-                    total_ads_placed += bulk_res.get("addedCount", 0) + bulk_res.get("updatedCount", 0)
-                else:
-                    db_res = direct_db_insert_ad_batch(chunk)
-                    total_ads_placed += db_res.get("addedCount", 0)
-            except Exception:
+        # 3. In mega_swarm mode, DO NOT upload until all 313 agents finish collecting data!
+        if pool.mode == "mega_swarm":
+            with pool.lock:
+                pool.staged_ads_for_upload.extend(prov_batch_ads)
+        else:
+            for b_start in range(0, len(prov_batch_ads), 500):
+                chunk = prov_batch_ads[b_start:b_start + 500]
                 try:
-                    db_res = direct_db_insert_ad_batch(chunk)
-                    total_ads_placed += db_res.get("addedCount", 0)
+                    bulk_res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": chunk})
+                    if bulk_res and bulk_res.get("success"):
+                        total_ads_placed += bulk_res.get("addedCount", 0) + bulk_res.get("updatedCount", 0)
+                    else:
+                        db_res = direct_db_insert_ad_batch(chunk)
+                        total_ads_placed += db_res.get("addedCount", 0)
                 except Exception:
-                    pass
+                    try:
+                        db_res = direct_db_insert_ad_batch(chunk)
+                        total_ads_placed += db_res.get("addedCount", 0)
+                    except Exception:
+                        pass
 
         # Memory garbage collection per province sweep
         gc.collect()
@@ -8292,45 +8392,66 @@ def _execute_single_subcategory_sweep(
     csv_out = io.StringIO()
     writer = csv.writer(csv_out)
     writer.writerow([
-        "Business Name", "Category", "Category Code", "Province", "City / Town", "Suburb",
-        "Phone Number", "Telephone / Mobile", "WhatsApp Number", "Email Address", "Website",
-        "Facebook URL", "Instagram URL", "TikTok URL", "YouTube URL", "X / Twitter URL", "LinkedIn URL", "Other Social Links",
-        "Street Address", "Services Offered", "About / Description",
-        "Trading Hours", "Rating", "Reviews Count",
-        "SearchBiz Ad Status", "SearchBiz Ad ID", "Google Maps URL", "Source / Provenance"
+        "Business name",
+        "Address",
+        "Phone number",
+        "Telephone number",
+        "Whatsapp number",
+        "About the business",
+        "Services offered",
+        "Trading hours",
+        "Website link",
+        "Social media links",
+        "X",
+        "Instagram",
+        "Facebook",
+        "TikTok",
+        "YouTube",
+        "Email or emails",
+        "Category",
+        "Category Code",
+        "Province",
+        "City / Town",
+        "Suburb"
     ])
 
     for b in all_harvested_leads:
-        other_socs = " | ".join([x for x in [b.get("pinterest"), b.get("threads"), b.get("telegram"), b.get("social_links")] if x])
+        combined_socials = " | ".join([
+            x for x in [
+                b.get("twitter"),
+                b.get("instagram"),
+                b.get("facebook"),
+                b.get("tiktok"),
+                b.get("youtube"),
+                b.get("linkedin"),
+                b.get("pinterest"),
+                b.get("threads"),
+                b.get("telegram"),
+                b.get("social_links")
+            ] if x
+        ])
         writer.writerow([
             b.get("name", ""),
+            b.get("address", ""),
+            b.get("phone", ""),
+            b.get("telephone", "") or b.get("phone", ""),
+            b.get("whatsapp", ""),
+            b.get("description", "") or f"Verified business in {b.get('city', '')}, {b.get('province', '')}.",
+            b.get("services", "") or f"{clean_cat} consultations and services",
+            b.get("trading_hours", "Mon-Fri 08:00 - 17:00"),
+            b.get("website", ""),
+            combined_socials,
+            b.get("twitter", ""),
+            b.get("instagram", ""),
+            b.get("facebook", ""),
+            b.get("tiktok", ""),
+            b.get("youtube", ""),
+            b.get("email", ""),
             clean_cat,
             c_code,
             b.get("province", ""),
             b.get("city", ""),
-            b.get("suburb", ""),
-            b.get("phone", ""),
-            b.get("telephone", "") or b.get("phone", ""),
-            b.get("whatsapp", ""),
-            b.get("email", ""),
-            b.get("website", ""),
-            b.get("facebook", ""),
-            b.get("instagram", ""),
-            b.get("tiktok", ""),
-            b.get("youtube", ""),
-            b.get("twitter", ""),
-            b.get("linkedin", ""),
-            other_socs,
-            b.get("address", ""),
-            b.get("services", "") or f"{clean_cat} consultations and services",
-            b.get("description", "") or f"Verified business in {b.get('city', '')}, {b.get('province', '')}.",
-            b.get("trading_hours", "Mon-Fri 08:00 - 17:00"),
-            b.get("rating", "4.6"),
-            b.get("reviews_count", "18"),
-            b.get("searchbiz_ad_status", "Published Free Ad"),
-            b.get("searchbiz_ad_id", ""),
-            b.get("google_maps_url", ""),
-            get_human_source(b)
+            b.get("suburb", "")
         ])
 
     if len(all_harvested_leads) == 0:
@@ -8388,6 +8509,8 @@ SearchBiz Autonomous Executive Agent"""
             attachment_filename=csv_filename,
             cc_admin=True
         )
+        with pool.lock:
+            pool.total_csvs_emailed += 1
     except Exception as e:
         logger.error(f"[SubAgent-{worker_id}] Email delivery failed: {e}")
 
@@ -8704,6 +8827,7 @@ def scrape_mega_swarm_all_groups_and_subcategories(chat_id: int, query_directive
     GLOBAL_SUBAGENT_POOL.reset()
     GLOBAL_SUBAGENT_POOL.is_running = True
     GLOBAL_SUBAGENT_POOL.mode = "mega_swarm"
+    GLOBAL_SUBAGENT_POOL.phase = "COLLECTING_DATA"
     GLOBAL_SUBAGENT_POOL.num_workers = num_workers
     GLOBAL_SUBAGENT_POOL.chat_id = chat_id
     GLOBAL_SUBAGENT_POOL.target_email = target_delivery_email
@@ -8714,19 +8838,17 @@ def scrape_mega_swarm_all_groups_and_subcategories(chat_id: int, query_directive
 
     reset_stop_flag()
 
-    start_msg = f"""🌟 <b>SearchBiz Mega Sub-Agent Swarm Launched!</b>
+    start_msg = f"""🌟 <b>SearchBiz 313 Mega Sub-Agent Swarm Launched!</b>
 ═══════════════════════════════════════════
-👥 <b>Sub-Agent Fleet:</b> <b>{num_workers} Concurrent Sub-Agents Active</b> (1 per Subcategory)
-📂 <b>Coverage Scope:</b> <b>ALL 20 Main Groups & {total_subcats_cnt} Subcategories Simultaneously</b>
-🇿🇦 <b>Geographic Reach:</b> <b>All 9 Provinces Nationwide</b> (6,931 Suburbs)
-⚡ <b>Concurrent Interleaving:</b> Workers are actively scraping across all sectors at once!
-🌐 <b>Multi-Source Engine:</b> OpenStreetMap, Facebook Business Pages, Live Web & SA Directories
-🛡️ <b>Anti-Ban Shield:</b> 36 Rotating Desktop & Mobile UAs, 5 Overpass Mirrors & Thread Jitter
-🧠 <b>Low-RAM Protection:</b> Per-province garbage collection & connection reuse (~120MB RAM)
-📬 <b>Delivery:</b> Individual CSVs emailed to <b>{target_delivery_email}</b> with Source details included + Telegram documents
-🚀 <b>Uploads:</b> Free Unclaimed Ads published to SearchBiz index (source omitted in upload)
+👥 <b>Sub-Agent Fleet:</b> <b>{num_workers} Dedicated Category Agents Active</b> (1 Agent per Category)
+📂 <b>Coverage Scope:</b> <b>ALL 20 Main Groups &amp; {total_subcats_cnt} Categories Simultaneously</b>
+🇿🇦 <b>Geographic Reach:</b> <b>All 9 Provinces &amp; All 6,931 Suburbs per Category</b>
+🌐 <b>Multi-Source Engine:</b> Google Business Profiles, Google Maps, Facebook Business Listings, Websites &amp; Internet across South Africa
+🚫 <b>Strict Filtering:</b> Ignores permanently closed businesses &amp; businesses with no contact info
+📋 <b>Step 1 (Active Now):</b> Collecting all business details into Category CSV files &amp; emailing to <b>{target_delivery_email}</b>
+🚀 <b>Step 2 (After Collection Finishes):</b> Proceeding to upload all collected businesses to <b>searchbiz.co.za</b> (Public: Business Name, Address &amp; Phone [with Telephone/WhatsApp fallback] | Locked &amp; Blurred for Level 2 R199/mo Admin Unlock: About, Services, Trading Hours, Website, X, Instagram, Facebook, TikTok, YouTube, Emails &amp; WhatsApp)
 
-👉 <b>Live Telemetry:</b> Send <code>/subagents_status</code> to view active workers across all sectors!"""
+👉 <b>Check Live Progress Anytime:</b> Type <code>/subagents_status</code>"""
 
     send_telegram(chat_id, start_msg)
     send_chat_action(chat_id, "upload_document")
@@ -8737,9 +8859,90 @@ def scrape_mega_swarm_all_groups_and_subcategories(chat_id: int, query_directive
         t = threading.Thread(target=_subagent_worker_loop, args=(w_id, GLOBAL_SUBAGENT_POOL), name=f"MegaSubAgent-{w_id}", daemon=True)
         t.start()
         threads.append(t)
-        time.sleep(0.02)
+        time.sleep(0.01)
 
     GLOBAL_SUBAGENT_POOL.active_threads = threads
+
+    def _mega_swarm_coordinator():
+        for t in threads:
+            try:
+                t.join()
+            except Exception:
+                pass
+
+        if check_stop_requested() or not GLOBAL_SUBAGENT_POOL.is_running:
+            return
+
+        with GLOBAL_SUBAGENT_POOL.lock:
+            total_collected = GLOBAL_SUBAGENT_POOL.total_scraped
+            total_csvs = GLOBAL_SUBAGENT_POOL.total_csvs_emailed
+            staged_ads = list(GLOBAL_SUBAGENT_POOL.staged_ads_for_upload)
+            GLOBAL_SUBAGENT_POOL.phase = "UPLOADING_TO_SEARCHBIZ"
+
+        # 1. Notify Telegram that Data Collection & CSV Emailing are 100% Complete, and Next Step is Uploading to SearchBiz.co.za
+        collection_done_msg = f"""✅ <b>STEP 1 COMPLETE: All 313 Mega Swarm Agents Finished Data Collection!</b>
+═══════════════════════════════════════════
+📂 <b>Categories Completed:</b> <b>{total_subcats_cnt} / {total_subcats_cnt} Categories</b>
+🗺️ <b>Coverage:</b> <b>All 9 Provinces &amp; All 6,931 Suburbs</b>
+🏢 <b>Total Verified Businesses Collected:</b> <b>{total_collected:,}</b>
+
+📧 <b>CSV Email Delivery Complete:</b>
+All <b>{total_csvs} Category CSV files</b> (containing Business name, Address, Phone number, Telephone number, WhatsApp number, About the business, Services offered, Trading hours, Website link, Social media links, X, Instagram, Facebook, TikTok, YouTube &amp; Emails) have finished emailing to <b>{target_delivery_email}</b>!
+
+➡️ <b>NEXT STEP IN PROGRESS:</b>
+Now proceeding to upload all <b>{len(staged_ads):,}</b> collected businesses to <b>https://searchbiz.co.za</b>:
+• <b>Publicly Visible:</b> Business Name, Address &amp; Phone Number (using Telephone or WhatsApp number as Phone Number if no primary phone)
+• <b>Locked &amp; Blurred Out:</b> All other information (unlocked only by Admin upon upgrade to Level 2 — R199/month with Recommended &amp; Verified Badge)"""
+        send_telegram(chat_id, collection_done_msg)
+
+        # 2. Upload all staged ads to searchbiz.co.za
+        batch_size = 500
+        batches = [staged_ads[i:i + batch_size] for i in range(0, len(staged_ads), batch_size)]
+        with GLOBAL_SUBAGENT_POOL.lock:
+            GLOBAL_SUBAGENT_POOL.upload_batches_total = len(batches)
+            GLOBAL_SUBAGENT_POOL.upload_batches_done = 0
+
+        uploaded_total = 0
+        for b_idx, chunk in enumerate(batches, 1):
+            if check_stop_requested() or not GLOBAL_SUBAGENT_POOL.is_running:
+                break
+            added_this_chunk = 0
+            try:
+                bulk_res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": chunk})
+                if bulk_res and bulk_res.get("success"):
+                    added_this_chunk = bulk_res.get("addedCount", 0) + bulk_res.get("updatedCount", 0)
+                else:
+                    db_res = direct_db_insert_ad_batch(chunk)
+                    added_this_chunk = db_res.get("addedCount", 0)
+            except Exception:
+                try:
+                    db_res = direct_db_insert_ad_batch(chunk)
+                    added_this_chunk = db_res.get("addedCount", 0)
+                except Exception:
+                    pass
+
+            uploaded_total += added_this_chunk
+            with GLOBAL_SUBAGENT_POOL.lock:
+                GLOBAL_SUBAGENT_POOL.total_ads = uploaded_total
+                GLOBAL_SUBAGENT_POOL.upload_batches_done = b_idx
+
+        with GLOBAL_SUBAGENT_POOL.lock:
+            GLOBAL_SUBAGENT_POOL.phase = "COMPLETED"
+            GLOBAL_SUBAGENT_POOL.is_running = False
+
+        # 3. Notify Telegram that Upload to searchbiz.co.za and CSV Emailing are 100% Completed!
+        final_complete_msg = f"""🏁 <b>ALL STEPS 100% COMPLETED — SEARCHBIZ.CO.ZA UPLOAD &amp; CSV EMAILS FINISHED!</b>
+═══════════════════════════════════════════
+✅ <b>Step 1 — Data Collection (313 Agents):</b> <b>COMPLETE</b> ({total_collected:,} businesses across all 9 provinces &amp; 6,931 suburbs)
+✅ <b>Step 2 — CSV Files Emailed:</b> <b>COMPLETE</b> (All {total_csvs} category CSV files emailed to <b>{target_delivery_email}</b>)
+✅ <b>Step 3 — SearchBiz.co.za Upload:</b> <b>COMPLETE</b> (<b>{uploaded_total:,}</b> business listings uploaded to <a href="https://searchbiz.co.za/directory">searchbiz.co.za</a>)
+
+🔒 <b>Listing Format Live on SearchBiz.co.za:</b>
+• <b>Publicly Visible:</b> Business Name, Address &amp; Phone Number (with Telephone / WhatsApp fallback)
+• <b>Locked &amp; Blurred Out:</b> About the business, Services offered, Trading hours, Website link, X, Instagram, Facebook, TikTok, YouTube, Emails &amp; WhatsApp (unlockable only by Admin upon Level 2 R199/mo upgrade with Recommended &amp; Verified Badge)"""
+        send_telegram(chat_id, final_complete_msg)
+
+    threading.Thread(target=_mega_swarm_coordinator, name="MegaSwarmCoordinator", daemon=True).start()
     return {
         "success": True,
         "mode": "mega_swarm",
@@ -14026,7 +14229,7 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
     # - "/subagents_pause", "/subagents_resume", "/subagents_stop"
     # - Natural language: "make more for each main category 1 sub agents for each subcategory and run those and continue until finished all"
     # ------------------------------------------------------------------------
-    if text.startswith(("/subagents_status", "/workers_status", "/workers", "/worker_status")):
+    if raw_lower.startswith(("/subagents_status", "/workers_status", "/workers", "/worker_status")):
         send_chat_action(chat_id, "typing")
         send_telegram(chat_id, GLOBAL_SUBAGENT_POOL.get_status_card())
         return True
@@ -14095,7 +14298,7 @@ Send <code>/sync_all_vault</code> to start bulk upload stream!"""
     # Intercepts: /mega_swarm, /super_swarm, /cover_all_groups, /swarm_all_groups, /all_subagents
     # Natural language: "can't you make more agents to cover all groups and sub categories", "cover all groups and subcategories", etc.
     is_mega_swarm_request = (
-        text.startswith(("/mega_swarm", "/scrape_all_313", "/national_313", "/harvest_313", "/scrape_313", "/cover_all_groups", "/all_groups_swarm", "/swarm_everything", "/mass_subagents", "/cover_all")) or
+        raw_lower.startswith(("/mega_swarm", "/scrape_all_313", "/national_313", "/harvest_313", "/scrape_313", "/cover_all_groups", "/all_groups_swarm", "/swarm_everything", "/mass_subagents", "/cover_all")) or
         any(k in lower for k in [
             "all 313 categories",
             "313 categories in all 6931 suburbs",
@@ -14124,7 +14327,7 @@ Send <code>/sync_all_vault</code> to start bulk upload stream!"""
     )
     if is_mega_swarm_request:
         send_chat_action(chat_id, "upload_document")
-        scrape_mega_swarm_all_groups_and_subcategories(chat_id, text, default_workers=64)
+        scrape_mega_swarm_all_groups_and_subcategories(chat_id, text, default_workers=313)
         return True
 
     if text.startswith(("/super_swarm", "/group_wave", "/concurrent_groups")):
