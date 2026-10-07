@@ -3339,7 +3339,8 @@ def get_unique_target_locations_for_province(province_slug: str, suburb_level: b
         for s in suburbs:
             s_name = s.get("name", "").strip()
             s_town = s.get("town", "").strip() or s_name
-            k = f"{s_town}_{s_name}".lower().strip()
+            s_postal = str(s.get("postalCode", "") or "").strip()
+            k = f"{s_town}_{s_name}_{s_postal}".lower().strip()
             if s_name and k not in seen:
                 seen.add(k)
                 locations.append({
@@ -3347,7 +3348,7 @@ def get_unique_target_locations_for_province(province_slug: str, suburb_level: b
                     "town": s_town,
                     "province": prov_name,
                     "province_slug": province_slug,
-                    "postal_code": s.get("postalCode", ""),
+                    "postal_code": s_postal,
                     "type": "suburb"
                 })
                 

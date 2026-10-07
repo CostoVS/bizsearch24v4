@@ -42,18 +42,21 @@ export default function LocationListings({ ads: propAds, properName, initialTota
   const [serverAds, setServerAds] = useState<Ad[] | null>(null);
   const [serverTotalCount, setServerTotalCount] = useState<number | null>(typeof initialTotalCount === 'number' ? initialTotalCount : null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(24);
+  const [pageSize, setPageSize] = useState<number>(999999);
+  const [visibleLimit, setVisibleLimit] = useState<number>(120);
   const listingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCurrentPage(1);
+    setVisibleLimit(120);
   }, [properName]);
 
   useEffect(() => {
     let active = true;
     const loadAndFilter = async (forceFetch = false) => {
-      // If SSR already provided the first page of ads and user is on page 1 with pageSize <= propAds.length, use SSR slice immediately without a redundant round-trip
-      if (!forceFetch && currentPage === 1 && propAds && propAds.length > 0 && pageSize <= propAds.length) {
+      // If SSR already provided all ads for this location and user is on page 1, use SSR slice immediately without a redundant round-trip
+      const totalKnown = typeof initialTotalCount === 'number' ? initialTotalCount : (propAds ? propAds.length : 0);
+      if (!forceFetch && currentPage === 1 && propAds && propAds.length > 0 && propAds.length >= totalKnown && pageSize >= totalKnown) {
         setServerAds(null);
         setFilteredAds(propAds);
         if (typeof initialTotalCount === 'number') {
@@ -62,10 +65,10 @@ export default function LocationListings({ ads: propAds, properName, initialTota
         return;
       }
 
-      // Query server specifically for this location using unified locationSlug + pagination
+      // Query server specifically for this location using unified locationSlug + pagination (unlimited when pageSize >= 999999)
       const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean) : [];
       const currentSlug = (pathParts[pathParts.length - 1] || properName || '').toLowerCase().trim();
-      const effectiveSize = pageSize >= 999999 ? 500 : pageSize;
+      const effectiveSize = pageSize >= 999999 ? 999999 : pageSize;
 
       const params = new URLSearchParams();
       if (currentSlug) {
@@ -75,6 +78,9 @@ export default function LocationListings({ ads: propAds, properName, initialTota
       }
       params.set('page', String(currentPage));
       params.set('pageSize', String(effectiveSize));
+      if (pageSize >= 999999) {
+        params.set('unlimited', 'true');
+      }
 
       fetch(`/api/storage?${params.toString()}`, { cache: 'no-store' })
         .then(res => res.json())
@@ -106,6 +112,7 @@ export default function LocationListings({ ads: propAds, properName, initialTota
   const sortedAds = sortAdsWithPositions(serverAds !== null ? serverAds : filteredAds);
   const totalLocationCount = serverTotalCount !== null ? serverTotalCount : sortedAds.length;
   const paginatedAds = serverAds !== null ? sortedAds : (pageSize >= 999999 ? sortedAds : sortedAds.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  const displayedAds = pageSize >= 999999 ? paginatedAds.slice(0, visibleLimit) : paginatedAds;
 
   return (
     <div ref={listingsRef} className="w-full">
@@ -173,7 +180,7 @@ export default function LocationListings({ ads: propAds, properName, initialTota
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {paginatedAds.map(ad => {
+            {displayedAds.map(ad => {
             const item = ad as any;
             const hasCustomBorder = item.isSponsor || item.isSpotlight || item.isBannerPlacement || item.isVideoPromo || item.isPremium;
             const borderClass = 
@@ -331,6 +338,27 @@ export default function LocationListings({ ads: propAds, properName, initialTota
             );
           })}
           </div>
+
+          {/* Progressive Load More for All Mode */}
+          {pageSize >= 999999 && paginatedAds.length > visibleLimit && (
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-600">
+                Displaying <span className="text-emerald-700 font-extrabold">{displayedAds.length.toLocaleString()}</span> of <span className="text-slate-900 font-extrabold">{totalLocationCount.toLocaleString()}</span> listings
+              </span>
+              <button
+                onClick={() => setVisibleLimit(prev => prev + 240)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition"
+              >
+                Load Next 240 Listings
+              </button>
+              <button
+                onClick={() => setVisibleLimit(paginatedAds.length)}
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-sm transition"
+              >
+                Render All {paginatedAds.length.toLocaleString()} Instantly
+              </button>
+            </div>
+          )}
 
           {/* Bottom Pagination */}
           {pageSize < 999999 && (
