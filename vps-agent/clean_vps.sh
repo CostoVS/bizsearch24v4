@@ -25,22 +25,27 @@ apt-get clean -y 2>/dev/null || true
 apt-get autoclean -y 2>/dev/null || true
 apt-get autoremove --purge -y 2>/dev/null || true
 
-# 4. Clean Systemd journal logs (keep only last 50MB)
-echo "📜 Vacuuming bloated system journal logs..."
+# 4. Clean Systemd journal logs (keep only last 50MB) and old rotated /var/log files
+echo "📜 Vacuuming bloated system journal & rotated logs..."
 if command -v journalctl &> /dev/null; then
     journalctl --vacuum-size=50M 2>/dev/null || true
     journalctl --vacuum-time=2d 2>/dev/null || true
 fi
+find /var/log -type f \( -name "*.gz" -o -name "*.1" -o -name "*.2" -o -name "*.old" \) -delete 2>/dev/null || true
+find /var/log -type f -name "*.log" -size +50M -exec truncate -s 0 {} + 2>/dev/null || true
 
-# 5. Clean /tmp and /var/tmp junk safely
-echo "🗑️ Purging temporary files in /tmp and /var/tmp..."
-find /tmp -type f -atime +2 -delete 2>/dev/null || true
-find /var/tmp -type f -atime +2 -delete 2>/dev/null || true
+# 5. Clean /tmp, /var/tmp, pip cache, npm cache, and orphaned .tmp.* files
+echo "🗑️ Purging temporary files, pip cache, and npm cache..."
+rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+rm -rf /root/.cache/pip /root/.npm /home/*/.cache/pip /home/*/.npm 2>/dev/null || true
+find /home /opt -type f -name "*.tmp.*" -delete 2>/dev/null || true
 
-# 6. Clean Docker junk if Docker is installed
+# 6. Clean Docker junk and huge Docker container logs if Docker is installed
 if command -v docker &> /dev/null; then
-    echo "🐳 Pruning unused Docker containers, networks, and build cache..."
+    echo "🐳 Pruning unused Docker build cache, dangling images, and container logs..."
     docker system prune -f 2>/dev/null || true
+    docker builder prune -af 2>/dev/null || true
+    find /var/lib/docker/containers/ -type f -name "*-json.log" -size +20M -exec truncate -s 0 {} + 2>/dev/null || true
 fi
 
 # 7. Check / create Swap memory to prevent Contabo VPS from freezing under load
