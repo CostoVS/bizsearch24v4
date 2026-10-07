@@ -1,76 +1,69 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Quick Update Script for Hermes Agent on VPS
+# Fast, Low-RAM Update Script for Hermes Agent on Contabo VPS
 # =============================================================================
 set -e
 
 APP_DIR="/opt/hermes-searchbiz"
 mkdir -p "${APP_DIR}"
 mkdir -p "${APP_DIR}/leads_storage"
+mkdir -p "${APP_DIR}/listings"
+mkdir -p "${APP_DIR}/scraped_leads_vault"
 
-echo "📦 Ensuring ffmpeg and audio decoder tools are installed on VPS..."
+echo "🧹 Freeing inactive VPS RAM buffers & stopping old agent instance before update..."
+systemctl stop hermes-agent 2>/dev/null || true
+pkill -9 -f "playwright" 2>/dev/null || true
+pkill -9 -f "chromium" 2>/dev/null || true
+sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
+echo "📦 Checking ffmpeg and audio decoder tools on VPS..."
 if ! command -v ffmpeg &> /dev/null || ! command -v flac &> /dev/null; then
     if command -v apt-get &> /dev/null; then
         apt-get update -y && apt-get install -y ffmpeg flac python3-pip python3-dev build-essential || true
     elif command -v yum &> /dev/null; then
         yum install -y ffmpeg flac python3-pip || true
     fi
+else
+    echo "✅ ffmpeg and flac already installed."
 fi
 
-echo "📦 Installing Open-Source Voice Reader & Automation Tools (faster-whisper, vosk, edge-tts, beautifulsoup4, schedule, playwright)..."
-if command -v pip3 &> /dev/null; then
-    pip3 install --break-system-packages --ignore-installed faster-whisper vosk edge-tts requests python-docx reportlab pillow beautifulsoup4 schedule playwright || \
-    pip3 install --break-system-packages faster-whisper vosk edge-tts requests python-docx reportlab pillow beautifulsoup4 schedule playwright || true
+echo "📦 Checking Python dependencies (faster-whisper, vosk, edge-tts, beautifulsoup4, schedule, playwright)..."
+if python3 -c "import faster_whisper, vosk, edge_tts, requests, docx, reportlab, PIL, bs4, schedule, playwright" 2>/dev/null; then
+    echo "✅ All Python dependencies already installed (skipping redundant pip download)!"
+else
+    echo "📥 Installing missing Python packages..."
+    if command -v pip3 &> /dev/null; then
+        pip3 install --break-system-packages faster-whisper vosk edge-tts requests python-docx reportlab pillow beautifulsoup4 schedule playwright || true
+    fi
 fi
 
 echo "🎭 Checking Playwright Stealth Chromium..."
-if python3 -c "import playwright" 2>/dev/null; then
+if [ -d "/root/.cache/ms-playwright" ] && [ -n "$(ls -A /root/.cache/ms-playwright 2>/dev/null)" ]; then
+    echo "✅ Playwright Stealth Chromium already installed!"
+elif python3 -c "import playwright" 2>/dev/null; then
     python3 -m playwright install chromium 2>/dev/null || true
     python3 -m playwright install-deps chromium 2>/dev/null || true
     echo "✅ Playwright Stealth Chromium ready!"
 fi
 
-echo "🧠 Pre-caching Open-Source Whisper tiny model on VPS CPU..."
-python3 -c "
-import sys
-try:
-    from faster_whisper import WhisperModel
-    print('Testing WhisperModel initialization...')
-    m = WhisperModel('tiny', device='cpu', compute_type='int8')
-    print('✅ Open-Source Whisper Model ready on CPU for instant voice note understanding!')
-except Exception as e:
-    print('⚠️ Whisper model note:', e)
-" || true
-
 # Ensure Ollama service is running if installed
 if command -v ollama &> /dev/null; then
     systemctl start ollama 2>/dev/null || true
-    # Check if abliterated Llama-3.2 model is installed; if not, invoke setup
-    if ! ollama list 2>/dev/null | grep -q -E 'abliterate'; then
-        echo "📥 Upgrading Ollama brain to Llama-3.2-3B-Instruct-Abliterated GGUF..."
-        if [ -f "./setup_abliterated_model.sh" ]; then
-            bash ./setup_abliterated_model.sh || true
-        else
-            ollama pull hf.co/MaziyarPanahi/Llama-3.2-3B-Instruct-abliterated-GGUF:Q4_K_M && \
-            ollama cp hf.co/MaziyarPanahi/Llama-3.2-3B-Instruct-abliterated-GGUF:Q4_K_M llama-3.2-3b-instruct-abliterated || \
-            ollama pull richardyoung/llama-3.2-3b-instruct-abliterated || true
-        fi
-    fi
 fi
 
 # Ensure all scripts are executable in both working directory and install directory
 chmod +x *.sh 2>/dev/null || true
 
-echo "Updating /opt/hermes-searchbiz scripts and tools..."
+echo "🚀 Updating /opt/hermes-searchbiz scripts and tools..."
 if [ -f "hermes_searchbiz_agent.py" ] && [ "$(realpath hermes_searchbiz_agent.py)" != "${APP_DIR}/hermes_searchbiz_agent.py" ]; then
     cp hermes_searchbiz_agent.py "${APP_DIR}/hermes_searchbiz_agent.py"
 else
-    curl -fsSL https://searchbiz.co.za/api/bot/agent-script -o "${APP_DIR}/hermes_searchbiz_agent.py.tmp" 2>/dev/null && \
+    curl -fsSL --connect-timeout 3 --max-time 15 https://searchbiz.co.za/api/bot/agent-script -o "${APP_DIR}/hermes_searchbiz_agent.py.tmp" 2>/dev/null && \
     mv "${APP_DIR}/hermes_searchbiz_agent.py.tmp" "${APP_DIR}/hermes_searchbiz_agent.py" || true
 fi
 chmod +x "${APP_DIR}/hermes_searchbiz_agent.py"
 
-# Deploy 6000+ South African Areas Database
+# Deploy 6,931 South African Suburbs & Areas Database
 if [ -f "sa_areas_database.json" ]; then
     cp sa_areas_database.json "${APP_DIR}/sa_areas_database.json"
     cp sa_areas_database.json "${APP_DIR}/searchbiz_all_areas.json"
@@ -78,8 +71,8 @@ elif [ -f "searchbiz_all_areas.json" ]; then
     cp searchbiz_all_areas.json "${APP_DIR}/searchbiz_all_areas.json"
     cp searchbiz_all_areas.json "${APP_DIR}/sa_areas_database.json"
 else
-    echo "Downloading 6000+ SA areas database from SearchBiz..."
-    curl -sSL https://searchbiz.co.za/sa_areas_database.json -o "${APP_DIR}/sa_areas_database.json" || true
+    echo "Downloading 6,931 SA areas database from SearchBiz..."
+    curl -sSL --connect-timeout 3 --max-time 15 https://searchbiz.co.za/sa_areas_database.json -o "${APP_DIR}/sa_areas_database.json" || true
     cp "${APP_DIR}/sa_areas_database.json" "${APP_DIR}/searchbiz_all_areas.json" 2>/dev/null || true
 fi
 
@@ -126,14 +119,15 @@ fi
 # Clean up any drop-in override
 rm -rf /etc/systemd/system/hermes-agent.service.d
 
-# Ensure data directories exist and are protected with full permissions
+# Ensure data directories exist
 mkdir -p "${APP_DIR}/leads_storage"
 mkdir -p "${APP_DIR}/listings"
 mkdir -p "../.data" "../data" 2>/dev/null || true
 
-echo "🛡️ Verifying and protecting SearchBiz uploaded ads database across all backups..."
+echo "🛡️ Verifying SearchBiz uploaded ads database across backups (Zero-RAM O(1) mode)..."
 python3 -c "
 import os, json, shutil
+
 paths = [
     '../data/db.json',
     '../.data/db.json',
@@ -141,13 +135,15 @@ paths = [
     '../.data/backup_db.json',
     '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json'
 ]
+
 latest_purge_at = 0
 purged_path = None
 for p in ['../.data/db.json', '../data/db.json']:
     if os.path.exists(p):
         try:
-            if os.path.getsize(p) < 5000000:
-                with open(p, 'r', encoding='utf-8') as f:
+            sz = os.path.getsize(p)
+            if 2 < sz < 2000000:
+                with open(p, 'r', encoding='utf-8', errors='ignore') as f:
                     d = json.load(f)
                     if isinstance(d, dict) and d.get('lastPurgeAt', 0) > latest_purge_at:
                         latest_purge_at = d.get('lastPurgeAt', 0)
@@ -156,56 +152,62 @@ for p in ['../.data/db.json', '../data/db.json']:
             pass
 
 best_path = None
-best_count = -1
 best_size = -1
 for p in paths:
     if os.path.exists(p):
         try:
             sz = os.path.getsize(p)
-            if sz <= 2:
+            if sz <= 10:
                 continue
-            with open(p, 'r', encoding='utf-8') as f:
-                d = json.load(f)
-                if not isinstance(d, dict) or not isinstance(d.get('ads'), list):
+            # Never call json.load() on huge files (>2MB); verify JSON head/tail in 0 KB of RAM!
+            with open(p, 'rb') as f:
+                head = f.read(256).decode('utf-8', errors='ignore').strip()
+                if not head.startswith('{') or '\"ads\"' not in head:
                     continue
-                if latest_purge_at > 0 and d.get('updatedAt', 0) < latest_purge_at and d.get('lastPurgeAt', 0) < latest_purge_at:
+                if sz > 512:
+                    f.seek(max(0, sz - 512))
+                tail = f.read(512).decode('utf-8', errors='ignore').strip()
+                if not tail.endswith('}'):
                     continue
-                c = len(d.get('ads', []))
-                if c > best_count or (c == best_count and sz > best_size):
-                    best_count = c
-                    best_size = sz
-                    best_path = p
+            if latest_purge_at > 0 and purged_path and p != purged_path:
+                continue
+            if sz > best_size:
+                best_size = sz
+                best_path = p
         except Exception:
             pass
+
 if not best_path and purged_path:
     best_path = purged_path
-    best_count = 0
     best_size = os.path.getsize(purged_path)
 
-if best_path and best_count >= 0:
-    print(f'✅ Found master SearchBiz database with {best_count:,} ads at {best_path}. Syncing any out-of-date paths...')
-    for p in paths:
+if best_path and best_size > 0:
+    mb_sz = round(best_size / (1024 * 1024), 2)
+    print(f'✅ Verified master SearchBiz database ({mb_sz} MB) at {best_path}.')
+    for p in ['../data/db.json', '../.data/db.json']:
         if p != best_path:
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
-                if not os.path.exists(p) or abs(os.path.getsize(p) - best_size) > 64:
+                if not os.path.exists(p) or abs(os.path.getsize(p) - best_size) > 1024:
                     shutil.copy2(best_path, p)
             except Exception:
                 pass
 " || true
 
-if [ -d "../.data" ]; then
-    chmod -R 777 ../.data ../data 2>/dev/null || true
-fi
+chmod 777 ../.data ../data ../.data/db.json ../data/db.json 2>/dev/null || true
 
-# Pre-warm the web container O(1) RAM index so all pages respond instantaneously
-curl -s "http://127.0.0.1:3005/api/storage?statsOnly=true" >/dev/null 2>&1 || true
-curl -s "http://127.0.0.1:3005/api/storage?freeOnly=true&includeFeatured=true&page=1&pageSize=12" >/dev/null 2>&1 || true
+# Non-blocking background pre-warm with strict 3s timeout so update_agent.sh NEVER hangs
+(
+    curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:3005/api/storage?statsOnly=true" >/dev/null 2>&1 || true
+    curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:3005/api/storage?freeOnly=true&includeFeatured=true&page=1&pageSize=12" >/dev/null 2>&1 || true
+) &
 
-echo "Restarting hermes-agent service..."
+echo "🔄 Restarting hermes-agent service..."
+cp hermes-agent.service /etc/systemd/system/hermes-agent.service 2>/dev/null || true
 systemctl daemon-reload
 systemctl restart hermes-agent
 
 echo "✅ Hermes Agent updated and running!"
-systemctl status hermes-agent --no-pager
+systemctl status hermes-agent --no-pager -l || true
+
 

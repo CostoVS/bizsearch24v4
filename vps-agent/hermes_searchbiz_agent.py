@@ -11271,124 +11271,88 @@ _DIRECT_DB_MEM_CACHE = {
     "ads": [],
     "data": {},
     "keys": set(),
+    "total_count": 0,
     "last_flush_ts": 0.0,
     "dirty_count": 0
 }
 _DIRECT_DB_LOCK = threading.Lock()
 
-def _flush_direct_db_cache_to_disk(target_paths: list, force: bool = False):
-    """Writes the cached ads array to disk in newline-delimited JSON format so Node.js readLargeStorageJsonSync can parse >512MB files."""
-    if not _DIRECT_DB_MEM_CACHE["loaded"] or (_DIRECT_DB_MEM_CACHE["dirty_count"] == 0 and not force):
-        return
-    now_ts = time.time()
-    if not force and _DIRECT_DB_MEM_CACHE["dirty_count"] < 25000 and (now_ts - _DIRECT_DB_MEM_CACHE["last_flush_ts"]) < 15.0:
-        return
-
-    ads_list = _DIRECT_DB_MEM_CACHE["ads"]
-    meta_dict = {k: v for k, v in _DIRECT_DB_MEM_CACHE["data"].items() if k != "ads"}
-    meta_dict["updatedAt"] = int(now_ts * 1000)
-
-    for p in target_paths:
-        try:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            tmp_p = f"{p}.tmp.{os.getpid()}"
-            with open(tmp_p, "w", encoding="utf-8") as f:
-                f.write('{"ads":[\n')
-                for idx, ad_obj in enumerate(ads_list):
-                    line = json.dumps(ad_obj, ensure_ascii=False, separators=(',', ':'))
-                    if idx < len(ads_list) - 1:
-                        f.write(line + ",\n")
-                    else:
-                        f.write(line + "\n")
-                f.write("]")
-                for mk, mv in meta_dict.items():
-                    f.write(f',"{mk}":{json.dumps(mv, ensure_ascii=False, separators=(",", ":"))}')
-                f.write("}\n")
-            os.replace(tmp_p, p)
-        except Exception as we:
-            logger.debug(f"_flush_direct_db_cache_to_disk write error for {p}: {we}")
-
-    _DIRECT_DB_MEM_CACHE["dirty_count"] = 0
-    _DIRECT_DB_MEM_CACHE["last_flush_ts"] = now_ts
+def _append_ndjson_records_to_db_file(file_path: str, json_lines: list, now_ts_ms: int) -> int:
+    """
+    Appends serialized JSON ad lines directly to the end of the 'ads' array in db.json
+    using O(1) f.seek() without loading multi-hundred-MB files into Python RAM!
+    """
+    if not json_lines:
+        return 0
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 15:
+            sz = os.path.getsize(file_path)
+            with open(file_path, "r+b") as f:
+                read_len = min(sz, 65536)
+                f.seek(sz - read_len)
+                tail_bytes = f.read(read_len)
+                bracket_rel = tail_bytes.rfind(b"]")
+                if bracket_rel != -1:
+                    bracket_pos = (sz - read_len) + bracket_rel
+                    # Check if array already has items before ']'
+                    pre_chunk = tail_bytes[:bracket_rel].rstrip()
+                    has_existing = bool(pre_chunk and not pre_chunk.endswith(b"["))
+                    f.seek(bracket_pos)
+                    prefix = b",\n" if has_existing else b"\n"
+                    payload = prefix + ("\n,".join(json_lines) if False else ",\n".join(json_lines)).encode("utf-8")
+                    footer = f'\n],"updatedAt":{now_ts_ms}}}\n'.encode("utf-8")
+                    f.write(payload + footer)
+                    f.truncate()
+                    return len(json_lines)
+        # Fallback if file does not exist yet or is empty
+        tmp_p = f"{file_path}.tmp.{os.getpid()}"
+        with open(tmp_p, "w", encoding="utf-8") as f:
+            f.write('{"ads":[\n')
+            f.write(",\n".join(json_lines))
+            f.write(f'\n],"updatedAt":{now_ts_ms}}}\n')
+        os.replace(tmp_p, file_path)
+        return len(json_lines)
+    except Exception as e:
+        logger.debug(f"_append_ndjson_records_to_db_file note for {file_path}: {e}")
+        return 0
 
 def direct_db_insert_ad_batch(items: list, force_flush: bool = False) -> dict:
-    """High-speed Python fallback that reads .data/db.json across all SearchBiz paths, deduplicates and appends new ads directly."""
+    """
+    Contabo Low-RAM O(1) Python fallback that appends new ads directly to .data/db.json and data/db.json
+    without ever calling json.load() on multi-hundred-MB files!
+    """
     candidate_db_paths = [
         "/home/thehightable/bizsearch24v4/data/db.json",
         "/home/thehightable/bizsearch24v4/.data/db.json",
-        "/home/thehightable/bizsearch24v4/data/backup_db.json",
-        "/home/thehightable/bizsearch24v4/.data/backup_db.json",
-        "/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json",
         os.path.join(os.getcwd(), "data", "db.json"),
         os.path.join(os.getcwd(), ".data", "db.json"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "db.json"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".data", "db.json"),
         "/var/www/searchbiz/.data/db.json",
-        "/var/www/searchbiz/data/db.json",
-        "/root/searchbiz/.data/db.json",
-        "/root/searchbiz/data/db.json",
-        "/opt/searchbiz/.data/db.json",
-        "/opt/searchbiz/data/db.json"
+        "/var/www/searchbiz/data/db.json"
     ]
-
-    try:
-        import glob
-        for matched in glob.glob("/home/*/*search*/.data/db.json") + glob.glob("/home/*/*search*/data/db.json"):
-            if matched not in candidate_db_paths:
-                candidate_db_paths.insert(0, matched)
-    except Exception:
-        pass
 
     target_paths = []
     for p in candidate_db_paths:
         if os.path.exists(p) or os.path.exists(os.path.dirname(p)):
-            if p not in target_paths:
-                target_paths.append(p)
+            real_p = os.path.abspath(p)
+            if real_p not in target_paths:
+                target_paths.append(real_p)
 
     if not target_paths:
-        target_paths = [os.path.join(os.getcwd(), ".data", "db.json")]
+        target_paths = [os.path.abspath(os.path.join(os.getcwd(), ".data", "db.json"))]
 
     with _DIRECT_DB_LOCK:
-        if not _DIRECT_DB_MEM_CACHE["loaded"]:
-            existing_ads = []
-            existing_data = {}
-            for p in target_paths:
-                if os.path.exists(p):
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                            if isinstance(data, dict) and isinstance(data.get("ads"), list):
-                                if len(data.get("ads", [])) > len(existing_ads):
-                                    existing_ads = data["ads"]
-                                    existing_data = data
-                    except Exception:
-                        pass
-
-            existing_keys = set()
-            for a in existing_ads:
-                if not a or not isinstance(a, dict):
-                    continue
-                t_norm = re.sub(r'[^a-z0-9]', '', (a.get("title") or "").lower())
-                p_norm = re.sub(r'[^0-9]', '', (a.get("phone") or a.get("telephone") or a.get("whatsapp") or ""))[-9:]
-                c_norm = re.sub(r'[^a-z0-9]', '', (a.get("city") or a.get("town") or a.get("location") or "").lower())
-                s_norm = re.sub(r'[^a-z0-9]', '', (a.get("suburb") or "").lower())
-                a_norm = re.sub(r'[^a-z0-9]', '', (a.get("address") or "").lower())[:24]
-                if t_norm:
-                    existing_keys.add(f"{t_norm}_{c_norm}_{s_norm}_{a_norm}_{p_norm}")
-
-            _DIRECT_DB_MEM_CACHE["ads"] = existing_ads
-            _DIRECT_DB_MEM_CACHE["data"] = existing_data
-            _DIRECT_DB_MEM_CACHE["keys"] = existing_keys
-            _DIRECT_DB_MEM_CACHE["loaded"] = True
-            _DIRECT_DB_MEM_CACHE["last_flush_ts"] = time.time()
-
         existing_keys = _DIRECT_DB_MEM_CACHE["keys"]
-        existing_ads = _DIRECT_DB_MEM_CACHE["ads"]
+        if len(existing_keys) > 250000:
+            existing_keys.clear()
 
         added_cnt = 0
         skipped_cnt = 0
         now_iso = datetime.now().isoformat()
         ts_ms = int(time.time() * 1000)
+        json_lines_to_append = []
 
         for item in items:
             title = (item.get("title") or item.get("name") or item.get("business_name") or "").strip()
@@ -11424,14 +11388,15 @@ def direct_db_insert_ad_batch(items: list, force_flush: bool = False) -> dict:
             s_norm = re.sub(r'[^a-z0-9]', '', (suburb or town).lower())
             a_norm = re.sub(r'[^a-z0-9]', '', raw_addr.lower())[:24]
 
-            comp_key = f"{t_norm}_{c_norm}_{s_norm}_{a_norm}_{p_norm}"
+            comp_key = hash(f"{t_norm}_{c_norm}_{s_norm}_{a_norm}_{p_norm}")
             if comp_key in existing_keys:
                 skipped_cnt += 1
                 continue
 
             existing_keys.add(comp_key)
+            _DIRECT_DB_MEM_CACHE["total_count"] += 1
 
-            ad_id = f"ad-agent-{ts_ms}-{len(existing_ads) + added_cnt}"
+            ad_id = f"ad-agent-{ts_ms}-{_DIRECT_DB_MEM_CACHE['total_count']}"
             raw_desc = (item.get("description") or "").strip()
             if not raw_desc or raw_desc.startswith("Local business in "):
                 loc_disp = f"{suburb}, {town}" if suburb and suburb.lower() != town.lower() else town
@@ -11467,6 +11432,7 @@ def direct_db_insert_ad_batch(items: list, force_flush: bool = False) -> dict:
                 "showCallOption": True,
                 "verified": False,
                 "isPremium": False,
+                "isLockedLevel1": True,
                 "isApproved": True,
                 "adminApproved": True,
                 "status": "active",
@@ -11506,18 +11472,18 @@ def direct_db_insert_ad_batch(items: list, force_flush: bool = False) -> dict:
                 "createdAt": now_iso,
                 "updatedAt": now_iso
             }
-            existing_ads.append(new_ad)
+            json_lines_to_append.append(json.dumps(new_ad, ensure_ascii=False, separators=(',', ':')))
             added_cnt += 1
 
-        if added_cnt > 0:
-            _DIRECT_DB_MEM_CACHE["dirty_count"] += added_cnt
-        _flush_direct_db_cache_to_disk(target_paths, force=force_flush)
+        if json_lines_to_append:
+            for p in target_paths[:2]:
+                _append_ndjson_records_to_db_file(p, json_lines_to_append, ts_ms)
 
         return {
             "success": True,
             "addedCount": added_cnt,
             "skippedDuplicatesCount": skipped_cnt,
-            "totalActiveAds": len(existing_ads)
+            "totalActiveAds": _DIRECT_DB_MEM_CACHE["total_count"]
         }
 
 def collect_all_harvested_leads() -> list:
@@ -11789,45 +11755,52 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
         GLOBAL_BULK_SYNC["total_skipped_duplicates"] = 0
         GLOBAL_BULK_SYNC["live_total_ads"] = 0
 
-        init_msg = """🚀 <b>SearchBiz 2.17M Hyper-Sync Engine Activated!</b>
+        init_msg = """🚀 <b>SearchBiz Low-RAM Streaming Bulk Sync Activated!</b>
 ═══════════════════════════════════════════
-📥 <b>Scanning Scraped Vault & 313 CSVs:</b> Discovering all harvested business records across scraped_leads_vault/, listings/ & databases...
+📥 <b>Streaming Scraped Vault & 313 CSVs:</b> Reading harvested business CSVs one file at a time (Contabo Low-RAM Safe Mode)...
 🗺️ <b>Auto-Geography & Category Engine:</b> Mapping every ad to its exact SA Address, Area/Suburb, Town/City, Province, Postal Code & Category
-⚡ <b>High-Speed Bulk Stream:</b> Batching 2,500 records per HTTP payload (RAM Coalesced Zero-Lag Mode)
-📬 <b>Target Site:</b> https://searchbiz.co.za
-
-<i>Gathering harvested business records now...</i>"""
+⚡ <b>High-Speed Bulk Stream:</b> Batching 1,500 records per HTTP payload
+📬 <b>Target Site:</b> https://searchbiz.co.za"""
         if chat_id:
             send_telegram(chat_id, init_msg)
 
-        all_leads = collect_all_harvested_leads()
+        # Discover all CSV files across vault and listings without loading rows into RAM yet
+        csv_files = []
+        seen_real_files = set()
+        for s_dir in [VAULT_DIR, LISTINGS_DIR, LEADS_DIR, "/opt/hermes-searchbiz/scraped_leads_vault", "/opt/hermes-searchbiz/listings"]:
+            if not s_dir or not os.path.exists(s_dir):
+                continue
+            for root, dirs, files in os.walk(s_dir):
+                dirs[:] = [d for d in dirs if d not in ("node_modules", ".next", ".git", ".data", "data", "__pycache__")]
+                for fname in sorted(files):
+                    if fname.endswith(".csv"):
+                        fp = os.path.realpath(os.path.join(root, fname))
+                        if fp not in seen_real_files:
+                            seen_real_files.add(fp)
+                            csv_files.append(fp)
 
-        total_leads = len(all_leads)
-        GLOBAL_BULK_SYNC["total_discovered"] = total_leads
-
-        if total_leads == 0:
+        if not csv_files:
             if chat_id:
-                send_telegram(chat_id, "⚠️ <b>Bulk Sync Notice:</b> 0 harvested leads found in vault to upload. Scrape listings first using <code>/mega_swarm 313</code>!")
+                send_telegram(chat_id, "⚠️ <b>Bulk Sync Notice:</b> 0 harvested CSV files found in vault to upload. Scrape listings first using <code>/mega_swarm 313</code>!")
             GLOBAL_BULK_SYNC["is_running"] = False
             return
 
-        batch_size = 2500
-        batches = [all_leads[i:i + batch_size] for i in range(0, total_leads, batch_size)]
-        GLOBAL_BULK_SYNC["total_batches"] = len(batches)
+        batch_size = 1500
+        GLOBAL_BULK_SYNC["total_batches"] = max(1, len(csv_files) * 5)
+        b_idx = 0
+        total_leads = 0
+        batch_items = []
 
-        if chat_id:
-            send_telegram(chat_id, f"📦 <b>Ready to Sync:</b> Found <b>{total_leads:,} unique harvested businesses</b> across {len(batches)} batch payloads (2,500 per batch).\n🚀 Launching ultra-high-speed batch upload stream to SearchBiz.co.za...")
-
-        for b_idx, batch_items in enumerate(batches, 1):
-            if not GLOBAL_BULK_SYNC["is_running"]:
-                break
-
+        def _upload_single_batch(items_to_send: list, is_last: bool = False):
+            nonlocal b_idx
+            if not items_to_send:
+                return
+            b_idx += 1
             GLOBAL_BULK_SYNC["current_batch"] = b_idx
-
             uploaded_this_batch = False
             for attempt in range(2):
                 try:
-                    res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": batch_items})
+                    res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": items_to_send})
                     if res.get("success"):
                         added = res.get("addedCount", 0)
                         updated = res.get("updatedCount", 0)
@@ -11841,16 +11814,13 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                         uploaded_this_batch = True
                         break
                     else:
-                        err_msg = res.get("error") or res.get("details") or str(res)
-                        logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} error: {err_msg}")
                         time.sleep(0.15)
-                except Exception as e:
-                    logger.warning(f"Bulk sync batch {b_idx} attempt {attempt + 1} network exception: {e}")
+                except Exception:
                     time.sleep(0.15)
 
             if not uploaded_this_batch:
                 try:
-                    db_res = direct_db_insert_ad_batch(batch_items, force_flush=(b_idx == len(batches)))
+                    db_res = direct_db_insert_ad_batch(items_to_send, force_flush=is_last)
                     GLOBAL_BULK_SYNC["total_uploaded"] += db_res.get("addedCount", 0)
                     GLOBAL_BULK_SYNC["total_skipped_duplicates"] += db_res.get("skippedDuplicatesCount", 0)
                     if db_res.get("totalActiveAds", 0) > 0:
@@ -11858,19 +11828,34 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                 except Exception as de:
                     logger.error(f"Fallback direct_db_insert_ad_batch failed for batch {b_idx}: {de}")
 
-            if chat_id and (b_idx % 25 == 0 or b_idx == len(batches)):
-                progress_pct = round((b_idx / len(batches)) * 100, 1)
-                progress_card = f"""📊 <b>SearchBiz Bulk Sync Status</b>
+            if chat_id and b_idx % 25 == 0:
+                progress_card = f"""📊 <b>SearchBiz Low-RAM Bulk Sync Status</b>
 ═══════════════════════════════════════════
-🔄 <b>Status:</b> UPLOADING IN PROGRESS (Batch {b_idx}/{len(batches)} | {progress_pct}%)
-📥 <b>Harvested Leads Discovered:</b> <b>{total_leads:,}</b>
+🔄 <b>Status:</b> STREAMING IN PROGRESS (Batch {b_idx})
+📥 <b>Harvested Leads Streamed:</b> <b>{total_leads:,}</b>
 ✅ <b>New Listings Added This Run:</b> <b>{GLOBAL_BULK_SYNC['total_uploaded']:,}</b>
 🗺️ <b>Existing Listings Verified & Enriched:</b> <b>{GLOBAL_BULK_SYNC['total_updated']:,}</b>
 🌐 <b>Total Live Ads on SearchBiz.co.za:</b> <b>{GLOBAL_BULK_SYNC['live_total_ads']:,}</b>
 🔗 <b>Target Directory:</b> https://searchbiz.co.za/directory"""
                 send_telegram(chat_id, progress_card)
 
-            time.sleep(0.005)
+        for csv_fp in csv_files:
+            if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+                break
+            records = parse_harvested_csv_file_records(csv_fp)
+            for rec in records:
+                batch_items.append(rec)
+                total_leads += 1
+                GLOBAL_BULK_SYNC["total_discovered"] = total_leads
+                if len(batch_items) >= batch_size:
+                    _upload_single_batch(batch_items, is_last=False)
+                    batch_items = []
+            del records
+            gc.collect()
+
+        if batch_items and GLOBAL_BULK_SYNC["is_running"] and not check_stop_requested():
+            _upload_single_batch(batch_items, is_last=True)
+            batch_items = []
 
         GLOBAL_BULK_SYNC["is_running"] = False
         if chat_id:
@@ -18224,30 +18209,6 @@ def main():
             default_workers=GLOBAL_SUBAGENT_POOL.num_workers,
             resume_incomplete=True
         )
-    else:
-        def _auto_sync_unsynced_vault_on_boot():
-            try:
-                time.sleep(3.0)
-                if GLOBAL_SUBAGENT_POOL.is_running or GLOBAL_BULK_SYNC.get("is_running"):
-                    return
-                csv_count = 0
-                if os.path.exists(VAULT_DIR):
-                    csv_count = len([f for f in os.listdir(VAULT_DIR) if f.endswith(".csv")])
-                if csv_count >= 10:
-                    live_ads = 0
-                    try:
-                        st_res = api_request("/api/storage?summary=true", method="GET")
-                        if isinstance(st_res, dict):
-                            live_ads = int(st_res.get("totalAdsCount") or st_res.get("activeAdsCount") or 0)
-                    except Exception:
-                        pass
-                    if live_ads < 500000:
-                        logger.info(f"Detected {csv_count} harvested CSVs in vault while live ads={live_ads}. Auto-launching full 2.17M Bulk Sync to SearchBiz.co.za...")
-                        start_bulk_sync_to_searchbiz(chat_id=getattr(GLOBAL_SUBAGENT_POOL, "chat_id", 0) or 0)
-            except Exception as boot_e:
-                logger.debug(f"Auto-sync check note: {boot_e}")
-
-        threading.Thread(target=_auto_sync_unsynced_vault_on_boot, daemon=True).start()
 
     # ThreadPool for non-blocking concurrent message handling
     msg_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="hermes-worker")
