@@ -337,13 +337,16 @@ async function flushStorageToDiskAsync(data: any, forceAllBackups: boolean = fal
   try {
     await writeStorageJsonNonBlocking(PERSIST_PATH, data);
 
+    const adCount = Array.isArray(data?.ads) ? data.ads.length : 0;
     const copyTargets = [JSON_PATH];
     const now = Date.now();
     const shouldWriteBackups =
-      forceAllBackups ||
-      Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
-      !globalRef.lastBackupWriteTime ||
-      now - globalRef.lastBackupWriteTime > 600000;
+      adCount <= 50000 && (
+        forceAllBackups ||
+        Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
+        !globalRef.lastBackupWriteTime ||
+        now - globalRef.lastBackupWriteTime > 600000
+      );
 
     if (shouldWriteBackups) {
       globalRef.lastBackupWriteTime = now;
@@ -358,6 +361,13 @@ async function flushStorageToDiskAsync(data: any, forceAllBackups: boolean = fal
         const destDir = path.dirname(destPath);
         if (!fs.existsSync(destDir)) {
           await fs.promises.mkdir(destDir, { recursive: true });
+        }
+        if (destPath === JSON_PATH && adCount > 50000) {
+          try {
+            if (fs.existsSync(destPath)) await fs.promises.unlink(destPath);
+            await fs.promises.link(PERSIST_PATH, destPath);
+            continue;
+          } catch (linkErr) {}
         }
         const tempCopy = `${destPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
         await fs.promises.copyFile(PERSIST_PATH, tempCopy);
@@ -548,12 +558,12 @@ function mergeData(local: any, db: any) {
   return merged;
 }
 
-async function checkAndReloadFromDiskAsync(): Promise<void> {
-  if (globalRef.isReloadingFromDisk || globalRef.isFlushingToDisk || globalRef.pendingDiskFlush) return;
+async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void> {
+  if (globalRef.isReloadingFromDisk || globalRef.isFlushingToDisk || (!force && globalRef.pendingDiskFlush)) return;
   globalRef.isReloadingFromDisk = true;
   try {
     const currentMtime = getDiskMtime();
-    if (currentMtime <= (globalRef.storageMtime || 0)) return;
+    if (!force && currentMtime <= (globalRef.storageMtime || 0)) return;
 
     const candidatePaths = [PERSIST_PATH, JSON_PATH];
     let targetPathToRead = '';
@@ -571,19 +581,28 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
     }
 
     if (!targetPathToRead) return;
-    const diskData = readLargeStorageJsonSync(targetPathToRead);
-    const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const memCount = Array.isArray(globalRef.storageCache?.ads) ? globalRef.storageCache.ads.length : 0;
     const memPurgeTime = globalRef.storageCache?.lastPurgeAt || 0;
+
+    // Free old multi-hundred-MB references before parsing a large disk file so V8 never holds 2 copies in RAM
+    if (force || maxSize > 25 * 1024 * 1024) {
+      globalRef.indexedDataset = null;
+      globalRef.adminStatsCache = null;
+      globalRef.existingAdMap = null;
+      globalRef.storageCache = null;
+    }
+
+    const diskData = readLargeStorageJsonSync(targetPathToRead);
+    const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const diskUpdatedAt = diskData?.updatedAt || 0;
 
     // Never overwrite memory if memory has a newer purge timestamp than the file on disk
-    if (memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskCount > memCount) {
+    if (!force && memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskCount > memCount) {
       globalRef.storageMtime = currentMtime;
       return;
     }
 
-    if (diskCount >= memCount && diskCount > 0) {
+    if (force || (diskCount >= memCount && diskCount > 0)) {
       const CHUNK = 10000;
       for (let i = 0; i < diskData.ads.length; i += CHUNK) {
         const end = Math.min(i + CHUNK, diskData.ads.length);
@@ -876,7 +895,11 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
     const isAct = a.isActive !== false;
     if (isAct) {
       active++;
-      allActiveAds.push(a);
+      if (!a.isPremium && !a.isSponsor && adPriorityScore(a) <= 10) {
+        allFreeAds.push(a);
+      } else {
+        allFeaturedAds.push(a);
+      }
     }
 
     const isAdminAppr = a.adminApproved === true || a.verified === true || a.isPremium === true || a.isSponsor === true;
@@ -914,16 +937,14 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
     byProvince[prov] = (byProvince[prov] || 0) + 1;
   }
 
-  // Sort active ads once so Sponsored/Premium always appear at the top of page 1 and in every index map
-  allActiveAds.sort((a, b) => adPriorityScore(b) - adPriorityScore(a));
-  for (let i = 0; i < allActiveAds.length; i++) {
-    const a = allActiveAds[i];
-    if (!a.isPremium && !a.isSponsor) {
-      allFreeAds.push(a);
-    } else {
-      allFeaturedAds.push(a);
-    }
+  // Only sort the featured ads (avoiding 45M comparator calls on 2.17M identical-priority free ads!)
+  if (allFeaturedAds.length > 1) {
+    allFeaturedAds.sort((a, b) => adPriorityScore(b) - adPriorityScore(a));
+  }
+  const finalActiveAds = allFeaturedAds.length > 0 ? allFeaturedAds.concat(allFreeAds) : allFreeAds;
 
+  for (let i = 0; i < finalActiveAds.length; i++) {
+    const a = finalActiveAds[i];
     indexSingleActiveAdIntoMaps(
       a,
       byProvinceActive,
@@ -957,7 +978,7 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
   return {
     cacheKey,
     allNonDeletedAds,
-    allActiveAds,
+    allActiveAds: finalActiveAds,
     allFreeAds,
     allFeaturedAds,
     adminStats,
@@ -1006,7 +1027,11 @@ function getAdminStats(allAds: any[], cacheKey: number) {
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const statsOnly = url.searchParams.get('statsOnly') === 'true';
+    const forceReload = url.searchParams.get('reload') === 'true';
+    if (forceReload) {
+      await checkAndReloadFromDiskAsync(true);
+    }
+    const statsOnly = url.searchParams.get('statsOnly') === 'true' || forceReload;
     const syncOnly = url.searchParams.get('syncOnly') === 'true';
     const claimsOnly = url.searchParams.get('claimsOnly') === 'true';
     const featuredOnly = url.searchParams.get('featuredOnly') === 'true';

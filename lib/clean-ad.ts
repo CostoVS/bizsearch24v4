@@ -163,23 +163,12 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
       desc.toLowerCase() === "basic unverified directory listing." ||
       desc.toLowerCase() === "basic listing"
     ) {
-      // Set to a clean, professional description or category summary
-      if (copy.category && copy.category !== "Other") {
-        const loc = copy.suburb || copy.location || copy.city || "South Africa";
-        copy.description = `${copy.category} business listed in ${loc}.`;
-      } else {
-        copy.description = "Directory listing.";
-      }
+      copy.description = "Trusted South African business providing quality local services. Contact directly for enquiries, quotes, and service availability.";
     } else {
       copy.description = desc;
     }
   } else {
-    if (copy.category && copy.category !== "Other") {
-      const loc = copy.suburb || copy.location || copy.city || "South Africa";
-      copy.description = `${copy.category} business listed in ${loc}.`;
-    } else {
-      copy.description = "Directory listing.";
-    }
+    copy.description = "Trusted South African business providing quality local services. Contact directly for enquiries, quotes, and service availability.";
   }
 
   // 3. Ensure uploaded and unclaimed ads are NEVER marked as verified
@@ -190,7 +179,7 @@ export function cleanAd<T extends Record<string, any>>(ad: T): T {
 
   // 4. Enhance Metadata: Link Province, City/Town, Suburb, Category Code, Group & Slug in O(1)
   const enhanced = enhanceAdMetadata(copy);
-  Object.defineProperty(enhanced, '_cleanedV2', { value: true, writable: true, enumerable: false });
+  (enhanced as any)._cleanedV2 = true;
 
   return enhanced as T;
 }

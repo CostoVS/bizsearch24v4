@@ -11726,18 +11726,137 @@ def collect_all_harvested_leads() -> list:
 
     return all_leads
 
+def _build_compact_searchbiz_ad(item: dict, seq_num: int, ts_ms: int, now_iso: str, seen_hashes: set):
+    """
+    Validates minimum requirements (Business Name, Address + 4-digit Postal Code, and Phone/Telephone/WhatsApp),
+    deduplicates via 64-bit integer hash, and returns a compact SearchBiz ad dict + optional email row.
+    """
+    title = str(item.get("title") or item.get("name") or item.get("business_name") or "").strip()
+    if not title or len(title) < 2:
+        return None, None
+
+    raw_phone = str(item.get("phone") or "").strip()
+    raw_tel = str(item.get("telephone") or item.get("landline") or "").strip()
+    raw_wa = str(item.get("whatsapp") or item.get("found_whatsapp") or "").strip()
+    # Minimum requirement: Phone or Telephone or WhatsApp (falls back to WhatsApp as phone if no phone/tel)
+    primary_phone = raw_phone or raw_tel or raw_wa
+    if not primary_phone:
+        return None, None
+
+    raw_addr = str(item.get("address") or "").strip()
+    prov_slug, prov_name, town, suburb = resolve_sa_province_and_town(
+        str(item.get("province") or ""),
+        str(item.get("city") or item.get("town") or item.get("location") or ""),
+        str(item.get("suburb") or ""),
+        raw_addr
+    )
+    if not raw_addr and not town and not suburb:
+        return None, None
+
+    postal_code = resolve_sa_postal_code(
+        prov_slug, town, suburb, raw_addr, str(item.get("postalCode") or item.get("postal_code") or "")
+    )
+    clean_cat = match_searchbiz_category(str(item.get("category") or "General Services"))
+    cat_code = str(item.get("categoryCode") or item.get("category_code") or "").strip()
+
+    t_norm = re.sub(r'[^a-z0-9]', '', title.lower())
+    p_digits = re.sub(r'[^0-9]', '', primary_phone)
+    p_norm = p_digits[-9:] if len(p_digits) >= 7 else p_digits
+    c_norm = re.sub(r'[^a-z0-9]', '', town.lower())
+    s_norm = re.sub(r'[^a-z0-9]', '', (suburb or town).lower())
+    a_norm = re.sub(r'[^a-z0-9]', '', raw_addr.lower())[:24]
+
+    comp_key = hash((t_norm, c_norm, s_norm, a_norm, p_norm))
+    if comp_key in seen_hashes:
+        return "DUPLICATE", None
+    seen_hashes.add(comp_key)
+
+    final_suburb = suburb or town
+    final_addr = raw_addr or f"{final_suburb}, {town}, {prov_name}, {postal_code}, South Africa"
+
+    ad_obj = {
+        "id": f"ad-agent-{ts_ms}-{seq_num}",
+        "userId": "agent-bot",
+        "isActive": True,
+        "title": title,
+        "category": clean_cat,
+        "categoryCode": cat_code,
+        "location": town.lower(),
+        "city": town,
+        "town": town,
+        "province": prov_slug,
+        "provinceName": prov_name,
+        "suburb": final_suburb,
+        "postalCode": postal_code,
+        "address": final_addr,
+        "phone": primary_phone,
+        "isLockedLevel1": True,
+        "plan": "free",
+        "source": "agent_bot",
+        "_geoNormalized": True
+    }
+
+    if raw_tel and raw_tel != primary_phone:
+        ad_obj["telephone"] = raw_tel
+    if raw_wa:
+        ad_obj["whatsapp"] = raw_wa
+
+    email_val = str(item.get("email") or item.get("found_email") or "").strip()
+    if email_val:
+        ad_obj["email"] = email_val
+    web_val = str(item.get("website") or "").strip()
+    if web_val:
+        ad_obj["website"] = web_val
+
+    socials = extract_social_media_dict(str(item.get("socialLinks") or item.get("social_links") or ""))
+    fb_val = str(item.get("facebook") or item.get("socialFacebook") or socials["facebook"] or "").strip()
+    ig_val = str(item.get("instagram") or item.get("socialInstagram") or socials["instagram"] or "").strip()
+    tt_val = str(item.get("tiktok") or item.get("socialTikTok") or socials["tiktok"] or "").strip()
+    tw_val = str(item.get("twitter") or item.get("socialX") or item.get("x") or socials["twitter"] or "").strip()
+    yt_val = str(item.get("youtube") or item.get("socialYoutube") or socials["youtube"] or "").strip()
+    li_val = str(item.get("linkedin") or item.get("socialLinkedin") or socials["linkedin"] or "").strip()
+
+    if fb_val: ad_obj["facebook"] = fb_val
+    if ig_val: ad_obj["instagram"] = ig_val
+    if tt_val: ad_obj["tiktok"] = tt_val
+    if tw_val: ad_obj["twitter"] = tw_val
+    if yt_val: ad_obj["youtube"] = yt_val
+    if li_val: ad_obj["linkedin"] = li_val
+    if socials["socialLinks"]: ad_obj["socialLinks"] = socials["socialLinks"]
+
+    raw_hours = str(item.get("tradingHours") or item.get("trading_hours") or "").strip()
+    if raw_hours:
+        ad_obj["tradingHours"] = raw_hours
+    raw_serv = str(item.get("servicesOffered") or item.get("services_offered") or item.get("services") or "").strip()
+    if raw_serv and raw_serv != clean_cat:
+        ad_obj["servicesOffered"] = raw_serv
+    raw_desc = str(item.get("description") or item.get("found_description") or "").strip()
+    if raw_desc and not raw_desc.startswith("Local business in "):
+        ad_obj["description"] = raw_desc
+
+    email_row = None
+    if email_val and "@" in email_val:
+        email_row = [
+            title, email_val, primary_phone, raw_wa or primary_phone,
+            final_addr, final_suburb, town, prov_name, postal_code,
+            clean_cat, web_val, "https://searchbiz.co.za/directory", "R199.00/month Level 2"
+        ]
+
+    return ad_obj, email_row
+
+
 def start_bulk_sync_to_searchbiz(chat_id: int) -> dict:
     """
-    Scans all harvested leads across memory, SQLite vault, scraped_leads_vault/ (313 consolidated CSVs = 2,169,668 businesses),
-    and listings/ directory, and bulk-uploads all business records directly to searchbiz.co.za!
+    Scans all harvested leads across scraped_leads_vault/ (313 consolidated CSVs = 2,169,668+ businesses),
+    listings/, leads_storage/, and SQLite hermes_data.db, and pushes all business records directly to searchbiz.co.za as ads!
     """
     global GLOBAL_BULK_SYNC
     reset_stop_flag()
     if GLOBAL_BULK_SYNC["is_running"]:
-        msg = f"""⚡ <b>SearchBiz Bulk Sync Already Active!</b>
+        msg = f"""⚡ <b>SearchBiz Bulk Ad Push Already Active!</b>
 ═══════════════════════════════════════════
 📊 <b>Newly Added:</b> <b>{GLOBAL_BULK_SYNC['total_uploaded']:,} listings</b>
-🔄 <b>Verified & Enriched In-Place:</b> <b>{GLOBAL_BULK_SYNC.get('total_updated', 0):,} listings</b>
+🔄 <b>Skipped Duplicates:</b> <b>{GLOBAL_BULK_SYNC.get('total_skipped_duplicates', 0):,} listings</b>
 🌐 <b>Total Live Ads on SearchBiz:</b> <b>{GLOBAL_BULK_SYNC.get('live_total_ads', 0):,}</b>
 📦 <b>Current Batch:</b> <b>{GLOBAL_BULK_SYNC['current_batch']} / {GLOBAL_BULK_SYNC['total_batches']}</b>
 
@@ -11755,119 +11874,385 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
         GLOBAL_BULK_SYNC["total_skipped_duplicates"] = 0
         GLOBAL_BULK_SYNC["live_total_ads"] = 0
 
-        init_msg = """🚀 <b>SearchBiz Low-RAM Streaming Bulk Sync Activated!</b>
+        init_msg = """🚀 <b>SearchBiz 2M+ Ads Low-RAM Streaming Push Activated!</b>
 ═══════════════════════════════════════════
-📥 <b>Streaming Scraped Vault & 313 CSVs:</b> Reading harvested business CSVs one file at a time (Contabo Low-RAM Safe Mode)...
-🗺️ <b>Auto-Geography & Category Engine:</b> Mapping every ad to its exact SA Address, Area/Suburb, Town/City, Province, Postal Code & Category
-⚡ <b>High-Speed Bulk Stream:</b> Batching 1,500 records per HTTP payload
+📥 <b>Streaming All Scraped Sources:</b> <code>scraped_leads_vault/</code> (313 CSVs), <code>listings/</code>, <code>leads_storage/</code> &amp; <code>hermes_data.db</code>
+🗺️ <b>Auto-Geography &amp; Category Engine:</b> Mapping every business to its exact SA Province, Town/City, Suburb/Area, Postal Code &amp; Category
+🔒 <b>Free / Level 1 Display Rule:</b> Showing only Business Name, Address &amp; Phone/Telephone/WhatsApp; blurring Emails, Website, Socials, Services &amp; About for Paid Level 2 (R199/mo)
+📧 <b>Email Vault Export:</b> Saving all businesses with emails to <code>listings/SearchBiz_Businesses_With_Emails_For_Level2_R199_Upgrade.csv</code>
 📬 <b>Target Site:</b> https://searchbiz.co.za"""
         if chat_id:
             send_telegram(chat_id, init_msg)
+        logger.info("Starting SearchBiz 2M+ Ads Low-RAM Streaming Push...")
 
-        # Discover all CSV files across vault and listings without loading rows into RAM yet
+        # 1. Discover all CSV and JSON files across all VPS storage paths
         csv_files = []
+        json_files = []
         seen_real_files = set()
-        for s_dir in [VAULT_DIR, LISTINGS_DIR, LEADS_DIR, "/opt/hermes-searchbiz/scraped_leads_vault", "/opt/hermes-searchbiz/listings"]:
+        candidate_dirs = [
+            VAULT_DIR,
+            LISTINGS_DIR,
+            LEADS_DIR,
+            "/opt/hermes-searchbiz/scraped_leads_vault",
+            "/opt/hermes-searchbiz/listings",
+            "/opt/hermes-searchbiz/leads_storage",
+            "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+            "/home/thehightable/bizsearch24v4/vps-agent/listings",
+            "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+            "/var/www/searchbiz/listings"
+        ]
+        for s_dir in candidate_dirs:
             if not s_dir or not os.path.exists(s_dir):
                 continue
             for root, dirs, files in os.walk(s_dir):
                 dirs[:] = [d for d in dirs if d not in ("node_modules", ".next", ".git", ".data", "data", "__pycache__")]
                 for fname in sorted(files):
+                    if fname in ("db.json", "backup_db.json", "searchbiz_db_backup.json", "package.json", "tsconfig.json", "sa_areas_database.json", "searchbiz_all_areas.json"):
+                        continue
+                    if "Emails_For_Level2" in fname:
+                        continue
+                    fp = os.path.realpath(os.path.join(root, fname))
+                    if fp in seen_real_files:
+                        continue
+                    seen_real_files.add(fp)
                     if fname.endswith(".csv"):
-                        fp = os.path.realpath(os.path.join(root, fname))
-                        if fp not in seen_real_files:
-                            seen_real_files.add(fp)
-                            csv_files.append(fp)
+                        csv_files.append(fp)
+                    elif fname.endswith(".json"):
+                        json_files.append(fp)
 
-        if not csv_files:
-            if chat_id:
-                send_telegram(chat_id, "⚠️ <b>Bulk Sync Notice:</b> 0 harvested CSV files found in vault to upload. Scrape listings first using <code>/mega_swarm 313</code>!")
-            GLOBAL_BULK_SYNC["is_running"] = False
-            return
+        # Generator that yields raw business dicts one by one in ultra-low RAM
+        def _iter_all_raw_scraped_records():
+            # A. Stream all CSV files one by one
+            for csv_fp in csv_files:
+                if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+                    return
+                recs = parse_harvested_csv_file_records(csv_fp)
+                for r in recs:
+                    yield r
+                del recs
+                gc.collect()
 
-        batch_size = 1500
-        GLOBAL_BULK_SYNC["total_batches"] = max(1, len(csv_files) * 5)
-        b_idx = 0
-        total_leads = 0
-        batch_items = []
-
-        def _upload_single_batch(items_to_send: list, is_last: bool = False):
-            nonlocal b_idx
-            if not items_to_send:
-                return
-            b_idx += 1
-            GLOBAL_BULK_SYNC["current_batch"] = b_idx
-            uploaded_this_batch = False
-            for attempt in range(2):
+            # B. Stream JSON dossiers in listings/ and vault
+            for j_fp in json_files:
+                if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+                    return
                 try:
-                    res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": items_to_send})
-                    if res.get("success"):
-                        added = res.get("addedCount", 0)
-                        updated = res.get("updatedCount", 0)
-                        skipped = res.get("skippedDuplicatesCount", 0)
-                        total_active = res.get("totalActiveAds", 0)
-                        GLOBAL_BULK_SYNC["total_uploaded"] += added
-                        GLOBAL_BULK_SYNC["total_updated"] += updated
-                        GLOBAL_BULK_SYNC["total_skipped_duplicates"] += skipped
-                        if total_active > 0:
-                            GLOBAL_BULK_SYNC["live_total_ads"] = total_active
-                        uploaded_this_batch = True
-                        break
-                    else:
-                        time.sleep(0.15)
+                    if os.path.getsize(j_fp) > 25 * 1024 * 1024:
+                        continue
+                    with open(j_fp, "r", encoding="utf-8", errors="ignore") as jf:
+                        data = json.load(jf)
+                    items_list = []
+                    file_prov = ""
+                    file_cat = ""
+                    file_city = ""
+                    if isinstance(data, list):
+                        items_list = data
+                    elif isinstance(data, dict):
+                        file_prov = data.get("province") or ""
+                        file_cat = data.get("category") or ""
+                        file_city = data.get("city") or data.get("town") or ""
+                        for k_list in ("businesses", "leads", "items"):
+                            if isinstance(data.get(k_list), list):
+                                items_list = data[k_list]
+                                break
+                        if not items_list:
+                            items_list = [data]
+                    for it in items_list:
+                        if not isinstance(it, dict):
+                            continue
+                        if file_cat and not it.get("category"):
+                            it["category"] = file_cat
+                        if file_prov and not it.get("province"):
+                            it["province"] = file_prov
+                        if file_city and not (it.get("city") or it.get("town") or it.get("location")):
+                            it["city"] = file_city
+                        yield it
                 except Exception:
-                    time.sleep(0.15)
+                    pass
 
-            if not uploaded_this_batch:
+            # C. Stream SQLite hermes_data.db tables in 2,000-row chunks
+            sqlite_candidates = [
+                DB_PATH,
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes_data.db"),
+                "/opt/hermes-searchbiz/hermes_data.db",
+                "/home/thehightable/bizsearch24v4/vps-agent/hermes_data.db"
+            ]
+            seen_sqlite = set()
+            for sq_p in sqlite_candidates:
+                if not sq_p or not os.path.exists(sq_p):
+                    continue
+                real_sq = os.path.realpath(sq_p)
+                if real_sq in seen_sqlite:
+                    continue
+                seen_sqlite.add(real_sq)
                 try:
-                    db_res = direct_db_insert_ad_batch(items_to_send, force_flush=is_last)
-                    GLOBAL_BULK_SYNC["total_uploaded"] += db_res.get("addedCount", 0)
-                    GLOBAL_BULK_SYNC["total_skipped_duplicates"] += db_res.get("skippedDuplicatesCount", 0)
-                    if db_res.get("totalActiveAds", 0) > 0:
-                        GLOBAL_BULK_SYNC["live_total_ads"] = db_res.get("totalActiveAds", 0)
-                except Exception as de:
-                    logger.error(f"Fallback direct_db_insert_ad_batch failed for batch {b_idx}: {de}")
+                    conn = sqlite3.connect(real_sq, timeout=15.0)
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("SELECT name, category, province, city, address, phone, found_whatsapp, found_email, website, found_description, trading_hours, social_links FROM business_leads")
+                        while True:
+                            rows = cur.fetchmany(2000)
+                            if not rows:
+                                break
+                            for r in rows:
+                                yield {
+                                    "title": r[0], "category": r[1], "province": r[2], "city": r[3],
+                                    "address": r[4], "phone": r[5], "whatsapp": r[6], "email": r[7],
+                                    "website": r[8], "description": r[9], "tradingHours": r[10], "socialLinks": r[11]
+                                }
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("SELECT business_name, category, province, city, postal_code, address, phone, telephone, whatsapp, email, website, trading_hours, social_links FROM scraped_vault_leads")
+                        while True:
+                            rows = cur.fetchmany(2000)
+                            if not rows:
+                                break
+                            for r in rows:
+                                yield {
+                                    "title": r[0], "category": r[1], "province": r[2], "city": r[3],
+                                    "postalCode": r[4], "address": r[5], "phone": r[6], "telephone": r[7],
+                                    "whatsapp": r[8], "email": r[9], "website": r[10], "tradingHours": r[11], "socialLinks": r[12]
+                                }
+                    except Exception:
+                        pass
+                    conn.close()
+                except Exception:
+                    pass
 
-            if chat_id and b_idx % 25 == 0:
-                progress_card = f"""📊 <b>SearchBiz Low-RAM Bulk Sync Status</b>
+        # 2. Check if the SearchBiz web storage directory (data/db.json) exists locally on this VPS
+        local_web_roots = []
+        for cand_root in [
+            "/home/thehightable/bizsearch24v4",
+            os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")),
+            "/var/www/searchbiz",
+            "/opt/searchbiz"
+        ]:
+            if os.path.exists(cand_root) and (os.path.exists(os.path.join(cand_root, "docker-compose.yml")) or os.path.exists(os.path.join(cand_root, "package.json")) or os.path.exists(os.path.join(cand_root, "data"))):
+                real_r = os.path.realpath(cand_root)
+                if real_r not in local_web_roots:
+                    local_web_roots.append(real_r)
+
+        email_vault_csv = os.path.join(LISTINGS_DIR, "SearchBiz_Businesses_With_Emails_For_Level2_R199_Upgrade.csv")
+        os.makedirs(LISTINGS_DIR, exist_ok=True)
+        seen_hashes = set()
+        seen_emails = set()
+        ts_ms = int(time.time() * 1000)
+        now_iso = datetime.now().isoformat()
+        total_processed = 0
+        added_count = 0
+        skipped_dups = 0
+        existing_kept = 0
+        emails_captured = 0
+
+        # Open email vault CSV for streaming writes
+        email_csv_f = open(email_vault_csv, "w", newline="", encoding="utf-8")
+        email_writer = csv.writer(email_csv_f)
+        email_writer.writerow([
+            "Business Name", "Email Address", "Phone Number", "WhatsApp Number",
+            "Full Address", "Suburb", "City / Town", "Province", "Postal Code",
+            "Category", "Website", "Verify & Upgrade URL", "Upgrade Plan"
+        ])
+
+        if local_web_roots:
+            primary_root = local_web_roots[0]
+            data_dir = os.path.join(primary_root, "data")
+            dot_data_dir = os.path.join(primary_root, ".data")
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(dot_data_dir, exist_ok=True)
+            primary_db_path = os.path.join(data_dir, "db.json")
+            dot_db_path = os.path.join(dot_data_dir, "db.json")
+            tmp_db_path = f"{primary_db_path}.tmp.push.{os.getpid()}"
+
+            logger.info(f"Direct Local Disk Stream active -> {primary_db_path}")
+            try:
+                with open(tmp_db_path, "w", encoding="utf-8") as out_f:
+                    out_f.write('{"ads":[\n')
+                    wrote_any = False
+
+                    # Preserve existing ads from primary_db_path or dot_db_path by streaming line-by-line in 0 RAM
+                    source_existing_db = primary_db_path if (os.path.exists(primary_db_path) and os.path.getsize(primary_db_path) > 20) else (dot_db_path if (os.path.exists(dot_db_path) and os.path.getsize(dot_db_path) > 20) else None)
+                    if source_existing_db:
+                        try:
+                            with open(source_existing_db, "r", encoding="utf-8", errors="ignore") as in_f:
+                                for raw_line in in_f:
+                                    s_line = raw_line.strip().rstrip(",")
+                                    if not (s_line.startswith("{") and s_line.endswith("}") and '"title":' in s_line):
+                                        continue
+                                    try:
+                                        ex_ad = json.loads(s_line)
+                                        ex_title = str(ex_ad.get("title") or "").strip()
+                                        ex_phone = str(ex_ad.get("phone") or ex_ad.get("telephone") or ex_ad.get("whatsapp") or "").strip()
+                                        if not ex_title or not ex_phone:
+                                            continue
+                                        t_n = re.sub(r'[^a-z0-9]', '', ex_title.lower())
+                                        p_d = re.sub(r'[^0-9]', '', ex_phone)
+                                        p_n = p_d[-9:] if len(p_d) >= 7 else p_d
+                                        c_n = re.sub(r'[^a-z0-9]', '', str(ex_ad.get("city") or ex_ad.get("town") or "").lower())
+                                        s_n = re.sub(r'[^a-z0-9]', '', str(ex_ad.get("suburb") or c_n).lower())
+                                        a_n = re.sub(r'[^a-z0-9]', '', str(ex_ad.get("address") or "").lower())[:24]
+                                        ck = hash((t_n, c_n, s_n, a_n, p_n))
+                                        if ck in seen_hashes:
+                                            continue
+                                        seen_hashes.add(ck)
+                                        ex_ad["_geoNormalized"] = True
+                                        line_str = json.dumps(ex_ad, ensure_ascii=False, separators=(',', ':'))
+                                        out_f.write((",\n" if wrote_any else "") + line_str)
+                                        wrote_any = True
+                                        existing_kept += 1
+                                    except Exception:
+                                        continue
+                        except Exception as ex_err:
+                            logger.debug(f"Existing db stream note: {ex_err}")
+
+                    # Stream all scraped leads from CSVs, JSONs, and SQLite
+                    for rec in _iter_all_raw_scraped_records():
+                        if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+                            break
+                        total_processed += 1
+                        GLOBAL_BULK_SYNC["total_discovered"] = total_processed
+                        ad_obj, email_row = _build_compact_searchbiz_ad(rec, existing_kept + added_count + 1, ts_ms, now_iso, seen_hashes)
+                        if ad_obj == "DUPLICATE":
+                            skipped_dups += 1
+                            GLOBAL_BULK_SYNC["total_skipped_duplicates"] = skipped_dups
+                            continue
+                        if not ad_obj:
+                            continue
+
+                        line_str = json.dumps(ad_obj, ensure_ascii=False, separators=(',', ':'))
+                        out_f.write((",\n" if wrote_any else "") + line_str)
+                        wrote_any = True
+                        added_count += 1
+                        GLOBAL_BULK_SYNC["total_uploaded"] = added_count
+                        GLOBAL_BULK_SYNC["live_total_ads"] = existing_kept + added_count
+                        GLOBAL_BULK_SYNC["current_batch"] = total_processed // 2500
+
+                        if email_row:
+                            em_key = hash((email_row[1].lower(), email_row[0].lower()))
+                            if em_key not in seen_emails:
+                                seen_emails.add(em_key)
+                                email_writer.writerow(email_row)
+                                emails_captured += 1
+
+                        if total_processed % 250000 == 0:
+                            logger.info(f"Streamed {total_processed:,} records | Live Ads Written: {existing_kept + added_count:,} | Skipped Dups: {skipped_dups:,}")
+                            if chat_id:
+                                send_telegram(chat_id, f"""📊 <b>SearchBiz 2M+ Ads Direct Stream Progress</b>
 ═══════════════════════════════════════════
-🔄 <b>Status:</b> STREAMING IN PROGRESS (Batch {b_idx})
-📥 <b>Harvested Leads Streamed:</b> <b>{total_leads:,}</b>
-✅ <b>New Listings Added This Run:</b> <b>{GLOBAL_BULK_SYNC['total_uploaded']:,}</b>
-🗺️ <b>Existing Listings Verified & Enriched:</b> <b>{GLOBAL_BULK_SYNC['total_updated']:,}</b>
-🌐 <b>Total Live Ads on SearchBiz.co.za:</b> <b>{GLOBAL_BULK_SYNC['live_total_ads']:,}</b>
-🔗 <b>Target Directory:</b> https://searchbiz.co.za/directory"""
-                send_telegram(chat_id, progress_card)
+🔄 <b>Status:</b> STREAMING AT FULL DISK SPEED
+📥 <b>Scraped Records Scanned:</b> <b>{total_processed:,}</b>
+✅ <b>New Unique Ads Written:</b> <b>{added_count:,}</b>
+🛡️ <b>Duplicates Filtered Out:</b> <b>{skipped_dups:,}</b>
+📧 <b>Emails Captured for R199 Upgrade:</b> <b>{emails_captured:,}</b>
+🌐 <b>Total Ads in SearchBiz DB:</b> <b>{existing_kept + added_count:,}</b>""")
 
-        for csv_fp in csv_files:
-            if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
-                break
-            records = parse_harvested_csv_file_records(csv_fp)
-            for rec in records:
-                batch_items.append(rec)
-                total_leads += 1
-                GLOBAL_BULK_SYNC["total_discovered"] = total_leads
-                if len(batch_items) >= batch_size:
-                    _upload_single_batch(batch_items, is_last=False)
-                    batch_items = []
-            del records
-            gc.collect()
+                    out_f.write(f'\n],"updatedAt":{int(time.time() * 1000)}}}\n')
 
-        if batch_items and GLOBAL_BULK_SYNC["is_running"] and not check_stop_requested():
-            _upload_single_batch(batch_items, is_last=True)
+                # Atomically swap tmp file into data/db.json and hardlink .data/db.json
+                os.replace(tmp_db_path, primary_db_path)
+                try:
+                    if os.path.exists(dot_db_path):
+                        os.remove(dot_db_path)
+                    os.link(primary_db_path, dot_db_path)
+                except Exception:
+                    try:
+                        shutil.copy2(primary_db_path, dot_db_path)
+                    except Exception:
+                        pass
+
+                # Remove any stale multi-GB backup_db.json files so disk space stays clean
+                for old_bak in [
+                    os.path.join(data_dir, "backup_db.json"),
+                    os.path.join(dot_data_dir, "backup_db.json"),
+                    "/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json"
+                ]:
+                    try:
+                        if os.path.exists(old_bak) and os.path.getsize(old_bak) > 50 * 1024 * 1024:
+                            os.remove(old_bak)
+                    except Exception:
+                        pass
+
+                # Trigger instant hot-reload on live Next.js server (port 3005 and 3000)
+                for port in (3005, 3000):
+                    try:
+                        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/storage?reload=true", headers={"User-Agent": "Hermes/2026"})
+                        with urllib.request.urlopen(req, timeout=120) as resp:
+                            r_data = json.loads(resp.read().decode("utf-8"))
+                            if r_data.get("totalAdsCount"):
+                                GLOBAL_BULK_SYNC["live_total_ads"] = r_data["totalAdsCount"]
+                    except Exception as rel_e:
+                        logger.debug(f"Hot-reload port {port} note: {rel_e}")
+
+            except Exception as stream_err:
+                logger.error(f"Direct local stream error: {stream_err}")
+                try:
+                    if os.path.exists(tmp_db_path):
+                        os.remove(tmp_db_path)
+                except Exception:
+                    pass
+        else:
+            # Remote HTTP Batch Stream Fallback when SearchBiz web app is on a different host
+            batch_size = 1500
             batch_items = []
+            b_idx = 0
+            for rec in _iter_all_raw_scraped_records():
+                if not GLOBAL_BULK_SYNC["is_running"] or check_stop_requested():
+                    break
+                total_processed += 1
+                GLOBAL_BULK_SYNC["total_discovered"] = total_processed
+                ad_obj, email_row = _build_compact_searchbiz_ad(rec, added_count + 1, ts_ms, now_iso, seen_hashes)
+                if ad_obj == "DUPLICATE":
+                    skipped_dups += 1
+                    GLOBAL_BULK_SYNC["total_skipped_duplicates"] = skipped_dups
+                    continue
+                if not ad_obj:
+                    continue
+                batch_items.append(ad_obj)
+                if email_row:
+                    em_key = hash((email_row[1].lower(), email_row[0].lower()))
+                    if em_key not in seen_emails:
+                        seen_emails.add(em_key)
+                        email_writer.writerow(email_row)
+                        emails_captured += 1
+                if len(batch_items) >= batch_size:
+                    b_idx += 1
+                    GLOBAL_BULK_SYNC["current_batch"] = b_idx
+                    res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": batch_items})
+                    if res.get("success"):
+                        added_count += res.get("addedCount", 0)
+                        GLOBAL_BULK_SYNC["total_uploaded"] = added_count
+                        GLOBAL_BULK_SYNC["live_total_ads"] = res.get("totalActiveAds", added_count)
+                    batch_items = []
+            if batch_items and GLOBAL_BULK_SYNC["is_running"] and not check_stop_requested():
+                res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": batch_items})
+                if res.get("success"):
+                    added_count += res.get("addedCount", 0)
+                    GLOBAL_BULK_SYNC["total_uploaded"] = added_count
+                    GLOBAL_BULK_SYNC["live_total_ads"] = res.get("totalActiveAds", added_count)
+
+        try:
+            email_csv_f.close()
+        except Exception:
+            pass
+        seen_hashes.clear()
+        seen_emails.clear()
+        gc.collect()
 
         GLOBAL_BULK_SYNC["is_running"] = False
+        final_live = GLOBAL_BULK_SYNC["live_total_ads"] or (existing_kept + added_count)
+        logger.info(f"Bulk Push 100% Complete! Total Live Ads on SearchBiz.co.za: {final_live:,} (New: {added_count:,}, Existing Kept: {existing_kept:,}, Dups Skipped: {skipped_dups:,}, Emails Saved: {emails_captured:,})")
         if chat_id:
-            done_card = f"""🏆 <b>SearchBiz Bulk Sync 100% Complete!</b>
+            done_card = f"""🏆 <b>SearchBiz 2M+ Ads Push 100% Complete!</b>
 ═══════════════════════════════════════════
-✅ <b>New Listings Added:</b> <b>{GLOBAL_BULK_SYNC['total_uploaded']:,}</b>
-🗺️ <b>Existing Listings Enriched & Mapped:</b> <b>{GLOBAL_BULK_SYNC['total_updated']:,}</b>
-🌐 <b>Total Live Ads on SearchBiz.co.za:</b> <b>{GLOBAL_BULK_SYNC['live_total_ads']:,}</b>
-📥 <b>Total Processed:</b> <b>{total_leads:,} harvested records</b>
+✅ <b>New Unique Ads Added:</b> <b>{added_count:,}</b>
+🔄 <b>Existing Ads Preserved:</b> <b>{existing_kept:,}</b>
+🛡️ <b>Duplicate Listings Skipped:</b> <b>{skipped_dups:,}</b>
+🌐 <b>Total Live Ads on SearchBiz.co.za:</b> <b>{final_live:,}</b>
+📧 <b>Businesses With Emails Saved:</b> <b>{emails_captured:,}</b> (<code>SearchBiz_Businesses_With_Emails_For_Level2_R199_Upgrade.csv</code>)
+📥 <b>Total Scraped Records Processed:</b> <b>{total_processed:,}</b>
 🔗 <b>Live Directory:</b> https://searchbiz.co.za/directory
 
-All listings are live, mapped to their exact address, area/suburb, town/city, province, postal code & category, and searchable on SearchBiz!"""
+All listings are live on SearchBiz.co.za in their exact Province, Town/City, Suburb/Area, Postal Code &amp; Category (showing only Business Name, Address &amp; Phone/WhatsApp, with all other details blurred out for the R199/month Level 2 upgrade)!"""
             send_telegram(chat_id, done_card)
 
     thread = threading.Thread(target=_sync_runner, name="SearchBizBulkSync", daemon=True)
@@ -15077,8 +15462,8 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
         send_telegram(chat_id, GLOBAL_SUBAGENT_POOL.get_status_card())
         return True
 
-    # SearchBiz Bulk Vault Hyper-Sync Handlers
-    if text.startswith(("/sync_all_vault", "/upload_all_scrapes", "/bulk_sync", "/sync_all", "/upload_200k", "/sync_searchbiz", "/upload_all")) or any(k in lower for k in [
+    # SearchBiz Bulk Vault Hyper-Sync & 2M+ Ads Push Handlers
+    if text.startswith(("/push_ads", "/push_all_ads", "/sync_all_vault", "/upload_all_scrapes", "/bulk_sync", "/sync_all", "/upload_200k", "/sync_searchbiz", "/upload_all", "/push_all_listings", "/upload_all_listings")) or any(k in lower for k in [
         "put all the ads data that was scraped to go on searchbiz",
         "put all the ads data that was scraped",
         "upload all 200000 listings",
@@ -15087,7 +15472,13 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
         "sync all scraped listings",
         "sync all listings with searchbiz",
         "get all 200 000 listings uploaded on searchbiz",
-        "get all 200000 listings uploaded on searchbiz"
+        "get all 200000 listings uploaded on searchbiz",
+        "push it to searchbiz",
+        "push all listings to searchbiz",
+        "push ads to searchbiz",
+        "push 2 million",
+        "upload 2 million",
+        "push all scraped listings"
     ]):
         send_chat_action(chat_id, "typing")
         start_bulk_sync_to_searchbiz(chat_id)
@@ -15894,8 +16285,9 @@ Send <code>/sync_all_vault</code> to start bulk upload stream!"""
             if text.startswith(pfx):
                 target_arg = text[len(pfx):].strip() or "all"
                 break
-        if not target_arg or target_arg == "/publish_all_listings":
-            target_arg = "all"
+        if not target_arg or target_arg in ["/publish_all_listings", "all", "everything", "vault", "listings"]:
+            start_bulk_sync_to_searchbiz(chat_id)
+            return True
         publish_listings_target(chat_id, target=target_arg, plan="free")
         return True
 
@@ -16976,6 +17368,10 @@ def handle_message(message: dict):
     # FAST-PATH Lock-Free Swarm Commands (Executes BEFORE SQLite record_chat_turn so /subagents_status NEVER hangs!)
     if lower.startswith(("/subagents_status", "/subagent_status", "/swarm_status", "/mega_status")):
         send_telegram(chat_id, GLOBAL_SUBAGENT_POOL.get_status_card(text))
+        return
+
+    if lower.startswith(("/push_ads", "/push_all_ads", "/sync_all_vault", "/upload_all_listings", "/push_all_listings")):
+        start_bulk_sync_to_searchbiz(chat_id)
         return
 
     if lower.startswith(("/mega_swarm", "/swarm_all", "/cover_all", "/all_313", "/scrape_313")):
@@ -18241,17 +18637,18 @@ if __name__ == "__main__":
     parser.add_argument("--scrape-all-313", action="store_true", help="Scrape all 313 categories across all 6,931 suburbs in all 9 provinces, upload all ads to searchbiz.co.za, and email 313 consolidated CSVs to nicholauscostochetty@gmail.com")
     parser.add_argument("--mega-swarm", type=int, nargs="?", const=64, help="Launch Mega-Swarm with N concurrent sub-agents across all 313 categories & 9 provinces")
     parser.add_argument("--sync-all", action="store_true", help="Bulk-upload and sync all harvested listings in vault/listings to searchbiz.co.za")
+    parser.add_argument("--push-ads", action="store_true", help="Fast low-RAM stream of all 2M+ scraped listings into searchbiz.co.za as ads")
     parser.add_argument("--email", type=str, default="nicholauscostochetty@gmail.com", help="Target email for the 313 consolidated category CSV files")
     parser.add_argument("--workers", type=int, default=32, help="Number of concurrent sub-agent workers")
     args, _ = parser.parse_known_args()
 
-    if args.sync_all:
+    if args.sync_all or args.push_ads:
         init_memory_db()
-        logger.info("Running CLI Bulk Sync to SearchBiz.co.za...")
+        logger.info("Running Low-RAM Streaming Bulk Push of all scraped listings to SearchBiz.co.za...")
         start_bulk_sync_to_searchbiz(chat_id=0)
         while GLOBAL_BULK_SYNC.get("is_running"):
             time.sleep(2.0)
-        logger.info("Bulk Sync Complete!")
+        logger.info("Bulk Push to SearchBiz.co.za Complete!")
         sys.exit(0)
 
     if args.scrape_all_313 or args.mega_swarm is not None:

@@ -276,6 +276,9 @@ export function normalizeProvinceSlug(rawProvince?: string): string {
  */
 export function resolveAdGeographyAndCategory(ad: any): void {
   if (!ad || typeof ad !== 'object') return;
+  if (ad._geoNormalized === true && ad.province && ad.city && ad.categoryCode && ad.postalCode !== undefined) {
+    return;
+  }
   ensureMapsInitialized();
 
   const rawCity = String(ad.city || ad.town || ad.location || '').trim();
@@ -413,13 +416,10 @@ export function resolveAdGeographyAndCategory(ad: any): void {
     }
   }
 
-  // 4. Upgrade generic "Local business in ..." placeholder descriptions
+  // 4. Upgrade generic "Local business in ..." placeholder descriptions using an interned constant string
   const rawDesc = String(ad.description || '').trim();
   if (!rawDesc || rawDesc.startsWith('Local business in ')) {
-    const niceCity = ad.city || ad.town || 'South Africa';
-    const niceProv = ad.provinceName || PROVINCE_NAMES_BY_SLUG[ad.province] || '';
-    const niceCat = ad.category || 'Professional Services';
-    ad.description = `${ad.title || 'Local Business'} provides trusted ${niceCat.toLowerCase()} in ${ad.suburb ? ad.suburb + ', ' : ''}${niceCity}${ad.postalCode ? ' (' + ad.postalCode + ')' : ''}${niceProv ? ', ' + niceProv : ''}. Contact us directly for enquiries, quotes, and service availability.`;
+    ad.description = 'Trusted South African business providing quality local services. Contact directly for enquiries, quotes, and service availability.';
   }
 
   // 5. Ensure bot/scraped ads are active in the directory, but ONLY marked approved/verified when explicitly authorized by Admin
@@ -444,4 +444,5 @@ export function resolveAdGeographyAndCategory(ad: any): void {
       ad.approvalStatus = 'pending';
     }
   }
+  ad._geoNormalized = true;
 }

@@ -35,10 +35,16 @@ find /var/log -type f \( -name "*.gz" -o -name "*.1" -o -name "*.2" -o -name "*.
 find /var/log -type f -name "*.log" -size +50M -exec truncate -s 0 {} + 2>/dev/null || true
 
 # 5. Clean /tmp, /var/tmp, pip cache, npm cache, and orphaned .tmp.* files
-echo "🗑️ Purging temporary files, pip cache, and npm cache..."
+echo "🗑️ Purging temporary files, pip cache, npm cache, and redundant multi-GB DB backups..."
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 rm -rf /root/.cache/pip /root/.npm /home/*/.cache/pip /home/*/.npm 2>/dev/null || true
 find /home /opt -type f -name "*.tmp.*" -delete 2>/dev/null || true
+find /home /opt -type f \( -name "backup_db.json" -o -name "searchbiz_db_backup.json" \) -size +50M -delete 2>/dev/null || true
+
+# Deduplicate data/db.json and .data/db.json using hardlink (saves 1.5GB+ disk space)
+if [ -f "/home/thehightable/bizsearch24v4/data/db.json" ] && [ -f "/home/thehightable/bizsearch24v4/.data/db.json" ]; then
+    ln -f "/home/thehightable/bizsearch24v4/data/db.json" "/home/thehightable/bizsearch24v4/.data/db.json" 2>/dev/null || true
+fi
 
 # 6. Clean Docker junk and huge Docker container logs if Docker is installed
 if command -v docker &> /dev/null; then

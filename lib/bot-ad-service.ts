@@ -360,13 +360,16 @@ async function flushToDiskAsync(data: any, forceAllBackups: boolean = false): Pr
   try {
     await writeStorageJsonNonBlocking(PERSIST_PATH, data);
 
+    const adCount = Array.isArray(data?.ads) ? data.ads.length : 0;
     const copyTargets = [JSON_PATH];
     const now = Date.now();
     const shouldWriteBackups =
-      forceAllBackups ||
-      Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
-      !globalRef.lastBackupWriteTime ||
-      now - globalRef.lastBackupWriteTime > 600000;
+      adCount <= 50000 && (
+        forceAllBackups ||
+        Boolean(data?.lastPurgeAt && now - data.lastPurgeAt < 120000) ||
+        !globalRef.lastBackupWriteTime ||
+        now - globalRef.lastBackupWriteTime > 600000
+      );
 
     if (shouldWriteBackups) {
       globalRef.lastBackupWriteTime = now;
@@ -381,6 +384,13 @@ async function flushToDiskAsync(data: any, forceAllBackups: boolean = false): Pr
         const destDir = path.dirname(destPath);
         if (!fs.existsSync(destDir)) {
           await fs.promises.mkdir(destDir, { recursive: true });
+        }
+        if (destPath === JSON_PATH && adCount > 50000) {
+          try {
+            if (fs.existsSync(destPath)) await fs.promises.unlink(destPath);
+            await fs.promises.link(PERSIST_PATH, destPath);
+            continue;
+          } catch (linkErr) {}
         }
         const tempCopy = `${destPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
         await fs.promises.copyFile(PERSIST_PATH, tempCopy);

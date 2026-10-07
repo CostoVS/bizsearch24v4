@@ -90,6 +90,6 @@ export function enhanceAdMetadata<T extends Record<string, any>>(ad: T): T {
       .replace(/^-+|-+$/g, '');
   }
 
-  Object.defineProperty(copy, '_enhancedV2', { value: true, writable: true, enumerable: false });
+  copy._enhancedV2 = true;
   return copy as T;
 }
