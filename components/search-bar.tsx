@@ -303,15 +303,73 @@ function SearchBarForm() {
     return towns.filter(t => t.toLowerCase().includes(q));
   }, [towns, townSearch]);
 
-  const rawSuburbsList = hasSuburbs ? provinceSuburbs[selectedTown] : [];
+  const allTownsAcrossSA = useMemo(() => {
+    const list: Array<{ town: string; provinceSlug: string; provinceName: string }> = [];
+    for (const p of PROVINCES) {
+      for (const t of p.towns || []) {
+        list.push({ town: t, provinceSlug: p.slug, provinceName: p.name });
+      }
+    }
+    return list;
+  }, []);
+
+  const filteredAllTowns = useMemo(() => {
+    const q = townSearch.toLowerCase().trim();
+    if (!q) return allTownsAcrossSA;
+    return allTownsAcrossSA.filter(
+      item => item.town.toLowerCase().includes(q) || item.provinceName.toLowerCase().includes(q)
+    );
+  }, [allTownsAcrossSA, townSearch]);
+
+  const rawSuburbsList = useMemo(() => {
+    if (hasSuburbs) {
+      return provinceSuburbs[selectedTown].map((s: any) => ({
+        name: s.name,
+        postalCode: s.postalCode,
+        town: selectedTown,
+        provinceSlug: selectedProvince,
+      }));
+    }
+    if (provinceSuburbs) {
+      const list: Array<{ name: string; postalCode: string; town: string; provinceSlug: string }> = [];
+      for (const [tName, subs] of Object.entries(provinceSuburbs)) {
+        for (const s of (subs as any[]) || []) {
+          list.push({ name: s.name, postalCode: s.postalCode, town: tName, provinceSlug: selectedProvince });
+        }
+      }
+      return list;
+    }
+    const allSubsMaps: Array<{ slug: string; map: Record<string, Array<{ name: string; postalCode: string }>> }> = [
+      { slug: 'gauteng', map: GAUTENG_SUBURBS },
+      { slug: 'kwazulu-natal', map: KZN_SUBURBS },
+      { slug: 'western-cape', map: WESTERN_CAPE_SUBURBS },
+      { slug: 'eastern-cape', map: EASTERN_CAPE_SUBURBS },
+      { slug: 'free-state', map: FREE_STATE_SUBURBS },
+      { slug: 'limpopo', map: LIMPOPO_SUBURBS },
+      { slug: 'mpumalanga', map: MPUMALANGA_SUBURBS },
+      { slug: 'north-west', map: NORTH_WEST_SUBURBS },
+      { slug: 'northern-cape', map: NORTHERN_CAPE_SUBURBS },
+    ];
+    const list: Array<{ name: string; postalCode: string; town: string; provinceSlug: string }> = [];
+    for (const { slug, map } of allSubsMaps) {
+      for (const [tName, subs] of Object.entries(map || {})) {
+        for (const s of subs || []) {
+          list.push({ name: s.name, postalCode: s.postalCode, town: tName, provinceSlug: slug });
+        }
+      }
+    }
+    return list;
+  }, [hasSuburbs, provinceSuburbs, selectedTown, selectedProvince]);
+
   const filteredSuburbs = useMemo(() => {
     const q = suburbSearch.toLowerCase().trim();
-    if (!q) return rawSuburbsList;
+    if (!q) return hasSuburbs ? rawSuburbsList : rawSuburbsList.slice(0, 150);
     return rawSuburbsList.filter(sub => 
       sub.name.toLowerCase().includes(q) ||
-      sub.postalCode.includes(q)
-    );
-  }, [rawSuburbsList, suburbSearch]);
+      sub.postalCode.includes(q) ||
+      sub.town.toLowerCase().includes(q)
+    ).slice(0, 200);
+  }, [rawSuburbsList, suburbSearch, hasSuburbs]);
 
   const filteredCategoriesStructured = useMemo(() => {
     const q = categorySearch.toLowerCase().trim();
@@ -496,54 +554,48 @@ function SearchBarForm() {
 
         {openDropdown === 'town' && (
           <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white rounded-3xl border border-slate-200/90 shadow-2xl shadow-emerald-950/25 p-3 w-full md:w-[360px] max-w-[calc(100vw-1.5rem)] animate-in fade-in-50 zoom-in-95 duration-150">
-            {!selectedProvince ? (
-              <div className="p-4 text-center">
-                <p className="text-xs text-slate-600 font-semibold mb-3">Please choose a province first to view all cities & towns.</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenDropdown('province');
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                >
-                  Select Province
+            <div className="relative mb-2.5">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={townSearch}
+                onChange={(e) => setTownSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && townSearch.trim()) {
+                    e.preventDefault();
+                    setSelectedTown(townSearch.trim());
+                    setOpenDropdown(null);
+                  }
+                }}
+                placeholder={selectedProvince ? `Search town in ${selectedProvinceName}...` : 'Search any city or town in South Africa...'}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                autoFocus
+              />
+              {townSearch && (
+                <button onClick={() => setTownSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              </div>
-            ) : (
-              <>
-                <div className="relative mb-2.5">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={townSearch}
-                    onChange={(e) => setTownSearch(e.target.value)}
-                    placeholder={`Search town in ${selectedProvinceName}...`}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-                    autoFocus
-                  />
-                  {townSearch && (
-                    <button onClick={() => setTownSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+              )}
+            </div>
 
-                <div className="max-h-[60vh] md:max-h-[440px] overflow-y-auto space-y-1 pr-1 text-xs font-medium [scrollbar-width:thin]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedTown('');
-                      setSuburb('');
-                      setOpenDropdown(null);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition ${
-                      !selectedTown ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>All Cities / Towns ({selectedProvinceName})</span>
-                    {!selectedTown && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                  </button>
+            <div className="max-h-[60vh] md:max-h-[440px] overflow-y-auto space-y-1 pr-1 text-xs font-medium [scrollbar-width:thin]">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTown('');
+                  setSuburb('');
+                  setOpenDropdown(null);
+                }}
+                className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition ${
+                  !selectedTown ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span>All Cities / Towns {selectedProvinceName ? `(${selectedProvinceName})` : '(South Africa)'}</span>
+                {!selectedTown && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+              </button>
 
+              {selectedProvince ? (
+                <>
                   <div className="pt-1 pb-0.5 px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                     Towns in {selectedProvinceName} ({filteredTowns.length})
                   </div>
@@ -569,138 +621,179 @@ function SearchBarForm() {
                   {filteredTowns.length === 0 && (
                     <div className="p-4 text-center text-slate-400 text-xs font-semibold">No towns found matching &quot;{townSearch}&quot;</div>
                   )}
-                </div>
-              </>
-            )}
+                </>
+              ) : (
+                <>
+                  <div className="pt-1 pb-0.5 px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    All South African Cities &amp; Towns ({filteredAllTowns.length})
+                  </div>
+
+                  {filteredAllTowns.map((item, idx) => (
+                    <button
+                      key={`${item.provinceSlug}-${item.town}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProvince(item.provinceSlug);
+                        setSelectedTown(item.town);
+                        setSuburb('');
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition ${
+                        selectedTown === item.town ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="truncate">{item.town}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-lg shrink-0 ${
+                        selectedTown === item.town ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {item.provinceName}
+                      </span>
+                    </button>
+                  ))}
+
+                  {filteredAllTowns.length === 0 && (
+                    <div className="p-4 text-center text-slate-400 text-xs font-semibold">No towns found matching &quot;{townSearch}&quot;</div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* 3. Suburb Field */}
+      {/* 3. Suburb / Area / Postal Code Field */}
       <div className="relative flex-1 min-w-0">
-        {hasSuburbs ? (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setOpenDropdown(openDropdown === 'suburb' ? null : 'suburb');
-                setSuburbSearch('');
-              }}
-              className={`w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100/90 rounded-2xl px-3.5 py-3 transition-all border ${
-                openDropdown === 'suburb' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-white' : 'border-transparent'
-              }`}
-            >
-              <div className="flex items-center min-w-0 mr-1">
-                <Home className="w-4 h-4 text-emerald-600 mr-2 flex-shrink-0" />
-                <span className={`text-xs truncate text-left ${suburb ? 'font-bold text-slate-900' : 'font-semibold text-slate-500'}`}>
-                  {suburb || 'Suburb (optional)'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {suburb && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSuburb('');
-                    }}
-                    className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
-                    title="Clear suburb"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </span>
-                )}
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${openDropdown === 'suburb' ? 'rotate-180 text-emerald-600' : ''}`} />
-              </div>
-            </button>
-
-            {openDropdown === 'suburb' && (
-              <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white rounded-3xl border border-slate-200/90 shadow-2xl shadow-emerald-950/25 p-3 w-full md:w-[360px] max-w-[calc(100vw-1.5rem)] animate-in fade-in-50 zoom-in-95 duration-150">
-                <div className="relative mb-2.5">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={suburbSearch}
-                    onChange={(e) => setSuburbSearch(e.target.value)}
-                    placeholder={`Search suburb in ${selectedTown}...`}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-                    autoFocus
-                  />
-                  {suburbSearch && (
-                    <button onClick={() => setSuburbSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="max-h-[60vh] md:max-h-[440px] overflow-y-auto space-y-1 pr-1 text-xs font-medium [scrollbar-width:thin]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSuburb('');
-                      setOpenDropdown(null);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition ${
-                      !suburb ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>All Suburbs / Entire Town</span>
-                    {!suburb && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                  </button>
-
-                  <div className="pt-1 pb-0.5 px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    Suburbs in {selectedTown} ({filteredSuburbs.length})
-                  </div>
-
-                  {filteredSuburbs.map((subItem, idx) => (
-                    <button
-                      key={`${subItem.name}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        setSuburb(subItem.name);
-                        setOpenDropdown(null);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition ${
-                        suburb === subItem.name ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span>{subItem.name} <span className={suburb === subItem.name ? 'text-emerald-100' : 'text-slate-400'}>({subItem.postalCode})</span></span>
-                      {suburb === subItem.name && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                    </button>
-                  ))}
-
-                  {filteredSuburbs.length === 0 && (
-                    <div className="p-4 text-center text-slate-400 text-xs font-semibold">No suburbs found matching &quot;{suburbSearch}&quot;</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex items-center bg-slate-50 hover:bg-slate-100/90 rounded-2xl px-3.5 py-3 transition-all border border-transparent focus-within:bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20">
+        <button
+          type="button"
+          onClick={() => {
+            setOpenDropdown(openDropdown === 'suburb' ? null : 'suburb');
+            setSuburbSearch('');
+          }}
+          className={`w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100/90 rounded-2xl px-3.5 py-3 transition-all border ${
+            openDropdown === 'suburb' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-white' : 'border-transparent'
+          }`}
+        >
+          <div className="flex items-center min-w-0 mr-1">
             <Home className="w-4 h-4 text-emerald-600 mr-2 flex-shrink-0" />
-            <input 
-              type="text" 
-              value={suburb}
-              onChange={(e) => setSuburb(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleSearch();
-                }
-              }}
-              placeholder="Suburb (optional)"
-              className="w-full bg-transparent border-none text-slate-900 placeholder-slate-500 outline-none text-xs font-semibold"
-            />
+            <span className={`text-xs truncate text-left ${suburb ? 'font-bold text-slate-900' : 'font-semibold text-slate-500'}`}>
+              {suburb || 'Suburb / Area'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
             {suburb && (
-              <button 
-                type="button" 
-                onClick={() => setSuburb('')}
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSuburb('');
+                }}
                 className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
                 title="Clear suburb"
               >
                 <X className="w-3.5 h-3.5" />
-              </button>
+              </span>
             )}
+            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${openDropdown === 'suburb' ? 'rotate-180 text-emerald-600' : ''}`} />
+          </div>
+        </button>
+
+        {openDropdown === 'suburb' && (
+          <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white rounded-3xl border border-slate-200/90 shadow-2xl shadow-emerald-950/25 p-3 w-full md:w-[380px] max-w-[calc(100vw-1.5rem)] animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="relative mb-2.5">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={suburbSearch}
+                onChange={(e) => setSuburbSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && suburbSearch.trim()) {
+                    e.preventDefault();
+                    setSuburb(suburbSearch.trim());
+                    setOpenDropdown(null);
+                  }
+                }}
+                placeholder={selectedTown ? `Search suburb or postal code in ${selectedTown}...` : 'Search any of 6,931 suburbs or postal codes...'}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-7 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                autoFocus
+              />
+              {suburbSearch && (
+                <button onClick={() => setSuburbSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-[60vh] md:max-h-[440px] overflow-y-auto space-y-1 pr-1 text-xs font-medium [scrollbar-width:thin]">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuburb('');
+                  setOpenDropdown(null);
+                }}
+                className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition ${
+                  !suburb ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span>All Suburbs / Areas {selectedTown ? `(${selectedTown})` : '(All 6,931 Suburbs)'}</span>
+                {!suburb && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+              </button>
+
+              {suburbSearch.trim() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuburb(suburbSearch.trim());
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold flex items-center justify-between transition border border-emerald-200"
+                >
+                  <span>Search area / postal code: &quot;{suburbSearch.trim()}&quot;</span>
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                </button>
+              )}
+
+              <div className="pt-1 pb-0.5 px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {selectedTown ? `Suburbs in ${selectedTown} (${rawSuburbsList.length})` : `Indexed Suburbs & Postal Codes (${rawSuburbsList.length.toLocaleString()})`}
+              </div>
+
+              {filteredSuburbs.map((subItem, idx) => (
+                <button
+                  key={`${subItem.provinceSlug}-${subItem.town}-${subItem.name}-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    if (!selectedProvince && subItem.provinceSlug) {
+                      setSelectedProvince(subItem.provinceSlug);
+                    }
+                    if (!selectedTown && subItem.town) {
+                      setSelectedTown(subItem.town);
+                    }
+                    setSuburb(subItem.name);
+                    setOpenDropdown(null);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition ${
+                    suburb === subItem.name ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="truncate">
+                    {subItem.name}{' '}
+                    <span className={suburb === subItem.name ? 'text-emerald-100' : 'text-slate-400'}>
+                      ({subItem.postalCode})
+                    </span>
+                  </span>
+                  {!selectedTown && subItem.town && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-lg shrink-0 ${
+                      suburb === subItem.name ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {subItem.town}
+                    </span>
+                  )}
+                  {selectedTown && suburb === subItem.name && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                </button>
+              ))}
+
+              {filteredSuburbs.length === 0 && (
+                <div className="p-4 text-center text-slate-400 text-xs font-semibold">No suburbs found matching &quot;{suburbSearch}&quot;</div>
+              )}
+            </div>
           </div>
         )}
       </div>

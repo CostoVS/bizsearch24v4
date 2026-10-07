@@ -28,14 +28,16 @@ function DirectoryContent() {
   const rawTown = searchParams?.get('town') || '';
   const rawProvince = searchParams?.get('province') || '';
   const rawSuburb = searchParams?.get('suburb') || '';
+  const rawPostalCode = searchParams?.get('postalCode') || '';
 
   const q = rawQ.toLowerCase().trim();
   const category = rawCategory.toLowerCase().trim();
   const town = rawTown.toLowerCase().trim();
   const province = rawProvince.toLowerCase().trim();
   const suburb = rawSuburb.toLowerCase().trim();
+  const postalCode = rawPostalCode.trim();
 
-  const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawCategory || rawQ);
+  const hasFilters = Boolean(rawProvince || rawTown || rawSuburb || rawPostalCode || rawCategory || rawQ);
 
   const isAdVisible = useCallback((a: any) => {
     if (!a || a.isActive === false) return false;
@@ -59,7 +61,8 @@ function DirectoryContent() {
   const [selectedAd, setSelectedAd] = useState<any | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(24);
+  const [pageSize, setPageSize] = useState<number>(999999);
+  const [visibleRenderLimit, setVisibleRenderLimit] = useState<number>(300);
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -106,7 +109,8 @@ function DirectoryContent() {
   // Reset page to 1 when search filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [q, category, town, province, suburb]);
+    setVisibleRenderLimit(300);
+  }, [q, category, town, province, suburb, postalCode]);
 
   useEffect(() => {
     setIsLocalLoading(true);
@@ -120,15 +124,19 @@ function DirectoryContent() {
     if (town) params.set('town', town);
     if (province) params.set('province', province);
     if (suburb) params.set('suburb', suburb);
+    if (postalCode) params.set('postalCode', postalCode);
 
-    const effectiveSize = pageSize >= 999999 ? 500 : pageSize;
+    const effectiveSize = pageSize >= 999999 ? 100000 : pageSize;
     params.set('page', String(currentPage));
     params.set('pageSize', String(effectiveSize));
+    if (pageSize >= 999999) {
+      params.set('noLimit', 'true');
+    }
 
     const endpoint = `/api/storage?${params.toString()}`;
     let isCurrent = true;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 15000) : null;
 
     fetch(endpoint, {
       cache: 'no-store',
@@ -178,7 +186,7 @@ function DirectoryContent() {
       if (timeoutId) clearTimeout(timeoutId);
       if (controller) controller.abort();
     };
-  }, [q, category, town, province, suburb, currentPage, pageSize, isAdmin, isAdVisible, hasFilters]);
+  }, [q, category, town, province, suburb, postalCode, currentPage, pageSize, isAdmin, isAdVisible, hasFilters]);
 
   useEffect(() => {
     if (!hasFilters) {
@@ -376,7 +384,8 @@ function DirectoryContent() {
 
   const results = sortAdsWithPositions(serverFilteredAds !== null ? serverFilteredAds : filteredResults);
   const totalMatchingAds = serverTotalCount !== null ? serverTotalCount : results.length;
-  const paginatedResults = serverFilteredAds !== null ? results : (pageSize >= 999999 ? results : results.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  const fullPaginatedResults = serverFilteredAds !== null ? results : (pageSize >= 999999 ? results : results.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  const paginatedResults = pageSize >= 999999 ? fullPaginatedResults.slice(0, visibleRenderLimit) : fullPaginatedResults;
 
   return (
     <div className="w-full max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -733,12 +742,34 @@ function DirectoryContent() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5 mb-3 text-xs font-semibold">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     <span className="flex items-center bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg capitalize">
                       <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0"/>
-                      <span className="truncate max-w-[220px]">{ad.address || ad.location}</span>
+                      <span className="truncate max-w-[230px]">{ad.address || `${ad.suburb ? ad.suburb + ', ' : ''}${ad.city || ad.location}`}</span>
                     </span>
-                    <span className="bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[150px]">{ad.category}</span>
+                    <span className="bg-slate-50 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-150 truncate max-w-[160px]">{ad.category}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 text-[11px]">
+                    {ad.suburb && (
+                      <span className="bg-emerald-50/70 text-emerald-800 border border-emerald-200/60 px-2 py-0.5 rounded-md capitalize">
+                        Area: {ad.suburb}
+                      </span>
+                    )}
+                    {(ad.city || ad.town || ad.location) && (
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md capitalize">
+                        Town: {ad.city || ad.town || ad.location}
+                      </span>
+                    )}
+                    {(ad.provinceName || ad.province) && (
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md capitalize">
+                        {(ad.provinceName || ad.province).replace(/-/g, ' ')}
+                      </span>
+                    )}
+                    {(ad as any).postalCode && (
+                      <span className="bg-amber-50 text-amber-800 border border-amber-200/70 font-mono px-2 py-0.5 rounded-md">
+                        Code: {(ad as any).postalCode}
+                      </span>
+                    )}
                   </div>
                   {(ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp) && (
                     <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-mono font-bold text-xs">
@@ -752,16 +783,19 @@ function DirectoryContent() {
                     <div className="relative rounded-xl border border-amber-200/80 bg-amber-50/30 p-3 overflow-hidden">
                       <div className="flex items-center justify-between gap-1 mb-1.5">
                         <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
-                          🔒 Locked Details (Level 2 — R199/mo)
+                          🔒 Locked Paid Details (Level 2 — R199/mo)
                         </span>
                         <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                          Admin Unlock
+                          Paid Tier
                         </span>
                       </div>
                       <div className="blur-[5px] select-none pointer-events-none opacity-60 text-xs space-y-1.5">
-                        <AdDescription description={ad.description || `${ad.title} in ${ad.location}`} />
-                        <p className="font-medium text-slate-500">
-                          Services: {ad.servicesOffered || ad.category} | Hours, Website, Socials &amp; Email Locked
+                        <AdDescription description={ad.description || `${ad.title} operating in ${ad.location}`} />
+                        <p className="font-medium text-slate-600">
+                          Services Offered: {ad.servicesOffered || ad.category} | Trading Hours: {(ad as any).tradingHours || '08:00 - 17:00'}
+                        </p>
+                        <p className="font-medium text-slate-600">
+                          Website: {ad.website || 'www.business.co.za'} | Email: {ad.email || 'info@business.co.za'} | Socials: X • Facebook • Instagram • YouTube • TikTok
                         </p>
                       </div>
                     </div>
@@ -840,6 +874,31 @@ function DirectoryContent() {
             );
           })}
           </div>
+
+          {/* Progressive Render / No-Limit Load More when All (No Limit) is active */}
+          {pageSize >= 999999 && fullPaginatedResults.length > visibleRenderLimit && (
+            <div className="mt-8 bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-xs sm:text-sm font-bold text-slate-700">
+                Displaying <span className="text-emerald-700 font-extrabold">{visibleRenderLimit.toLocaleString()}</span> of <span className="text-slate-900 font-extrabold">{totalMatchingAds.toLocaleString()}</span> matching businesses (No Limits Active)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleRenderLimit(prev => prev + 500)}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wide transition shadow-sm cursor-pointer"
+                >
+                  Show Next 500 Businesses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleRenderLimit(fullPaginatedResults.length)}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wide transition shadow-sm cursor-pointer"
+                >
+                  Show All {fullPaginatedResults.length.toLocaleString()} Instantly
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Bottom Pagination */}
           {pageSize < 999999 && (

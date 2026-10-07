@@ -345,30 +345,52 @@ export interface ParsedCsvBusinessRecord {
   title: string;
   address: string;
   phone: string;
+  telephone?: string;
+  whatsapp?: string;
   email: string;
   category: string;
+  categoryCode?: string;
   province: string;
   city: string;
+  suburb?: string;
+  postalCode?: string;
+  tradingHours?: string;
   servicesOffered: string;
+  description?: string;
   website: string;
+  socialLinks?: string;
+  twitter?: string;
+  socialX?: string;
+  tiktok?: string;
+  socialTikTok?: string;
+  facebook?: string;
+  socialFacebook?: string;
+  instagram?: string;
+  socialInstagram?: string;
+  youtube?: string;
+  socialYoutube?: string;
+  linkedin?: string;
+  socialLinkedin?: string;
   lat?: number;
   lng?: number;
 }
 
 /**
  * Master parser for a single CSV row, supporting Google Maps scrapers, standard directory CSVs,
- * and custom business spreadsheets with resilient address and phone extraction.
+ * and custom business spreadsheets with resilient address, phone/telephone/whatsapp, postal code,
+ * trading hours, services, about business, website, emails, and social media extraction.
  */
 export function parseCsvRowToRecord(
   headers: string[],
   values: string[],
   defaultCategory = "General Business Services",
-  defaultProvince = "gauteng"
+  defaultProvince = "gauteng",
+  filename = ""
 ): ParsedCsvBusinessRecord {
   const row: Record<string, string> = {};
   headers.forEach((header, idx) => {
     if (header) {
-      const cleanHeader = header.trim().toLowerCase().replace(/[\_\-\.]/g, ' ');
+      const cleanHeader = header.trim().toLowerCase().replace(/[\_\-\.]/g, ' ').replace(/\s+/g, ' ');
       row[cleanHeader] = (values[idx] || "").trim();
       row[header.trim().toLowerCase()] = (values[idx] || "").trim();
     }
@@ -392,12 +414,11 @@ export function parseCsvRowToRecord(
   }
   const coords = extractCoordsFromGoogleUrl(placeUrl);
 
-  // 2. Business Title
+  // 2. Business Title (Minimum Requirement #1)
   let title = "";
-  // Check known title headers
   const titleHeaders = [
-    "xxvwce", "title", "name", "business name", "company name", "company", "business", 
-    "trade name", "trading as", "shop name", "store name", "listing title", "organization", "firm", "heading"
+    "business name", "title", "name", "company name", "company", "business",
+    "trade name", "trading as", "shop name", "store name", "listing title", "organization", "firm", "heading", "xxvwce"
   ];
   for (const th of titleHeaders) {
     if (row[th] && !isScraperStatusOrGarbage(row[th]) && !row[th].startsWith("http") && !row[th].includes("@")) {
@@ -409,7 +430,6 @@ export function parseCsvRowToRecord(
     title = extractTitleFromGoogleUrl(placeUrl);
   }
   if (!title) {
-    // Fallback to first non-empty text in columns 0, 1, or 2
     for (let c = 0; c < Math.min(values.length, 3); c++) {
       const v = (values[c] || "").trim();
       if (v && !v.startsWith("http") && !v.includes("@") && !isScraperStatusOrGarbage(v) && v.length < 100) {
@@ -419,12 +439,13 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // 3. Phone Number
+  // 3. Phone Number, Telephone Number, or WhatsApp Number (Minimum Requirement #3: at least 1 number must be available)
   let phone = "";
-  // Check known phone headers
+  let telephone = "";
+  let whatsapp = "";
+
   const phoneHeaders = [
-    "usdlk", "phone", "telephone", "phone number", "tel number", "tel", "cell", "mobile", 
-    "contact number", "contact", "cellphone", "cell phone", "telephone number"
+    "phone number", "phone", "cell", "mobile", "contact number", "contact", "cellphone", "cell phone", "usdlk"
   ];
   for (const ph of phoneHeaders) {
     if (row[ph]) {
@@ -435,8 +456,35 @@ export function parseCsvRowToRecord(
       }
     }
   }
-  // If not found, scan all values in row
-  if (!phone) {
+
+  const telHeaders = [
+    "telephone number", "telephone", "telephone / mobile", "tel number", "tel", "landline", "office number", "work phone"
+  ];
+  for (const th of telHeaders) {
+    if (row[th]) {
+      const cleanDigits = row[th].replace(/[^0-9]/g, '');
+      if (cleanDigits.length >= 7) {
+        telephone = row[th].trim();
+        break;
+      }
+    }
+  }
+
+  const waHeaders = [
+    "whatsapp number", "whatsapp", "whats app", "whatsapp contact", "wa number", "wa"
+  ];
+  for (const wh of waHeaders) {
+    if (row[wh]) {
+      const cleanDigits = row[wh].replace(/[^0-9]/g, '');
+      if (cleanDigits.length >= 7) {
+        whatsapp = row[wh].trim();
+        break;
+      }
+    }
+  }
+
+  // If none found in named columns, scan all values in row for a valid phone/tel/whatsapp number
+  if (!phone && !telephone && !whatsapp) {
     for (let c = 0; c < values.length; c++) {
       const val = (values[c] || "").trim();
       if (!val || isScraperStatusOrGarbage(val)) continue;
@@ -452,7 +500,12 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // 4. Category (Extract first so we can ensure address doesn't duplicate category)
+  // Fallback chain: at least 1 number must be available in phone
+  const resolvedPrimaryPhone = phone || telephone || whatsapp;
+  if (!phone && resolvedPrimaryPhone) phone = resolvedPrimaryPhone;
+  if (!telephone && resolvedPrimaryPhone) telephone = resolvedPrimaryPhone;
+
+  // 4. Category & Category Code
   let category = "";
   const catHeaders = ["category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"];
   for (const ch of catHeaders) {
@@ -461,26 +514,37 @@ export function parseCsvRowToRecord(
       break;
     }
   }
+  let categoryCode = (row["category code"] || row["categorycode"] || row["code"] || "").trim();
+  if ((!category || category === "Other") && filename) {
+    const fnMatch = filename.match(/SearchBiz_National_(\d+)_(\d+)_(.+?)(?:_Consolidated)?\.csv$/i);
+    if (fnMatch) {
+      if (!categoryCode) categoryCode = `${fnMatch[1]}.${fnMatch[2]}`;
+      if (!category) category = fnMatch[3].replace(/_/g, " ").trim();
+    }
+  }
   if (!category) {
     category = defaultCategory || "General Business Services";
   }
 
-  // 5. Physical / Street Address
+  // 5. Explicit Suburb, City/Town, Province, and Postal Code columns
+  const explicitSuburb = (row["suburb"] || row["area"] || row["neighbourhood"] || row["neighborhood"] || "").trim();
+  let city = (row["city / town"] || row["city"] || row["town"] || row["municipality"] || explicitSuburb || "").trim();
+  let province = (row["province"] || row["state"] || row["region"] || "").trim().toLowerCase();
+  let postalCode = (row["postal code"] || row["postalcode"] || row["postcode"] || row["zip"] || row["zip code"] || "").trim();
+
+  // 6. Physical / Street Address (Minimum Requirement #2)
   let address = "";
-  
-  // First check explicit standard address headers
   const explicitAddressHeaders = [
-    "address", "street address", "full address", "physical address", "street", 
+    "address", "street address", "full address", "physical address", "street",
     "formatted address", "site address", "address line 1", "address line", "vicinity"
   ];
   for (const ah of explicitAddressHeaders) {
     const candidateVal = row[ah];
     if (
-      candidateVal && 
-      !isScraperStatusOrGarbage(candidateVal) && 
+      candidateVal &&
+      !isScraperStatusOrGarbage(candidateVal) &&
       candidateVal.toLowerCase() !== category.toLowerCase() &&
-      !isCategoryOrTradeName(candidateVal) &&
-      isLikelyStreetAddress(candidateVal)
+      !isCategoryOrTradeName(candidateVal)
     ) {
       address = candidateVal;
       break;
@@ -488,15 +552,14 @@ export function parseCsvRowToRecord(
   }
 
   // Next check Google Maps scraper specific address columns (w4efsd 4, w4efsd 3, w4efsd 5, etc.)
-  // NOTE: 'w4efsd' without a number is strictly the category column in scraper tables and MUST NEVER be checked for address
   if (!address) {
     const gmapsAddressCandidates = ["w4efsd 4", "w4efsd 3", "w4efsd 5", "w4efsd 2", "w4efsd 6", "w4efsd 7"];
     for (const gCol of gmapsAddressCandidates) {
       const gVal = row[gCol];
       if (
-        gVal && 
-        !isScraperStatusOrGarbage(gVal) && 
-        gVal.toLowerCase() !== category.toLowerCase() && 
+        gVal &&
+        !isScraperStatusOrGarbage(gVal) &&
+        gVal.toLowerCase() !== category.toLowerCase() &&
         !isCategoryOrTradeName(gVal) &&
         isLikelyStreetAddress(gVal)
       ) {
@@ -511,11 +574,11 @@ export function parseCsvRowToRecord(
     for (let c = 6; c < Math.min(values.length, 12); c++) {
       const val = (values[c] || "").trim();
       if (
-        val && 
-        !isScraperStatusOrGarbage(val) && 
-        val !== phone && 
-        val !== title && 
-        val.toLowerCase() !== category.toLowerCase() && 
+        val &&
+        !isScraperStatusOrGarbage(val) &&
+        val !== phone &&
+        val !== title &&
+        val.toLowerCase() !== category.toLowerCase() &&
         !isCategoryOrTradeName(val) &&
         isLikelyStreetAddress(val)
       ) {
@@ -527,17 +590,15 @@ export function parseCsvRowToRecord(
 
   // If still no address found, scan all columns for street address patterns
   if (!address) {
-    // Check for multi-column address parts (e.g. Shop 4 + 13 Commercial Rd, or Shop no.2 + 84 Phila Ndwandwe Rd)
     for (let c = 0; c < values.length; c++) {
       const val = (values[c] || "").trim();
       const colHeader = (headers[c] || "").trim().toLowerCase();
-      
-      // Completely ignore category columns, title, phone, or known trade descriptions
+
       if (
-        !val || 
-        val === title || 
-        val === phone || 
-        val.toLowerCase() === category.toLowerCase() || 
+        !val ||
+        val === title ||
+        val === phone ||
+        val.toLowerCase() === category.toLowerCase() ||
         isCategoryOrTradeName(val) ||
         colHeader === "w4efsd" ||
         colHeader.includes("category") ||
@@ -548,18 +609,17 @@ export function parseCsvRowToRecord(
       ) {
         continue;
       }
-      
-      // If this is a shop/unit/suite prefix, check if next non-empty column completes it
+
       const isPrefix = /^(shop|unit|suite|building|block|flat|office|stand)\s+[\w\d]/i.test(val);
       if (isPrefix) {
         let combined = val;
         for (let next = c + 1; next < Math.min(values.length, c + 4); next++) {
           const nextVal = (values[next] || "").trim();
           if (
-            nextVal && 
-            !isScraperStatusOrGarbage(nextVal) && 
-            nextVal !== phone && 
-            nextVal !== title && 
+            nextVal &&
+            !isScraperStatusOrGarbage(nextVal) &&
+            nextVal !== phone &&
+            nextVal !== title &&
             nextVal.toLowerCase() !== category.toLowerCase() &&
             !isCategoryOrTradeName(nextVal)
           ) {
@@ -577,18 +637,17 @@ export function parseCsvRowToRecord(
 
       if (isLikelyStreetAddress(val)) {
         address = val;
-        // Check if next column is a town/suburb extension (e.g. "St Patricks Rd" + "Umzinto")
         for (let next = c + 1; next < Math.min(values.length, c + 3); next++) {
           const nextVal = (values[next] || "").trim();
           if (
-            nextVal && 
-            !isScraperStatusOrGarbage(nextVal) && 
-            nextVal !== phone && 
-            nextVal !== title && 
+            nextVal &&
+            !isScraperStatusOrGarbage(nextVal) &&
+            nextVal !== phone &&
+            nextVal !== title &&
             nextVal.toLowerCase() !== category.toLowerCase() &&
             !isCategoryOrTradeName(nextVal) &&
-            !nextVal.includes("@") && 
-            !nextVal.startsWith("http") && 
+            !nextVal.includes("@") &&
+            !nextVal.startsWith("http") &&
             nextVal.length < 50
           ) {
             if (/\b(umzinto|isipingo|pinetown|durban|craigieburn|umkomaas|scottburgh|gauteng|kzn|south coast|central)\b/i.test(nextVal)) {
@@ -602,26 +661,28 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // Clean address format (e.g. fix double commas: "Shop 4,, 13 Commercial Rd" -> "Shop 4, 13 Commercial Rd")
   if (address) {
     address = address.replace(/,\s*,+/g, ',').trim();
-    if (
-      address === "·" || 
-      address === "" || 
-      isScraperStatusOrGarbage(address) || 
-      isCategoryOrTradeName(address) ||
-      !isLikelyStreetAddress(address)
-    ) {
+    if (address === "·" || address === "" || isScraperStatusOrGarbage(address) || isCategoryOrTradeName(address)) {
       address = "";
     }
   }
 
-  // 6. Email
+  // Extract 4-digit postal code from address if not explicitly in a column
+  if (!postalCode && address) {
+    const pm = address.match(/(?:^|[\s,(\-])(\d{4})(?:$|[\s,)\-])/);
+    if (pm && pm[1]) {
+      postalCode = pm[1];
+    }
+  }
+
+  // 7. Optional Fields (capture if available):
+  // Email or emails
   let email = "";
-  const emailHeaders = ["email", "email address", "e-mail", "contact email", "mail"];
+  const emailHeaders = ["email or emails", "email address", "email", "emails", "e mail", "contact email", "mail"];
   for (const eh of emailHeaders) {
     if (row[eh] && row[eh].includes("@")) {
-      email = row[eh];
+      email = row[eh].trim();
       break;
     }
   }
@@ -634,45 +695,110 @@ export function parseCsvRowToRecord(
     }
   }
 
-  // 7. Services Offered
-  let servicesOffered = "";
-  const servHeaders = ["services", "services offered", "description", "about", "summary", "details", "products", "overview"];
-  for (const sh of servHeaders) {
-    if (row[sh] && !isScraperStatusOrGarbage(row[sh])) {
-      servicesOffered = row[sh];
+  // Website
+  let website = "";
+  const webHeaders = ["website link", "website", "web", "url", "site", "company website", "homepage"];
+  for (const wh of webHeaders) {
+    if (row[wh] && !row[wh].includes("google.com/maps") && (row[wh].startsWith("http") || row[wh].includes("www.") || row[wh].includes(".co.za") || row[wh].includes(".com"))) {
+      website = row[wh].trim();
       break;
     }
   }
 
-  // 8. Province & City Location Detection
-  let province = (row["province"] || row["state"] || row["region"] || "").trim().toLowerCase();
-  let city = (row["city"] || row["town"] || row["suburb"] || row["municipality"] || row["area"] || "").trim();
+  // Trading hours
+  let tradingHours = "";
+  const hoursHeaders = ["trading hours", "operating hours", "opening hours", "hours", "business hours", "work hours"];
+  for (const hh of hoursHeaders) {
+    if (row[hh] && row[hh].trim()) {
+      tradingHours = row[hh].trim();
+      break;
+    }
+  }
 
-  // Use phone number, address text, title and GPS coordinates for accurate South African geolocation
+  // Services offered
+  let servicesOffered = "";
+  const servHeaders = ["services offered", "services", "products", "specialties", "offerings"];
+  for (const sh of servHeaders) {
+    if (row[sh] && !isScraperStatusOrGarbage(row[sh])) {
+      servicesOffered = row[sh].trim();
+      break;
+    }
+  }
+
+  // About business / Description
+  let description = "";
+  const descHeaders = ["about the business", "about business", "about", "description", "about / description", "summary", "details", "overview"];
+  for (const dh of descHeaders) {
+    if (row[dh] && !isScraperStatusOrGarbage(row[dh])) {
+      description = row[dh].trim();
+      break;
+    }
+  }
+  if (!servicesOffered && description) {
+    servicesOffered = category;
+  }
+
+  // Social media links (X, TikTok, Facebook, Instagram, YouTube, LinkedIn, Social media links)
+  const twitter = (row["x"] || row["x / twitter url"] || row["twitter"] || row["twitter url"] || row["socialx"] || "").trim();
+  const tiktok = (row["tiktok"] || row["tiktok url"] || row["socialtiktok"] || "").trim();
+  const facebook = (row["facebook"] || row["facebook url"] || row["socialfacebook"] || "").trim();
+  const instagram = (row["instagram"] || row["instagram url"] || row["socialinstagram"] || "").trim();
+  const youtube = (row["youtube"] || row["youtube url"] || row["socialyoutube"] || "").trim();
+  const linkedin = (row["linkedin"] || row["linkedin url"] || row["sociallinkedin"] || "").trim();
+  const rawSocialLinks = (row["social media links"] || row["social links"] || row["other social links"] || row["socials"] || "").trim();
+  const socialLinks = rawSocialLinks || [twitter, tiktok, facebook, instagram, youtube, linkedin].filter(Boolean).join(" | ");
+
+  // 8. Province & City Location Detection
   const locDetection = detectLocationFromPhoneAndText(
     phone || "",
-    `${title || ""} ${address || ""} ${city || ""} ${province || ""}`,
+    `${title || ""} ${address || ""} ${explicitSuburb || ""} ${city || ""} ${province || ""}`,
     defaultProvince,
     coords || undefined
   );
 
-  if (!province || province === "gauteng" && locDetection.province !== "gauteng") {
+  if (!province || (province === "gauteng" && locDetection.province !== "gauteng")) {
     province = locDetection.province || defaultProvince || "gauteng";
   }
-  if (!city || city === "Johannesburg" && locDetection.city !== "Johannesburg") {
+  if (!city || (city === "Johannesburg" && locDetection.city !== "Johannesburg")) {
     city = locDetection.city || "Johannesburg";
+  }
+
+  // Construct fallback address if row only had suburb/city/province columns
+  if (!address && (explicitSuburb || city)) {
+    const addrParts = [explicitSuburb, city, postalCode, province].filter(Boolean);
+    address = addrParts.join(", ");
   }
 
   return {
     title: (title || "").substring(0, 150).trim(),
     address: (address || "").substring(0, 250).trim(),
     phone: (phone || "").substring(0, 50).trim(),
-    email: (email || "").substring(0, 100).trim(),
+    telephone: (telephone || phone || "").substring(0, 50).trim(),
+    whatsapp: (whatsapp || "").substring(0, 50).trim(),
+    email: (email || "").substring(0, 120).trim(),
     category: (category || defaultCategory || "General Business Services").trim(),
+    categoryCode: categoryCode || undefined,
     province: (province || "gauteng").trim(),
     city: (city || "Johannesburg").trim(),
+    suburb: explicitSuburb || undefined,
+    postalCode: postalCode || undefined,
+    tradingHours: (tradingHours || "").substring(0, 200).trim(),
     servicesOffered: (servicesOffered || "").substring(0, 500).trim(),
-    website: "", // Excluded for unresolved CSV listings
+    description: (description || "").substring(0, 1000).trim(),
+    website: (website || "").substring(0, 250).trim(),
+    socialLinks: (socialLinks || "").substring(0, 600).trim(),
+    twitter: twitter || undefined,
+    socialX: twitter || undefined,
+    tiktok: tiktok || undefined,
+    socialTikTok: tiktok || undefined,
+    facebook: facebook || undefined,
+    socialFacebook: facebook || undefined,
+    instagram: instagram || undefined,
+    socialInstagram: instagram || undefined,
+    youtube: youtube || undefined,
+    socialYoutube: youtube || undefined,
+    linkedin: linkedin || undefined,
+    socialLinkedin: linkedin || undefined,
     lat: coords?.lat,
     lng: coords?.lng
   };

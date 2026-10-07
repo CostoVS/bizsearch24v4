@@ -18,6 +18,7 @@ interface ResolvedLocation {
   provinceName: string;
   town: string;
   suburb?: string;
+  postalCode?: string;
 }
 
 interface ResolvedCategory {
@@ -44,6 +45,8 @@ let townLookupMap: Map<string, ResolvedLocation> | null = null;
 let suburbLookupMap: Map<string, ResolvedLocation> | null = null;
 let provinceTownMap: Map<string, ResolvedLocation> | null = null;
 let provinceSuburbMap: Map<string, ResolvedLocation> | null = null;
+let postalCodeMap: Map<string, ResolvedLocation> | null = null;
+let provincePostalMap: Map<string, ResolvedLocation> | null = null;
 let categoryLookupMap: Map<string, ResolvedCategory> | null = null;
 
 function normKey(str?: string): string {
@@ -56,13 +59,29 @@ function normAlnum(str?: string): string {
   return str.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function extractPostalCodeFromText(text?: string): string {
+  if (!text) return '';
+  const m = String(text).match(/(?:^|[\s,(\-])(\d{4})(?:$|[\s,)\-])/);
+  if (m && m[1]) {
+    const num = parseInt(m[1], 10);
+    // Valid South African postal codes range from 0001 to 9999 (exclude common years like 2024, 2025, 2026 unless matched in postalCodeMap)
+    if (postalCodeMap && postalCodeMap.has(m[1])) return m[1];
+    if (num >= 1 && num <= 9999 && num !== 2024 && num !== 2025 && num !== 2026) {
+      return m[1];
+    }
+  }
+  return '';
+}
+
 function ensureMapsInitialized() {
-  if (townLookupMap && suburbLookupMap && provinceTownMap && provinceSuburbMap && categoryLookupMap) return;
+  if (townLookupMap && suburbLookupMap && provinceTownMap && provinceSuburbMap && postalCodeMap && provincePostalMap && categoryLookupMap) return;
 
   townLookupMap = new Map<string, ResolvedLocation>();
   suburbLookupMap = new Map<string, ResolvedLocation>();
   provinceTownMap = new Map<string, ResolvedLocation>();
   provinceSuburbMap = new Map<string, ResolvedLocation>();
+  postalCodeMap = new Map<string, ResolvedLocation>();
+  provincePostalMap = new Map<string, ResolvedLocation>();
   categoryLookupMap = new Map<string, ResolvedCategory>();
 
   // 1. Index all towns in SA_PROVINCES
@@ -86,10 +105,12 @@ function ensureMapsInitialized() {
   // 2. Index EXTENDED_SA_PLACES
   for (const [key, place] of Object.entries(EXTENDED_SA_PLACES)) {
     const cleanTown = place.town.replace(/\s*\(.*?\)\s*/g, '').trim();
+    const pCode = (place as any).postalCode ? String((place as any).postalCode).trim() : '';
     const entry: ResolvedLocation = {
       provinceSlug: place.provinceSlug,
       provinceName: place.province,
-      town: cleanTown || place.town
+      town: cleanTown || place.town,
+      postalCode: pCode || undefined
     };
     townLookupMap.set(normKey(key), entry);
     townLookupMap.set(normAlnum(key), entry);
@@ -99,13 +120,18 @@ function ensureMapsInitialized() {
     provinceTownMap.set(`${place.provinceSlug}:${normAlnum(key)}`, entry);
     provinceTownMap.set(`${place.provinceSlug}:${normKey(place.town)}`, entry);
     provinceTownMap.set(`${place.provinceSlug}:${normAlnum(place.town)}`, entry);
+    if (pCode && !postalCodeMap.has(pCode)) {
+      postalCodeMap.set(pCode, entry);
+      provincePostalMap.set(`${place.provinceSlug}:${pCode}`, entry);
+    }
     if (place.suburbs) {
       for (const sub of place.suburbs) {
         const subEntry: ResolvedLocation = {
           provinceSlug: place.provinceSlug,
           provinceName: place.province,
           town: cleanTown || place.town,
-          suburb: sub
+          suburb: sub,
+          postalCode: pCode || undefined
         };
         if (!suburbLookupMap.has(normKey(sub))) {
           suburbLookupMap.set(normKey(sub), subEntry);
@@ -117,7 +143,7 @@ function ensureMapsInitialized() {
     }
   }
 
-  // 3. Index all 6,931 suburbs and their parent towns across all 9 provinces
+  // 3. Index all 6,931 suburbs, their postal codes, and their parent towns across all 9 provinces
   const provinceSuburbConfigs: Array<{ slug: string; name: string; map: Record<string, Array<{ name: string; postalCode: string }>> }> = [
     { slug: 'kwazulu-natal', name: 'KwaZulu-Natal', map: KZN_SUBURBS },
     { slug: 'gauteng', name: 'Gauteng', map: GAUTENG_SUBURBS },
@@ -132,12 +158,15 @@ function ensureMapsInitialized() {
 
   for (const cfg of provinceSuburbConfigs) {
     for (const [townName, suburbs] of Object.entries(cfg.map)) {
+      const defaultTownPostal = suburbs.length > 0 && suburbs[0].postalCode ? String(suburbs[0].postalCode).trim() : undefined;
       const townEntry: ResolvedLocation = {
         provinceSlug: cfg.slug,
         provinceName: cfg.name,
-        town: townName
+        town: townName,
+        postalCode: defaultTownPostal
       };
-      if (!townLookupMap.has(normKey(townName))) {
+      const existingTown = townLookupMap.get(normKey(townName));
+      if (!existingTown || !existingTown.postalCode) {
         townLookupMap.set(normKey(townName), townEntry);
         townLookupMap.set(normAlnum(townName), townEntry);
       }
@@ -145,11 +174,13 @@ function ensureMapsInitialized() {
       provinceTownMap.set(`${cfg.slug}:${normAlnum(townName)}`, townEntry);
 
       for (const sub of suburbs) {
+        const subPostal = sub.postalCode ? String(sub.postalCode).trim() : undefined;
         const subEntry: ResolvedLocation = {
           provinceSlug: cfg.slug,
           provinceName: cfg.name,
           town: townName,
-          suburb: sub.name
+          suburb: sub.name,
+          postalCode: subPostal || defaultTownPostal
         };
         if (!suburbLookupMap.has(normKey(sub.name))) {
           suburbLookupMap.set(normKey(sub.name), subEntry);
@@ -157,6 +188,15 @@ function ensureMapsInitialized() {
         }
         provinceSuburbMap.set(`${cfg.slug}:${normKey(sub.name)}`, subEntry);
         provinceSuburbMap.set(`${cfg.slug}:${normAlnum(sub.name)}`, subEntry);
+        if (subPostal) {
+          if (!postalCodeMap.has(subPostal)) {
+            postalCodeMap.set(subPostal, subEntry);
+          }
+          if (!provincePostalMap.has(`${cfg.slug}:${subPostal}`)) {
+            provincePostalMap.set(`${cfg.slug}:${subPostal}`, subEntry);
+          }
+          provinceSuburbMap.set(`${cfg.slug}:${normKey(sub.name)}:${subPostal}`, subEntry);
+        }
       }
     }
   }
@@ -230,41 +270,27 @@ export function normalizeProvinceSlug(rawProvince?: string): string {
 }
 
 /**
- * Resolves exact South African Province, Town/City, Suburb, and Category in O(1) time.
+ * Resolves exact South African Province, Town/City, Suburb, Postal Code, and Category in O(1) time.
  * Uses province-scoped lookups first so shared suburb names (e.g. Morningside, Berea, Central)
- * stay in their exact province and town.
+ * stay in their exact province, town, and postal code.
  */
 export function resolveAdGeographyAndCategory(ad: any): void {
   if (!ad || typeof ad !== 'object') return;
-  if (ad._geoNormalized || ad._indexedV3) return;
-  if (
-    ad.province &&
-    ad.provinceName &&
-    ad.town &&
-    ad.city &&
-    ad.location &&
-    ad.category &&
-    ad.categoryCode &&
-    ad.categoryGroup &&
-    ad.description &&
-    !ad.description.startsWith('Local business in ') &&
-    ad.isActive !== undefined &&
-    ad.status !== undefined
-  ) {
-    Object.defineProperty(ad, '_geoNormalized', { value: true, enumerable: false, writable: true, configurable: true });
-    return;
-  }
   ensureMapsInitialized();
 
-  const rawCity = (ad.city || ad.town || ad.location || '').trim();
-  const rawSuburb = (ad.suburb || '').trim();
+  const rawCity = String(ad.city || ad.town || ad.location || '').trim();
+  const rawSuburb = String(ad.suburb || '').trim();
   const explicitProvSlug = normalizeProvinceSlug(ad.province || ad.province_slug || ad.provinceName);
+  const rawPostal = String(ad.postalCode || ad.postal_code || '').trim() || extractPostalCodeFromText(ad.address);
 
   let matchedLoc: ResolvedLocation | undefined;
 
   // 1. First try province-scoped lookup when explicitProvSlug is known
   if (explicitProvSlug && explicitProvSlug !== 'national') {
-    if (rawSuburb) {
+    if (rawSuburb && rawPostal) {
+      matchedLoc = provinceSuburbMap!.get(`${explicitProvSlug}:${normKey(rawSuburb)}:${rawPostal}`);
+    }
+    if (!matchedLoc && rawSuburb) {
       matchedLoc =
         provinceSuburbMap!.get(`${explicitProvSlug}:${normKey(rawSuburb)}`) ||
         provinceSuburbMap!.get(`${explicitProvSlug}:${normAlnum(rawSuburb)}`) ||
@@ -278,9 +304,12 @@ export function resolveAdGeographyAndCategory(ad: any): void {
         provinceSuburbMap!.get(`${explicitProvSlug}:${normKey(rawCity)}`) ||
         provinceSuburbMap!.get(`${explicitProvSlug}:${normAlnum(rawCity)}`);
     }
+    if (!matchedLoc && rawPostal) {
+      matchedLoc = provincePostalMap!.get(`${explicitProvSlug}:${rawPostal}`);
+    }
   }
 
-  // 2. Fallback to national town/suburb lookup if not found in explicitProvSlug
+  // 2. Fallback to national town/suburb/postal lookup if not found in explicitProvSlug
   const isGenericDefaultCity = !rawCity || rawCity.toLowerCase() === 'johannesburg' || rawCity.toLowerCase() === 'durban' || rawCity.toLowerCase() === 'south africa';
   if (!matchedLoc && rawCity && !isGenericDefaultCity) {
     matchedLoc = townLookupMap!.get(normKey(rawCity)) || townLookupMap!.get(normAlnum(rawCity)) ||
@@ -292,12 +321,20 @@ export function resolveAdGeographyAndCategory(ad: any): void {
                  townLookupMap!.get(normKey(rawSuburb)) || townLookupMap!.get(normAlnum(rawSuburb));
   }
 
+  if (!matchedLoc && rawPostal) {
+    matchedLoc = postalCodeMap!.get(rawPostal);
+  }
+
   // 2b. Inspect address if still not matched
   if (!matchedLoc) {
-    const rawAddr = (ad.address || '').trim();
+    const rawAddr = String(ad.address || '').trim();
     if (rawAddr) {
       const addrParts = rawAddr.split(/[,|-]/).map((s: string) => s.trim()).filter(Boolean);
       for (const part of addrParts) {
+        if (/^\d{4}$/.test(part) && postalCodeMap!.has(part)) {
+          matchedLoc = (explicitProvSlug ? provincePostalMap!.get(`${explicitProvSlug}:${part}`) : undefined) || postalCodeMap!.get(part);
+          if (matchedLoc) break;
+        }
         if (explicitProvSlug && explicitProvSlug !== 'national') {
           matchedLoc =
             provinceSuburbMap!.get(`${explicitProvSlug}:${normKey(part)}`) ||
@@ -340,6 +377,7 @@ export function resolveAdGeographyAndCategory(ad: any): void {
       ad.city = matchedLoc.town || rawCity;
     }
     ad.location = (ad.city || ad.town).toLowerCase();
+    ad.postalCode = rawPostal || matchedLoc.postalCode || '';
   } else {
     const finalProv = explicitProvSlug || 'gauteng';
     ad.province = finalProv;
@@ -349,16 +387,17 @@ export function resolveAdGeographyAndCategory(ad: any): void {
     ad.town = ad.town || finalCity;
     if (rawSuburb) ad.suburb = rawSuburb;
     ad.location = finalCity.toLowerCase();
+    ad.postalCode = rawPostal || '';
   }
 
   // 3. Resolve Category metadata (categoryCode, subcategory, categoryGroup, parentCategory)
-  const rawCat = (ad.category || ad.subcategory || '').trim();
+  const rawCat = String(ad.category || ad.subcategory || '').trim();
   if (rawCat || ad.categoryCode) {
     const cleanCat = stripCategoryNumber(rawCat);
     const matchedCat =
+      (ad.categoryCode ? categoryLookupMap!.get(String(ad.categoryCode).trim()) : undefined) ||
       (rawCat ? categoryLookupMap!.get(normKey(rawCat)) || categoryLookupMap!.get(normAlnum(rawCat)) : undefined) ||
-      (cleanCat ? categoryLookupMap!.get(normKey(cleanCat)) || categoryLookupMap!.get(normAlnum(cleanCat)) : undefined) ||
-      (ad.categoryCode ? categoryLookupMap!.get(String(ad.categoryCode).trim()) : undefined);
+      (cleanCat ? categoryLookupMap!.get(normKey(cleanCat)) || categoryLookupMap!.get(normAlnum(cleanCat)) : undefined);
 
     if (matchedCat) {
       ad.category = matchedCat.category || cleanCat;
@@ -375,12 +414,12 @@ export function resolveAdGeographyAndCategory(ad: any): void {
   }
 
   // 4. Upgrade generic "Local business in ..." placeholder descriptions
-  const rawDesc = (ad.description || '').trim();
+  const rawDesc = String(ad.description || '').trim();
   if (!rawDesc || rawDesc.startsWith('Local business in ')) {
     const niceCity = ad.city || ad.town || 'South Africa';
     const niceProv = ad.provinceName || PROVINCE_NAMES_BY_SLUG[ad.province] || '';
     const niceCat = ad.category || 'Professional Services';
-    ad.description = `${ad.title || 'Local Business'} provides trusted ${niceCat.toLowerCase()} in ${niceCity}${niceProv ? ', ' + niceProv : ''}. Contact us directly for enquiries, quotes, and service availability.`;
+    ad.description = `${ad.title || 'Local Business'} provides trusted ${niceCat.toLowerCase()} in ${ad.suburb ? ad.suburb + ', ' : ''}${niceCity}${ad.postalCode ? ' (' + ad.postalCode + ')' : ''}${niceProv ? ', ' + niceProv : ''}. Contact us directly for enquiries, quotes, and service availability.`;
   }
 
   // 5. Ensure bot/scraped ads are active in the directory, but ONLY marked approved/verified when explicitly authorized by Admin

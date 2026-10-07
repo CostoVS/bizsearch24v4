@@ -419,7 +419,7 @@ export default function HomePage() {
                   onClick={() => setSelectedAd(ad)}
                   className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 hover:border-emerald-400 hover:shadow-md transition-all duration-300 flex flex-col cursor-pointer overflow-hidden group text-slate-800"
                 >
-                  {ad.image && (
+                  {ad.image && (ad.isPremium && (ad.verified || (ad as any).isVerified || ad.isClaimed === true) && (ad as any).isLockedLevel1 !== true) && (
                     <div className="w-full h-32 mb-3 relative rounded-xl overflow-hidden shadow-sm bg-slate-100">
                       <Image src={ad.image} alt={ad.title} fill referrerPolicy="no-referrer" sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" quality={100} className="object-cover group-hover:scale-105 transition-transform duration-500" />
                     </div>
@@ -441,7 +441,7 @@ export default function HomePage() {
                     </div>
                     {(ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp) && (
                       <div className="flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2 py-1 rounded-lg font-mono font-bold text-[11px]">
-                        <span>📞</span>
+                        <span>📞 Phone:</span>
                         <span>{ad.phone || (ad as any).telephone || (ad as any).landline || ad.whatsapp}</span>
                       </div>
                     )}
@@ -451,13 +451,16 @@ export default function HomePage() {
                       <div className="relative rounded-xl border border-amber-200/80 bg-amber-50/30 p-2.5 overflow-hidden">
                         <div className="flex items-center justify-between gap-1 mb-1">
                           <span className="text-[9px] font-black uppercase tracking-wider text-amber-900">
-                            🔒 Locked (Level 2 — R199/mo)
+                            🔒 Locked Paid Details (Level 2 — R199/mo)
                           </span>
                         </div>
                         <div className="blur-[4px] select-none pointer-events-none opacity-60 text-[10px] space-y-1">
                           <AdDescription description={ad.description || `${ad.title} in ${ad.location}`} />
                           <p className="font-medium text-slate-500">
-                            Services: {ad.servicesOffered || ad.category}
+                            Services: {ad.servicesOffered || ad.category} | Hours: {(ad as any).tradingHours || '08:00 - 17:00'}
+                          </p>
+                          <p className="font-medium text-slate-500">
+                            Website • Email • X • Facebook • Instagram • YouTube • TikTok
                           </p>
                         </div>
                       </div>

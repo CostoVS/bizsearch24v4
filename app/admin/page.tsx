@@ -2847,7 +2847,7 @@ export default function AdminDashboard() {
                           let skippedNoPhone = 0;
                           let skippedDuplicates = 0;
 
-                          // Helper normalizers for 3-point exact match comparison
+                          // Helper normalizers for exact match comparison
                           const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
                           const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
                           const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -2859,8 +2859,8 @@ export default function AdminDashboard() {
                           const existingDbKeys = new Set<string>();
                           ads.forEach(ad => {
                             const nt = normTitle(ad.title);
-                            const np = normPhone(ad.phone);
-                            const na = normAddr(ad.address);
+                            const np = normPhone(ad.phone || ad.telephone || ad.whatsapp);
+                            const na = normAddr(ad.address || `${ad.suburb || ''} ${ad.location || ''}`);
                             if (nt && np && na) {
                               existingDbKeys.add(`${nt}|${np}|${na}`);
                             }
@@ -2869,23 +2869,23 @@ export default function AdminDashboard() {
                           for (let i = 1; i < rawRows.length; i++) {
                             const values = rawRows[i];
                             if (!values || values.length === 0 || values.every(v => !v)) continue;
-                            const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince);
-                            const cleanPhone = (rec.phone || "").replace(/[\s\-\(\)\.]/g, '');
-                            if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                            const rec = parseCsvRowToRecord(headers, values, csvDefaultCategory, csvDefaultProvince, file.name);
+                            const primaryPhone = (rec.phone || rec.telephone || rec.whatsapp || "").replace(/[\s\-\(\)\.]/g, '');
+                            const hasAddress = Boolean((rec.address || rec.suburb || rec.city || "").trim());
+                            if (!rec.title || !hasAddress || !primaryPhone || primaryPhone === "·" || primaryPhone === "" || primaryPhone.length < 7) {
                               skippedNoPhone++;
-                              continue; // STRICT REQUIREMENT: DO NOT UPLOAD LISTINGS WITHOUT PHONE NUMBER
+                              continue; // MINIMUM REQUIREMENT: Business name, Address, and at least 1 number (Phone, Telephone, or WhatsApp)
                             }
                             if (rec.title) {
                               const nT = normTitle(rec.title);
-                              const nP = normPhone(rec.phone);
-                              const nA = normAddr(rec.address);
+                              const nP = normPhone(primaryPhone);
+                              const nA = normAddr(rec.address || `${rec.suburb || ''} ${rec.city || ''}`);
                               
-                              // Check if exact duplicate match across Name + Phone + Address in existing ads or in this CSV batch
                               if (nT && nP && nA) {
                                 const tripletKey = `${nT}|${nP}|${nA}`;
                                 if (existingDbKeys.has(tripletKey) || seenCsvKeys.has(tripletKey)) {
                                   skippedDuplicates++;
-                                  continue; // DO NOT UPLOAD: EXACT DUPLICATE (Same Name + Same Phone + Same Address)
+                                  continue;
                                 }
                                 seenCsvKeys.add(tripletKey);
                               }
@@ -2897,15 +2897,15 @@ export default function AdminDashboard() {
                           
                           const messages = [];
                           if (parsedRows.length > 0) {
-                            messages.push(`Loaded ${parsedRows.length} valid business records.`);
+                            messages.push(`Loaded ${parsedRows.length.toLocaleString()} valid business records.`);
                           } else {
                             messages.push(`No new records loaded.`);
                           }
                           if (skippedDuplicates > 0) {
-                            messages.push(`${skippedDuplicates} exact duplicate row(s) (matching same name, phone & address) were blocked.`);
+                            messages.push(`${skippedDuplicates.toLocaleString()} exact duplicate row(s) were skipped.`);
                           }
                           if (skippedNoPhone > 0) {
-                            messages.push(`${skippedNoPhone} row(s) without valid contact phone numbers were skipped.`);
+                            messages.push(`${skippedNoPhone.toLocaleString()} row(s) missing minimum requirements (Business Name, Address, or Phone/Telephone/WhatsApp) were skipped.`);
                           }
                           alert(messages.join(" "));
                         }
@@ -2915,7 +2915,7 @@ export default function AdminDashboard() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full bg-slate-50 border-2 border-dashed border-slate-250 rounded-xl px-4 py-2 text-xs font-bold text-slate-650 flex items-center justify-center gap-2 hover:bg-slate-100 hover:border-emerald-500 transition-colors">
-                     📁 Click or Drag to Parse Directory CSV (Auto-filters duplicates by Name + Phone + Address & missing phones)
+                     📁 Click or Drag to Parse Directory CSV (Auto-captures Name, Address, Phone/Tel/WhatsApp, Postal Code, Hours, Services, Socials)
                   </div>
                 </div>
               </div>
@@ -2977,36 +2977,25 @@ export default function AdminDashboard() {
                     onClick={async () => {
                       if (csvFileParsed.length === 0) return;
                       
-                      // Helper normalizers for 3-point exact match comparison
                       const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
                       const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
                       const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                      const existingDbKeys = new Set<string>();
-                      ads.forEach(ad => {
-                        const nt = normTitle(ad.title);
-                        const np = normPhone(ad.phone);
-                        const na = normAddr(ad.address);
-                        if (nt && np && na) {
-                          existingDbKeys.add(`${nt}|${np}|${na}`);
-                        }
-                      });
-
                       const seenCommitKeys = new Set<string>();
                       let commitDuplicates = 0;
 
-                      // Strict filter check (Valid phone + No exact 3-way duplicates with existing ads or within batch)
                       const validWithPhone = csvFileParsed.filter(item => {
-                        const cleanPhone = (item.phone || "").replace(/[\s\-\(\)\.]/g, '');
-                        if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                        const primaryPhone = (item.phone || item.telephone || item.whatsapp || "").replace(/[\s\-\(\)\.]/g, '');
+                        const hasAddr = Boolean((item.address || item.suburb || item.city || "").trim());
+                        if (!item.title || !hasAddr || !primaryPhone || primaryPhone === "·" || primaryPhone === "" || primaryPhone.length < 7) {
                           return false;
                         }
                         const nt = normTitle(item.title);
-                        const np = normPhone(item.phone);
-                        const na = normAddr(item.address);
+                        const np = normPhone(primaryPhone);
+                        const na = normAddr(item.address || `${item.suburb || ''} ${item.city || ''}`);
                         if (nt && np && na) {
                           const key = `${nt}|${np}|${na}`;
-                          if (existingDbKeys.has(key) || seenCommitKeys.has(key)) {
+                          if (seenCommitKeys.has(key)) {
                             commitDuplicates++;
                             return false;
                           }
@@ -3016,64 +3005,76 @@ export default function AdminDashboard() {
                       });
 
                       if (validWithPhone.length === 0) {
-                        alert(`Cannot publish: No unique listings with valid contact numbers found.${commitDuplicates > 0 ? ` (${commitDuplicates} exact duplicate matches with existing ads were skipped)` : ''}`);
+                        alert(`Cannot publish: No unique listings meeting minimum requirements (Business Name, Address, and at least 1 Phone/Telephone/WhatsApp number) found.`);
                         return;
                       }
 
-                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length} listing(s) directly to sitemaps and live indexes?${commitDuplicates > 0 ? ` (${commitDuplicates} exact duplicate matches were automatically excluded)` : ''}`)) return;
+                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length.toLocaleString()} listing(s) directly to the live SearchBiz directory and search console?`)) return;
                       
+                      setCsvUploadLoading(true);
                       try {
-                        const formatted = validWithPhone.map((item, index) => {
-                          const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
-                          const addr = item.address || "";
-                          const defaultCity = item.city || item.town || "";
-                          const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
-                          const rawServices = item.servicesOffered || "";
-                          const cat = item.category || "Other";
-                          
-                          return cleanAd({
-                            id: `csv-${Date.now()}-${index}-${Math.random().toString(36).substring(2,5)}`,
-                            userId: "system",
-                            title: item.title || "Unnamed Business",
-                            category: cat,
-                            province: prov,
-                            location: parsedLoc.town,
-                            suburb: parsedLoc.suburb,
-                            description: rawServices ? `Services offered: ${rawServices}` : `${cat} business listed in ${parsedLoc.town}.`,
-                            servicesOffered: rawServices,
-                            address: item.address || "",
-                            phone: item.phone || "",
-                            email: item.email || "",
-                            website: "", // Unresolved CSV listings do not include website links
-                            verified: false,
-                            isPremium: false,
-                            isSponsor: false,
-                            isClaimed: false,
-                            isGoogleImport: true,
-                            image: null,
-                            createdAt: new Date().toISOString()
+                        const chunkSize = 2000;
+                        let totalAdded = 0;
+                        let totalUpdated = 0;
+                        for (let c = 0; c < validWithPhone.length; c += chunkSize) {
+                          const batchSlice = validWithPhone.slice(c, c + chunkSize).map((item) => {
+                            const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
+                            const addr = item.address || "";
+                            const defaultCity = item.city || item.town || "";
+                            const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
+                            const rawServices = item.servicesOffered || "";
+                            const cat = item.category || csvDefaultCategory || "Other";
+                            const primaryPhone = item.phone || item.telephone || item.whatsapp || "";
+                            return {
+                              title: item.title || "Unnamed Business",
+                              category: cat,
+                              categoryCode: item.categoryCode || "",
+                              province: prov,
+                              city: item.city || parsedLoc.town,
+                              town: item.city || parsedLoc.town,
+                              location: item.city || parsedLoc.town,
+                              suburb: item.suburb || parsedLoc.suburb,
+                              postalCode: item.postalCode || "",
+                              description: item.description || (rawServices ? `Services offered: ${rawServices}` : `${cat} business in ${item.suburb || parsedLoc.suburb}, ${item.city || parsedLoc.town}.`),
+                              tradingHours: item.tradingHours || "",
+                              servicesOffered: rawServices || cat,
+                              address: addr,
+                              phone: primaryPhone,
+                              telephone: item.telephone || primaryPhone,
+                              whatsapp: item.whatsapp || primaryPhone,
+                              email: item.email || "",
+                              website: item.website || "",
+                              socialLinks: item.socialLinks || "",
+                              twitter: item.twitter || "",
+                              tiktok: item.tiktok || "",
+                              facebook: item.facebook || "",
+                              instagram: item.instagram || "",
+                              youtube: item.youtube || "",
+                              linkedin: item.linkedin || "",
+                              isApproved: true,
+                              status: "active",
+                            };
                           });
-                        });
 
-                        const merged = [...formatted, ...ads];
-                        
-                        // Push to persistent central database
-                        const res = await fetch("/api/storage", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ ads: merged })
-                        });
-
-                        if (res.ok) {
-                          setAds(merged);
-                          saveStoredAds(merged);
-                          setCsvFileParsed([]);
-                          alert(`Success! Imported ${formatted.length} listings directly to the live directories.`);
-                        } else {
-                          alert("Failed to sync committed records to production servers.");
+                          const res = await fetch("/api/bot/ad/bulk", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ items: batchSlice })
+                          });
+                          if (res.ok) {
+                            const rData = await res.json();
+                            totalAdded += Number(rData.addedCount || 0);
+                            totalUpdated += Number(rData.updatedCount || 0);
+                          }
                         }
+
+                        await refreshAdminServerAds();
+                        setCsvFileParsed([]);
+                        alert(`Success! Synced ${validWithPhone.length.toLocaleString()} listings (${totalAdded.toLocaleString()} newly added, ${totalUpdated.toLocaleString()} updated/enriched) directly to the live SearchBiz search console across their respected address, area/suburb, town/city, province, postal code & category!`);
                       } catch (err) {
                         alert("Error writing committed rows to directories.");
+                      } finally {
+                        setCsvUploadLoading(false);
                       }
                     }}
                     className="flex-1 md:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
@@ -3682,7 +3683,7 @@ export default function AdminDashboard() {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     const reader = new FileReader();
-                    reader.onload = (event) => {
+                    reader.onload = async (event) => {
                       const content = event.target?.result as string;
                       if (!content) return;
                       const rawRows = parseCsvText(content);
@@ -3692,54 +3693,43 @@ export default function AdminDashboard() {
                       }
 
                       const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
-                      const newAds = [];
+                      const newAds: any[] = [];
                       let skippedNoPhone = 0;
                       let skippedDuplicates = 0;
 
-                      // Helper normalizers for 3-point exact match comparison
                       const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
                       const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
                       const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                      // Track signatures in current batch and existing DB
                       const seenBatchKeys = new Set<string>();
-                      const existingDbKeys = new Set<string>();
-                      ads.forEach(ad => {
-                        const nt = normTitle(ad.title);
-                        const np = normPhone(ad.phone);
-                        const na = normAddr(ad.address);
-                        if (nt && np && na) {
-                          existingDbKeys.add(`${nt}|${np}|${na}`);
-                        }
-                      });
 
                       for (let i = 1; i < rawRows.length; i++) {
                         const cols = rawRows[i];
                         if (!cols || cols.length < 1 || cols.every(c => !c)) continue;
                         
-                        const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince);
-                        let title = rec.title;
-                        let address = rec.address;
-                        let phone = rec.phone;
-                        let services = rec.servicesOffered;
-                        let website = rec.website;
+                        const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince, file.name);
+                        const title = rec.title;
+                        const address = rec.address;
+                        const primaryPhone = rec.phone || rec.telephone || rec.whatsapp || "";
+                        const services = rec.servicesOffered;
+                        const website = rec.website;
 
-                        // Strict check: Must have a phone number
-                        const cleanPhone = (phone || "").replace(/[\s\-\(\)\.]/g, '');
-                        if (!cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                        // Minimum requirement: Business Name, Address, and at least 1 number (Phone, Telephone, or WhatsApp)
+                        const cleanPhone = primaryPhone.replace(/[\s\-\(\)\.]/g, '');
+                        const hasAddress = Boolean((address || rec.suburb || rec.city || "").trim());
+                        if (!title || !hasAddress || !cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
                           skippedNoPhone++;
-                          continue; // SKIP rows with missing phone numbers
+                          continue;
                         }
 
-                        // Strict check: Exact duplicate match (Same Name + Same Phone + Same Address)
                         const nT = normTitle(title);
-                        const nP = normPhone(phone);
-                        const nA = normAddr(address);
+                        const nP = normPhone(primaryPhone);
+                        const nA = normAddr(address || `${rec.suburb || ''} ${rec.city || ''}`);
                         if (nT && nP && nA) {
                           const tripletKey = `${nT}|${nP}|${nA}`;
-                          if (existingDbKeys.has(tripletKey) || seenBatchKeys.has(tripletKey)) {
+                          if (seenBatchKeys.has(tripletKey)) {
                             skippedDuplicates++;
-                            continue; // DO NOT UPLOAD: EXACT DUPLICATE
+                            continue;
                           }
                           seenBatchKeys.add(tripletKey);
                         }
@@ -3749,8 +3739,6 @@ export default function AdminDashboard() {
 
                         if (csvAiEnable) {
                           const combinedString = `${title} ${address || ""} ${services || ""}`.toLowerCase();
-                          
-                          // 1. Local AI NLP category sorting logic
                           let detectedCategory = "";
                           if (combinedString.includes("solar") || combinedString.includes("inverter") || combinedString.includes("battery") || combinedString.includes("panels") || combinedString.includes("backup power")) {
                             detectedCategory = "Solar Power Installers";
@@ -3775,11 +3763,10 @@ export default function AdminDashboard() {
                             if (looseMatch) detectedCategory = looseMatch;
                           }
 
-                          if (detectedCategory) {
+                          if (detectedCategory && (!rec.category || rec.category === csvDefaultCategory)) {
                             category = detectedCategory;
                           }
 
-                          // 2. Local AI NLP provincial routing logic
                           let detectedProvince = "";
                           if (combinedString.includes("kzn") || combinedString.includes("natal") || combinedString.includes("durban") || combinedString.includes("pietermaritzburg") || combinedString.includes("ballito") || combinedString.includes("pmb") || combinedString.includes("margate") || combinedString.includes("umhlanga") || combinedString.includes("stanger")) {
                             detectedProvince = "kwazulu-natal";
@@ -3801,57 +3788,73 @@ export default function AdminDashboard() {
                             detectedProvince = "northern-cape";
                           }
 
-                          if (detectedProvince) {
+                          if (detectedProvince && (!rec.province || rec.province === csvDefaultProvince)) {
                             location = detectedProvince;
                           }
                         }
 
                         const parsedLoc = findSuburbAndTown(location, address ? `${address} ${title}` : title, rec.city);
 
-                        newAds.push(cleanAd({
-                          id: `csv-${Date.now()}-${i}`,
-                          userId: "system",
+                        newAds.push({
                           title: title || "Unknown Business",
                           category: category,
+                          categoryCode: rec.categoryCode || "",
                           province: location,
-                          location: parsedLoc.town,
-                          suburb: parsedLoc.suburb,
-                          description: services ? `Services offered: ${services}` : `${category} business listed in ${parsedLoc.town}.`,
-                          servicesOffered: services || "",
+                          city: rec.city || parsedLoc.town,
+                          town: rec.city || parsedLoc.town,
+                          location: rec.city || parsedLoc.town,
+                          suburb: rec.suburb || parsedLoc.suburb,
+                          postalCode: rec.postalCode || "",
+                          description: rec.description || (services ? `Services offered: ${services}` : `${category} business listed in ${rec.suburb || parsedLoc.suburb}, ${rec.city || parsedLoc.town}.`),
+                          tradingHours: rec.tradingHours || "",
+                          servicesOffered: services || category,
                           address: address || "",
-                          phone: phone || "",
-                          website: "", // Unverified CSV listings do not include public website links
-                          verified: false,
-                          isPremium: false,
-                          isSponsor: false,
-                          isClaimed: false,
-                          isApproved: false,
-                          status: "pending",
-                          approvalStatus: "pending",
-                          isGoogleImport: true,
-                          image: null,
-                          createdAt: new Date().toISOString()
-                        }));
-                      }
-                      const feedbackParts = [];
-                      if (newAds.length > 0) {
-                        feedbackParts.push(`AI Core NLP Successfully indexed ${newAds.length} business listings! They are saved as Pending Approval. You can review and click 'Approve All' to publish them.`);
-                      } else {
-                        feedbackParts.push("No new listings were imported.");
-                      }
-                      if (skippedDuplicates > 0) {
-                        feedbackParts.push(`${skippedDuplicates} exact duplicate listing(s) (matching same name, phone & address) were blocked.`);
-                      }
-                      if (skippedNoPhone > 0) {
-                        feedbackParts.push(`${skippedNoPhone} row(s) without valid phone numbers were excluded.`);
+                          phone: primaryPhone,
+                          telephone: rec.telephone || primaryPhone,
+                          whatsapp: rec.whatsapp || primaryPhone,
+                          email: rec.email || "",
+                          website: website || "",
+                          socialLinks: rec.socialLinks || "",
+                          twitter: rec.twitter || "",
+                          tiktok: rec.tiktok || "",
+                          facebook: rec.facebook || "",
+                          instagram: rec.instagram || "",
+                          youtube: rec.youtube || "",
+                          linkedin: rec.linkedin || "",
+                          isApproved: true,
+                          status: "active",
+                        });
                       }
 
                       if (newAds.length > 0) {
-                        const updated = [...newAds, ...ads];
-                        setAds(updated);
-                        saveStoredAds(updated);
+                        setCsvUploadLoading(true);
+                        try {
+                          const chunkSize = 2000;
+                          let totalAdded = 0;
+                          let totalUpdated = 0;
+                          for (let c = 0; c < newAds.length; c += chunkSize) {
+                            const chunk = newAds.slice(c, c + chunkSize);
+                            const res = await fetch("/api/bot/ad/bulk", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ items: chunk })
+                            });
+                            if (res.ok) {
+                              const rData = await res.json();
+                              totalAdded += Number(rData.addedCount || 0);
+                              totalUpdated += Number(rData.updatedCount || 0);
+                            }
+                          }
+                          await refreshAdminServerAds();
+                          alert(`Successfully synced ${newAds.length.toLocaleString()} business listings (${totalAdded.toLocaleString()} added, ${totalUpdated.toLocaleString()} updated) directly to the SearchBiz live directory & search console!${skippedDuplicates > 0 ? ` (${skippedDuplicates.toLocaleString()} duplicates skipped)` : ''}${skippedNoPhone > 0 ? ` (${skippedNoPhone.toLocaleString()} missing required fields skipped)` : ''}`);
+                        } catch (err) {
+                          alert("Error syncing CSV batch to SearchBiz server.");
+                        } finally {
+                          setCsvUploadLoading(false);
+                        }
+                      } else {
+                        alert(`No new listings were imported.${skippedDuplicates > 0 ? ` (${skippedDuplicates.toLocaleString()} duplicates skipped)` : ''}${skippedNoPhone > 0 ? ` (${skippedNoPhone.toLocaleString()} rows missing Business Name, Address, or Phone/Telephone/WhatsApp skipped)` : ''}`);
                       }
-                      alert(feedbackParts.join(" "));
                       e.target.value = "";
                     };
                     reader.readAsText(file);

@@ -7,10 +7,11 @@ import path from 'path';
 import { cleanAdsArray } from '@/lib/clean-ad';
 import { resolveAdGeographyAndCategory } from '@/lib/ad-normalizer';
 import { isSubcategoryOf, CATEGORIES_STRUCTURED, stripCategoryNumber } from '@/lib/categories';
-import { writeStorageJsonNonBlocking } from '@/lib/bot-ad-service';
+import { writeStorageJsonNonBlocking, readLargeStorageJsonSync, createBotAdBatch } from '@/lib/bot-ad-service';
 
 interface CatIndexEntry {
   keys: string[];
+  codes: string[];
 }
 
 const FAST_NORM = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -85,12 +86,14 @@ for (const group of CATEGORIES_STRUCTURED) {
     group.code,
     `group_${group.code}`
   ]));
-  const gEntry: CatIndexEntry = { keys: groupKeys };
+  const groupCodes = group.items.map(it => it.id.toLowerCase().trim());
+  const gEntry: CatIndexEntry = { keys: groupKeys, codes: groupCodes };
   CATEGORY_INDEX_MAP.set(group.name.toLowerCase().trim(), gEntry);
   CATEGORY_INDEX_MAP.set(group.cleanName.toLowerCase().trim(), gEntry);
   CATEGORY_INDEX_MAP.set(FAST_NORM(group.name), gEntry);
   CATEGORY_INDEX_MAP.set(FAST_NORM(group.cleanName), gEntry);
-  CATEGORY_INDEX_MAP.set(group.code, gEntry);
+  CATEGORY_INDEX_MAP.set(group.code.toLowerCase(), gEntry);
+  CATEGORY_INDEX_MAP.set(`group_${group.code.toLowerCase()}`, gEntry);
 
   for (const item of group.items) {
     const itemKeys = Array.from(new Set([
@@ -104,7 +107,7 @@ for (const group of CATEGORIES_STRUCTURED) {
       FAST_NORM(item.fullName),
       FAST_NORM(item.name)
     ]));
-    const iEntry: CatIndexEntry = { keys: itemKeys };
+    const iEntry: CatIndexEntry = { keys: itemKeys, codes: [item.id.toLowerCase().trim()] };
     CATEGORY_INDEX_MAP.set(item.id.toLowerCase().trim(), iEntry);
     CATEGORY_INDEX_MAP.set(item.name.toLowerCase().trim(), iEntry);
     CATEGORY_INDEX_MAP.set(item.fullName.toLowerCase().trim(), iEntry);
@@ -145,90 +148,88 @@ if (globalRef.dbOfflineUntil === undefined) {
   globalRef.dbOfflineUntil = 0;
 }
 
+/**
+ * Memory-lean O(1) ad normalization & indexing preparation for 2,169,668+ ads.
+ * Avoids allocating per-ad _searchBlob strings or dictionary-mode hidden properties.
+ */
 function ensureAdFastIndexed(ad: any): void {
-  if (!ad || ad._indexedV4 === true) return;
+  if (!ad) return;
   if (ad.isClaimed === false || ad.plan === 'free' || !ad.isPremium) {
     ad.verified = false;
     ad.isVerified = false;
   }
-  resolveAdGeographyAndCategory(ad);
+  if (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined) {
+    resolveAdGeographyAndCategory(ad);
+  }
+}
 
+function getAdSectorEntry(ad: any): CatIndexEntry | undefined {
+  const catCode = String(ad.categoryCode || '').toLowerCase().trim();
+  if (catCode) {
+    const byCode = CATEGORY_INDEX_MAP.get(catCode);
+    if (byCode) return byCode;
+  }
   const rawCat = String(ad.category || 'Other').trim();
   const lowerRaw = rawCat.toLowerCase();
   const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
-  const subCat = String(ad.subcategory || cleanCat || '').toLowerCase().trim();
-  const catCode = String(ad.categoryCode || '').toLowerCase().trim();
-
-  const matched =
-    (catCode ? CATEGORY_INDEX_MAP.get(catCode) : undefined) ||
+  return (
     CATEGORY_INDEX_MAP.get(lowerRaw) ||
     CATEGORY_INDEX_MAP.get(cleanCat) ||
     CATEGORY_INDEX_MAP.get(FAST_NORM(cleanCat)) ||
-    (ad.categoryGroup ? CATEGORY_INDEX_MAP.get(String(ad.categoryGroup).toLowerCase().trim()) : undefined);
+    (ad.categoryGroup ? CATEGORY_INDEX_MAP.get(String(ad.categoryGroup).toLowerCase().trim()) : undefined)
+  );
+}
 
-  let sectorKeys: string[];
-  if (matched) {
-    sectorKeys = matched.keys;
-  } else {
-    sectorKeys = [rawCat, cleanCat, FAST_NORM(cleanCat)].filter(Boolean);
-    if (lowerRaw !== rawCat) sectorKeys.push(lowerRaw);
-    if (rawCat !== 'Other' && lowerRaw !== 'other') {
-      sectorKeys.push('Other', 'other');
-    }
-  }
-
-  const adProv = (ad.province || 'gauteng').toLowerCase();
-  const adProvName = (ad.provinceName || '').toLowerCase();
-  const provAliases = PROV_ALIASES_BLOB[adProv] || '';
-  const adTown = (ad.city || ad.town || ad.location || '').toLowerCase();
-  const adLoc = (ad.location || '').toLowerCase();
-  const adSuburb = (ad.suburb || '').toLowerCase();
-  const adAddr = (ad.address || '').toLowerCase();
-  const adGroup = (ad.categoryGroup || ad.parentCategory || '').toLowerCase();
-  const adPhone = String(ad.phone || '').replace(/[^0-9]/g, '');
-  const adWhatsapp = String(ad.whatsapp || '').replace(/[^0-9]/g, '');
-  const adLandline = String(ad.landline || ad.telephone || '').replace(/[^0-9]/g, '');
-  const adEmail = String(ad.email || '').toLowerCase();
-  const adWeb = String(ad.website || '').toLowerCase();
+function adMatchesSearchTokens(ad: any, tokenVariantSets: string[][]): boolean {
   const title = String(ad.title || '').toLowerCase();
-  const desc = String(ad.description || '').toLowerCase();
+  const cat = String(ad.category || '').toLowerCase();
+  const sub = String(ad.suburb || '').toLowerCase();
+  const town = String(ad.city || ad.town || ad.location || '').toLowerCase();
+  const prov = String(ad.province || '').toLowerCase();
+  const provName = String(ad.provinceName || '').toLowerCase();
+  const provAliases = PROV_ALIASES_BLOB[prov] || '';
+  const postal = String(ad.postalCode || '').toLowerCase();
+  const addr = String(ad.address || '').toLowerCase();
   const serv = Array.isArray(ad.servicesOffered)
     ? ad.servicesOffered.join(' ').toLowerCase()
     : String(ad.servicesOffered || '').toLowerCase();
-  const kw = String(ad.searchTags || (Array.isArray(ad.keywords) ? ad.keywords.join(' ') : '')).toLowerCase();
+  const desc = String(ad.description || '').toLowerCase();
+  const phone = String(ad.phone || ad.telephone || ad.whatsapp || '').replace(/[^0-9]/g, '');
+  const group = String(ad.categoryGroup || ad.parentCategory || '').toLowerCase();
+  const code = String(ad.categoryCode || '').toLowerCase();
+  const email = String(ad.email || '').toLowerCase();
+  const web = String(ad.website || '').toLowerCase();
 
-  const normTitle = FAST_NORM(title);
-  const normCat = FAST_NORM(lowerRaw);
-  const normSubCat = FAST_NORM(subCat);
-  const normGroup = FAST_NORM(adGroup);
-  const normTown = FAST_NORM(adTown);
-  const normLoc = FAST_NORM(adLoc);
-  const normSub = FAST_NORM(adSuburb);
-  const normAddr = FAST_NORM(adAddr);
-  const normProv = FAST_NORM(adProv);
-  const normProvName = FAST_NORM(adProvName);
-
-  Object.defineProperties(ad, {
-    _indexedV4: { value: true, writable: true, enumerable: false },
-    _cleanedV2: { value: true, writable: true, enumerable: false },
-    _enhancedV2: { value: true, writable: true, enumerable: false },
-    _provLower: { value: adProv, writable: true, enumerable: false },
-    _provNorm: { value: normProv, writable: true, enumerable: false },
-    _provNameNorm: { value: normProvName, writable: true, enumerable: false },
-    _townNorm: { value: normTown, writable: true, enumerable: false },
-    _locNorm: { value: normLoc, writable: true, enumerable: false },
-    _subNorm: { value: normSub, writable: true, enumerable: false },
-    _addrNorm: { value: normAddr, writable: true, enumerable: false },
-    _catNorm: { value: normCat, writable: true, enumerable: false },
-    _codeNorm: { value: FAST_NORM(catCode), writable: true, enumerable: false },
-    _groupNorm: { value: normGroup, writable: true, enumerable: false },
-    _sectorKeys: { value: sectorKeys, writable: true, enumerable: false },
-    _searchBlob: {
-      value: `${title} ${normTitle} ${desc} ${serv} ${lowerRaw} ${cleanCat} ${subCat} ${normCat} ${normSubCat} ${catCode} ${adGroup} ${normGroup} ${adTown} ${normTown} ${adLoc} ${adSuburb} ${normSub} ${adProv} ${adProvName} ${provAliases} ${adAddr} ${normAddr} ${kw} ${adPhone} ${adWhatsapp} ${adLandline} ${adEmail} ${adWeb}`,
-      writable: true,
-      enumerable: false
+  for (let t = 0; t < tokenVariantSets.length; t++) {
+    const variants = tokenVariantSets[t];
+    let matchedVariant = false;
+    for (let v = 0; v < variants.length; v++) {
+      const tok = variants[v];
+      if (
+        title.includes(tok) ||
+        cat.includes(tok) ||
+        sub.includes(tok) ||
+        town.includes(tok) ||
+        postal === tok ||
+        addr.includes(tok) ||
+        serv.includes(tok) ||
+        desc.includes(tok) ||
+        prov.includes(tok) ||
+        provName.includes(tok) ||
+        provAliases.includes(tok) ||
+        group.includes(tok) ||
+        code === tok ||
+        phone.includes(tok) ||
+        email.includes(tok) ||
+        web.includes(tok)
+      ) {
+        matchedVariant = true;
+        break;
+      }
     }
-  });
+    if (!matchedVariant) return false;
+  }
+  return true;
 }
 
 function getLocalDataNoCache() {
@@ -286,8 +287,7 @@ function getLocalDataNoCache() {
   let bestData: any = null;
   for (const candidate of rankedCandidates) {
     try {
-      const fileContent = fs.readFileSync(candidate.path, 'utf-8');
-      const data = JSON.parse(fileContent);
+      const data = readLargeStorageJsonSync(candidate.path);
       if (data && typeof data === 'object' && Array.isArray(data.ads)) {
         // Never allow an old backup file to resurrect ads that were intentionally purged more recently
         if (latestPurgedData && latestPurgeTime > (data.updatedAt || 0) && latestPurgeTime > (data.lastPurgeAt || 0)) {
@@ -571,8 +571,7 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
     }
 
     if (!targetPathToRead) return;
-    const raw = await fs.promises.readFile(targetPathToRead, 'utf-8');
-    const diskData = JSON.parse(raw);
+    const diskData = readLargeStorageJsonSync(targetPathToRead);
     const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const memCount = Array.isArray(globalRef.storageCache?.ads) ? globalRef.storageCache.ads.length : 0;
     const memPurgeTime = globalRef.storageCache?.lastPurgeAt || 0;
@@ -585,7 +584,7 @@ async function checkAndReloadFromDiskAsync(): Promise<void> {
     }
 
     if (diskCount >= memCount && diskCount > 0) {
-      const CHUNK = 4000;
+      const CHUNK = 10000;
       for (let i = 0; i < diskData.ads.length; i += CHUNK) {
         const end = Math.min(i + CHUNK, diskData.ads.length);
         for (let j = i; j < end; j++) {
@@ -676,7 +675,8 @@ interface IndexedDataset {
   byProvinceActive: Map<string, any[]>;
   byTownActive: Map<string, any[]>;
   bySuburbActive: Map<string, any[]>;
-  byCategoryActive: Map<string, any[]>;
+  byPostalCodeActive: Map<string, any[]>;
+  byCategoryCodeActive: Map<string, any[]>;
   queryCache: Map<string, any>;
 }
 
@@ -690,15 +690,96 @@ function addAdToMapList(map: Map<string, any[]>, key: string, ad: any): void {
   list.push(ad);
 }
 
+function getCategoryAdsFromIndex(ds: IndexedDataset, catParam: string): any[] | null {
+  if (!catParam || catParam === 'all') return null;
+  const cleanLower = catParam.toLowerCase().trim();
+  const normKey = FAST_NORM(cleanLower);
+  const entry =
+    CATEGORY_INDEX_MAP.get(cleanLower) ||
+    CATEGORY_INDEX_MAP.get(normKey) ||
+    CATEGORY_INDEX_MAP.get(stripCategoryNumber(cleanLower).toLowerCase().trim()) ||
+    CATEGORY_INDEX_MAP.get(FAST_NORM(stripCategoryNumber(cleanLower)));
+
+  if (!entry || !entry.codes || entry.codes.length === 0) {
+    if (ds.byCategoryCodeActive.has(cleanLower)) {
+      return ds.byCategoryCodeActive.get(cleanLower) || [];
+    }
+    if (ds.byCategoryCodeActive.has(normKey)) {
+      return ds.byCategoryCodeActive.get(normKey) || [];
+    }
+    return null;
+  }
+
+  if (entry.codes.length === 1) {
+    return ds.byCategoryCodeActive.get(entry.codes[0]) || [];
+  }
+
+  const combined: any[] = [];
+  for (let i = 0; i < entry.codes.length; i++) {
+    const bucket = ds.byCategoryCodeActive.get(entry.codes[i]);
+    if (bucket && bucket.length > 0) {
+      for (let j = 0; j < bucket.length; j++) {
+        combined.push(bucket[j]);
+      }
+    }
+  }
+  return combined;
+}
+
+function indexSingleActiveAdIntoMaps(
+  a: any,
+  byProvinceActive: Map<string, any[]>,
+  byTownActive: Map<string, any[]>,
+  bySuburbActive: Map<string, any[]>,
+  byPostalCodeActive: Map<string, any[]>,
+  byCategoryCodeActive: Map<string, any[]>,
+  byCategoryCounts: Record<string, number>
+): void {
+  const prov = String(a.province || 'gauteng').toLowerCase().trim();
+  addAdToMapList(byProvinceActive, prov, a);
+
+  const townNorm = FAST_NORM(a.city || a.town || a.location || '');
+  if (townNorm) {
+    addAdToMapList(byTownActive, townNorm, a);
+  }
+
+  const subNorm = FAST_NORM(a.suburb || '');
+  if (subNorm) {
+    addAdToMapList(bySuburbActive, subNorm, a);
+  }
+
+  const postal = String(a.postalCode || '').trim();
+  if (postal) {
+    addAdToMapList(byPostalCodeActive, postal, a);
+  }
+
+  const matched = getAdSectorEntry(a);
+  const codeKey = String(a.categoryCode || (matched?.codes?.[0] ?? '20.1')).toLowerCase().trim();
+  addAdToMapList(byCategoryCodeActive, codeKey, a);
+
+  if (matched) {
+    const keys = matched.keys;
+    for (let k = 0; k < keys.length; k++) {
+      const key = keys[k];
+      byCategoryCounts[key] = (byCategoryCounts[key] || 0) + 1;
+    }
+  } else {
+    const rawCat = String(a.category || 'Other').trim();
+    const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
+    if (rawCat) byCategoryCounts[rawCat] = (byCategoryCounts[rawCat] || 0) + 1;
+    if (cleanCat && cleanCat !== rawCat) byCategoryCounts[cleanCat] = (byCategoryCounts[cleanCat] || 0) + 1;
+  }
+}
+
 function incrementallyIndexAds(newAds: any[]): void {
   const ds: IndexedDataset | undefined = globalRef.indexedDataset;
   if (!ds || !Array.isArray(newAds) || newAds.length === 0) return;
 
-  for (let i = newAds.length - 1; i >= 0; i--) {
+  for (let i = 0; i < newAds.length; i++) {
     const a = newAds[i];
     if (!a || !a.id) continue;
     ensureAdFastIndexed(a);
-    ds.allNonDeletedAds.unshift(a);
+    ds.allNonDeletedAds.push(a);
     ds.adminStats.total++;
 
     const isAct = a.isActive !== false;
@@ -732,30 +813,19 @@ function incrementallyIndexAds(newAds: any[]): void {
     if (isBotOrCsvListing(a)) ds.adminStats.csvAndBot++;
     else ds.adminStats.preference++;
 
-    const prov = a._provLower || (a.province || 'gauteng').toLowerCase();
+    const prov = String(a.province || 'gauteng').toLowerCase().trim();
     ds.adminStats.byProvince[prov] = (ds.adminStats.byProvince[prov] || 0) + 1;
 
     if (isAct) {
-      addAdToMapList(ds.byProvinceActive, prov, a);
-      if (a._provNorm && a._provNorm !== prov) {
-        addAdToMapList(ds.byProvinceActive, a._provNorm, a);
-      }
-      if (a._townNorm) {
-        addAdToMapList(ds.byTownActive, a._townNorm, a);
-      }
-      if (a._locNorm && a._locNorm !== a._townNorm) {
-        addAdToMapList(ds.byTownActive, a._locNorm, a);
-      }
-      if (a._subNorm) {
-        addAdToMapList(ds.bySuburbActive, a._subNorm, a);
-      }
-
-      const keys: string[] = a._sectorKeys || [];
-      for (let k = 0; k < keys.length; k++) {
-        const key = keys[k];
-        ds.adminStats.byCategory[key] = (ds.adminStats.byCategory[key] || 0) + 1;
-        addAdToMapList(ds.byCategoryActive, key, a);
-      }
+      indexSingleActiveAdIntoMaps(
+        a,
+        ds.byProvinceActive,
+        ds.byTownActive,
+        ds.bySuburbActive,
+        ds.byPostalCodeActive,
+        ds.byCategoryCodeActive,
+        ds.adminStats.byCategory
+      );
     }
   }
   ds.queryCache.clear();
@@ -776,7 +846,8 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
   const byProvinceActive = new Map<string, any[]>();
   const byTownActive = new Map<string, any[]>();
   const bySuburbActive = new Map<string, any[]>();
-  const byCategoryActive = new Map<string, any[]>();
+  const byPostalCodeActive = new Map<string, any[]>();
+  const byCategoryCodeActive = new Map<string, any[]>();
 
   let active = 0;
   let pendingApproval = 0;
@@ -839,7 +910,7 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
       preference++;
     }
 
-    const prov = a._provLower || (a.province || 'gauteng').toLowerCase();
+    const prov = String(a.province || 'gauteng').toLowerCase().trim();
     byProvince[prov] = (byProvince[prov] || 0) + 1;
   }
 
@@ -853,27 +924,15 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
       allFeaturedAds.push(a);
     }
 
-    const prov = a._provLower || (a.province || 'gauteng').toLowerCase();
-    addAdToMapList(byProvinceActive, prov, a);
-    if (a._provNorm && a._provNorm !== prov) {
-      addAdToMapList(byProvinceActive, a._provNorm, a);
-    }
-    if (a._townNorm) {
-      addAdToMapList(byTownActive, a._townNorm, a);
-    }
-    if (a._locNorm && a._locNorm !== a._townNorm) {
-      addAdToMapList(byTownActive, a._locNorm, a);
-    }
-    if (a._subNorm) {
-      addAdToMapList(bySuburbActive, a._subNorm, a);
-    }
-
-    const keys: string[] = a._sectorKeys || [];
-    for (let k = 0; k < keys.length; k++) {
-      const key = keys[k];
-      byCategory[key] = (byCategory[key] || 0) + 1;
-      addAdToMapList(byCategoryActive, key, a);
-    }
+    indexSingleActiveAdIntoMaps(
+      a,
+      byProvinceActive,
+      byTownActive,
+      bySuburbActive,
+      byPostalCodeActive,
+      byCategoryCodeActive,
+      byCategory
+    );
   }
 
   const adminStats = {
@@ -905,7 +964,8 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
     byProvinceActive,
     byTownActive,
     bySuburbActive,
-    byCategoryActive,
+    byPostalCodeActive,
+    byCategoryCodeActive,
     queryCache: new Map<string, any>()
   };
 }
@@ -1054,6 +1114,7 @@ export async function GET(req: Request) {
     const townParam = (url.searchParams.get('town') || '').toLowerCase().trim();
     const provParam = (url.searchParams.get('province') || '').toLowerCase().trim();
     const subParam = (url.searchParams.get('suburb') || '').toLowerCase().trim();
+    const postalParam = (url.searchParams.get('postalCode') || url.searchParams.get('postal_code') || '').trim();
     const locSlugParam = (url.searchParams.get('locationSlug') || '').toLowerCase().trim();
     const addrParam = (url.searchParams.get('address') || '').toLowerCase().trim();
     const statusParam = (url.searchParams.get('status') || '').toLowerCase().trim();
@@ -1080,67 +1141,97 @@ export async function GET(req: Request) {
 
     const targetProv = (provParam && provParam !== 'all') ? (PROV_ACRONYMS[provParam] || provParam) : '';
 
-    // Narrow initial candidate set using O(1) pre-built index maps when possible
-    let candidatePool = includeInactive ? indexed.allNonDeletedAds : (freeOnly && !catParam && !targetProv ? indexed.allFreeAds : indexed.allActiveAds);
+    // Detect if a 4-digit postal code was passed in postalParam, subParam, or townParam
+    const effectivePostalCode =
+      (postalParam && /^\d{4}$/.test(postalParam) ? postalParam : '') ||
+      (subParam && /^\d{4}$/.test(subParam) ? subParam : '') ||
+      (townParam && /^\d{4}$/.test(townParam) ? townParam : '') ||
+      (locSlugParam && /^\d{4}$/.test(locSlugParam) ? locSlugParam : '');
+
+    // Narrow initial candidate set using O(1) pre-built index maps — pick SMALLEST bucket first!
+    let candidatePool = includeInactive
+      ? indexed.allNonDeletedAds
+      : (freeOnly && !catParam && !targetProv && !townParam && !subParam && !postalParam ? indexed.allFreeAds : indexed.allActiveAds);
     let usedExactCategoryIndex = false;
     let usedExactProvinceIndex = false;
     let usedExactTownIndex = false;
     let usedExactSuburbIndex = false;
+    let usedExactPostalIndex = false;
     let usedExactLocSlugIndex = false;
-    let usedExactFreeIndex = Boolean(!includeInactive && freeOnly && !catParam && !targetProv);
+    const usedExactFreeIndex = Boolean(!includeInactive && freeOnly && !catParam && !targetProv && !townParam && !subParam && !postalParam);
 
     if (!includeInactive) {
-      const normCatKey = catParam ? FAST_NORM(catParam) : '';
-      const normTownKey = townParam ? FAST_NORM(townParam) : '';
-      const normSubKey = subParam ? FAST_NORM(subParam) : '';
-      const normLocSlug = locSlugParam ? FAST_NORM(locSlugParam) : '';
+      const normTownKey = townParam && !/^\d{4}$/.test(townParam) ? FAST_NORM(townParam) : '';
+      const normSubKey = subParam && !/^\d{4}$/.test(subParam) ? FAST_NORM(subParam) : '';
+      const normLocSlug = locSlugParam && !/^\d{4}$/.test(locSlugParam) ? FAST_NORM(locSlugParam) : '';
       const natPool = indexed.byProvinceActive.get('national') || [];
 
-      if (
-        catParam &&
-        catParam !== 'all' &&
-        (indexed.byCategoryActive.has(catParam) ||
-          indexed.byCategoryActive.has(normCatKey) ||
-          CATEGORY_INDEX_MAP.has(catParam) ||
-          CATEGORY_INDEX_MAP.has(normCatKey))
-      ) {
-        candidatePool = indexed.byCategoryActive.get(catParam) || indexed.byCategoryActive.get(normCatKey) || [];
-        usedExactCategoryIndex = true;
-      } else if (normLocSlug && (indexed.byProvinceActive.has(locSlugParam) || indexed.byProvinceActive.has(normLocSlug))) {
-        const pPool = indexed.byProvinceActive.get(locSlugParam) || indexed.byProvinceActive.get(normLocSlug) || [];
-        candidatePool = natPool.length > 0 && locSlugParam !== 'national' ? [...pPool, ...natPool] : pPool;
-        usedExactLocSlugIndex = true;
-      } else if (normLocSlug && indexed.byTownActive.has(normLocSlug)) {
-        const tPool = indexed.byTownActive.get(normLocSlug)!;
-        candidatePool = natPool.length > 0 ? [...tPool, ...natPool] : tPool;
-        usedExactLocSlugIndex = true;
-      } else if (normLocSlug && indexed.bySuburbActive.has(normLocSlug)) {
-        const sPool = indexed.bySuburbActive.get(normLocSlug)!;
-        candidatePool = natPool.length > 0 ? [...sPool, ...natPool] : sPool;
-        usedExactLocSlugIndex = true;
-      } else if (normSubKey && indexed.bySuburbActive.has(normSubKey)) {
-        const sPool = indexed.bySuburbActive.get(normSubKey)!;
-        candidatePool = natPool.length > 0 ? [...sPool, ...natPool] : sPool;
-        usedExactSuburbIndex = true;
-      } else if (normTownKey && indexed.byTownActive.has(normTownKey)) {
-        const tPool = indexed.byTownActive.get(normTownKey)!;
-        candidatePool = natPool.length > 0 ? [...tPool, ...natPool] : tPool;
-        usedExactTownIndex = true;
-      } else if (targetProv && (indexed.byProvinceActive.has(targetProv) || indexed.byProvinceActive.has(FAST_NORM(targetProv)))) {
-        const provPool = indexed.byProvinceActive.get(targetProv) || indexed.byProvinceActive.get(FAST_NORM(targetProv)) || [];
-        candidatePool = natPool.length > 0 && targetProv !== 'national' ? [...provPool, ...natPool] : provPool;
-        usedExactProvinceIndex = true;
+      interface BucketOption {
+        type: 'postal' | 'suburb' | 'town' | 'category' | 'locSlug' | 'province';
+        pool: any[];
+      }
+      const options: BucketOption[] = [];
+
+      if (effectivePostalCode && indexed.byPostalCodeActive.has(effectivePostalCode)) {
+        const pList = indexed.byPostalCodeActive.get(effectivePostalCode)!;
+        options.push({ type: 'postal', pool: natPool.length > 0 ? [...pList, ...natPool] : pList });
+      }
+      if (normSubKey && indexed.bySuburbActive.has(normSubKey)) {
+        const sList = indexed.bySuburbActive.get(normSubKey)!;
+        options.push({ type: 'suburb', pool: natPool.length > 0 ? [...sList, ...natPool] : sList });
+      }
+      if (normTownKey && indexed.byTownActive.has(normTownKey)) {
+        const tList = indexed.byTownActive.get(normTownKey)!;
+        options.push({ type: 'town', pool: natPool.length > 0 ? [...tList, ...natPool] : tList });
+      }
+      if (catParam && catParam !== 'all') {
+        const catAds = getCategoryAdsFromIndex(indexed, catParam);
+        if (catAds !== null) {
+          options.push({ type: 'category', pool: catAds });
+        }
+      }
+      if (normLocSlug) {
+        if (indexed.bySuburbActive.has(normLocSlug)) {
+          const sPool = indexed.bySuburbActive.get(normLocSlug)!;
+          options.push({ type: 'locSlug', pool: natPool.length > 0 ? [...sPool, ...natPool] : sPool });
+        } else if (indexed.byTownActive.has(normLocSlug)) {
+          const tPool = indexed.byTownActive.get(normLocSlug)!;
+          options.push({ type: 'locSlug', pool: natPool.length > 0 ? [...tPool, ...natPool] : tPool });
+        } else if (indexed.byProvinceActive.has(locSlugParam) || indexed.byProvinceActive.has(normLocSlug)) {
+          const pPool = indexed.byProvinceActive.get(locSlugParam) || indexed.byProvinceActive.get(normLocSlug) || [];
+          options.push({ type: 'locSlug', pool: natPool.length > 0 && locSlugParam !== 'national' ? [...pPool, ...natPool] : pPool });
+        }
+      }
+      if (targetProv && indexed.byProvinceActive.has(targetProv)) {
+        const provPool = indexed.byProvinceActive.get(targetProv) || [];
+        options.push({ type: 'province', pool: natPool.length > 0 && targetProv !== 'national' ? [...provPool, ...natPool] : provPool });
+      }
+
+      if (options.length > 0) {
+        // Pick the smallest index bucket so combined filters scan the fewest records possible
+        options.sort((a, b) => a.pool.length - b.pool.length);
+        const best = options[0];
+        candidatePool = best.pool;
+        if (best.type === 'postal') usedExactPostalIndex = true;
+        else if (best.type === 'suburb') usedExactSuburbIndex = true;
+        else if (best.type === 'town') usedExactTownIndex = true;
+        else if (best.type === 'category') usedExactCategoryIndex = true;
+        else if (best.type === 'locSlug') usedExactLocSlugIndex = true;
+        else if (best.type === 'province') usedExactProvinceIndex = true;
       }
     }
 
     let filtered = candidatePool;
 
     const hasRemainingFilters = Boolean(
-      qParam || (catParam && !usedExactCategoryIndex) ||
-      (townParam && !usedExactTownIndex) ||
+      qParam ||
+      (catParam && catParam !== 'all' && !usedExactCategoryIndex) ||
+      (townParam && !/^\d{4}$/.test(townParam) && !usedExactTownIndex) ||
       (targetProv && !usedExactProvinceIndex) ||
-      (subParam && !usedExactSuburbIndex) ||
-      (locSlugParam && !usedExactLocSlugIndex) ||
+      (subParam && !/^\d{4}$/.test(subParam) && !usedExactSuburbIndex) ||
+      (effectivePostalCode && !usedExactPostalIndex) ||
+      (postalParam && !/^\d{4}$/.test(postalParam)) ||
+      (locSlugParam && !/^\d{4}$/.test(locSlugParam) && !usedExactLocSlugIndex) ||
       addrParam || statusParam || sourceParam || adTypeParam ||
       approvedOnly || pendingOnly || (freeOnly && !usedExactFreeIndex) || premiumOnly || sponsorOnly
     );
@@ -1150,10 +1241,14 @@ export async function GET(req: Request) {
 
       const nAddrParam = addrParam ? FAST_NORM(addrParam) : '';
       const nTargetProv = targetProv ? FAST_NORM(targetProv) : '';
-      const nTownParam = townParam ? FAST_NORM(townParam) : '';
-      const nSubParam = subParam ? FAST_NORM(subParam) : '';
-      const nLocSlug = locSlugParam ? FAST_NORM(locSlugParam) : '';
+      const nTownParam = (townParam && !/^\d{4}$/.test(townParam) && !usedExactTownIndex) ? FAST_NORM(townParam) : '';
+      const nSubParam = (subParam && !/^\d{4}$/.test(subParam) && !usedExactSuburbIndex) ? FAST_NORM(subParam) : '';
+      const nLocSlug = (locSlugParam && !/^\d{4}$/.test(locSlugParam) && !usedExactLocSlugIndex) ? FAST_NORM(locSlugParam) : '';
       const nCatParam = (catParam && catParam !== 'all' && !usedExactCategoryIndex) ? FAST_NORM(catParam) : '';
+      const catEntryMatch = (catParam && catParam !== 'all' && !usedExactCategoryIndex)
+        ? (CATEGORY_INDEX_MAP.get(catParam) || CATEGORY_INDEX_MAP.get(nCatParam))
+        : undefined;
+      const catCodesSet = catEntryMatch?.codes ? new Set(catEntryMatch.codes) : null;
 
       const rawTokens = qParam ? qParam.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean) : [];
       const meaningfulTokens = rawTokens.filter(w => !STOP_WORDS.has(w));
@@ -1193,16 +1288,25 @@ export async function GET(req: Request) {
           if (currentStatus !== statusParam) return false;
         }
 
-        const nAdProv = ad._provNorm ?? FAST_NORM(ad.province || '');
-        const nAdProvName = ad._provNameNorm ?? FAST_NORM(ad.provinceName || '');
-        const nAdTown = ad._townNorm ?? FAST_NORM(ad.city || ad.town || ad.location || '');
-        const nAdLoc = ad._locNorm ?? FAST_NORM(ad.location || '');
-        const nAdSub = ad._subNorm ?? FAST_NORM(ad.suburb || '');
-        const nAdAddr = ad._addrNorm ?? FAST_NORM(ad.address || '');
-        const nAdCat = ad._catNorm ?? FAST_NORM(ad.category || '');
-        const nAdCode = ad._codeNorm ?? FAST_NORM(ad.categoryCode || '');
-        const nAdGroup = ad._groupNorm ?? FAST_NORM(ad.categoryGroup || ad.parentCategory || '');
-        const isGlobal = ad._provLower === 'national' || nAdLoc === 'alllocations';
+        const adProvLower = String(ad.province || '').toLowerCase();
+        const nAdProv = FAST_NORM(adProvLower);
+        const nAdProvName = FAST_NORM(ad.provinceName || '');
+        const nAdTown = FAST_NORM(ad.city || ad.town || ad.location || '');
+        const nAdLoc = FAST_NORM(ad.location || '');
+        const nAdSub = FAST_NORM(ad.suburb || '');
+        const adPostal = String(ad.postalCode || '').trim();
+        const nAdAddr = FAST_NORM(ad.address || '');
+        const isGlobal = adProvLower === 'national' || nAdLoc === 'alllocations';
+
+        if (effectivePostalCode && !usedExactPostalIndex && !isGlobal) {
+          if (adPostal !== effectivePostalCode && !String(ad.address || '').includes(effectivePostalCode)) {
+            return false;
+          }
+        } else if (postalParam && !effectivePostalCode && !isGlobal) {
+          if (!adPostal.includes(postalParam) && !String(ad.address || '').toLowerCase().includes(postalParam.toLowerCase())) {
+            return false;
+          }
+        }
 
         if (nLocSlug && !isGlobal) {
           const slugMatch =
@@ -1226,14 +1330,15 @@ export async function GET(req: Request) {
             !nAdAddr.includes(nAddrParam) && 
             !nAddrParam.includes(nAdAddr) && 
             !nAdTown.includes(nAddrParam) && 
-            !nAdSub.includes(nAddrParam)
+            !nAdSub.includes(nAddrParam) &&
+            adPostal !== addrParam
           ) {
             return false;
           }
         }
         
         if (nTargetProv && !isGlobal) {
-          const provMatch = ad._provLower === targetProv || 
+          const provMatch = adProvLower === targetProv || 
                             nAdProv === nTargetProv || 
                             nAdProvName === nTargetProv || 
                             (nAdProv && (nAdProv.includes(nTargetProv) || nTargetProv.includes(nAdProv)));
@@ -1280,27 +1385,24 @@ export async function GET(req: Request) {
         }
 
         if (nCatParam) {
-          const catMatch = nAdCat === nCatParam || 
-                           (nAdCat && (nAdCat.includes(nCatParam) || nCatParam.includes(nAdCat))) || 
-                           (nAdCode && (nAdCode === nCatParam || nAdCode.startsWith(nCatParam))) || 
-                           (nAdGroup && (nAdGroup.includes(nCatParam) || nCatParam.includes(nAdGroup))) ||
-                           isSubcategoryOf(ad.category || '', catParam);
-          if (!catMatch) return false;
+          const adCodeLower = String(ad.categoryCode || '').toLowerCase().trim();
+          if (catCodesSet && adCodeLower && catCodesSet.has(adCodeLower)) {
+            // Fast O(1) category code hit
+          } else {
+            const nAdCat = FAST_NORM(ad.category || '');
+            const nAdCode = FAST_NORM(adCodeLower);
+            const nAdGroup = FAST_NORM(ad.categoryGroup || ad.parentCategory || '');
+            const catMatch = nAdCat === nCatParam || 
+                             (nAdCat && (nAdCat.includes(nCatParam) || nCatParam.includes(nAdCat))) || 
+                             (nAdCode && (nAdCode === nCatParam || nAdCode.startsWith(nCatParam))) || 
+                             (nAdGroup && (nAdGroup.includes(nCatParam) || nCatParam.includes(nAdGroup))) ||
+                             isSubcategoryOf(ad.category || '', catParam);
+            if (!catMatch) return false;
+          }
         }
 
         if (tokenVariantSets.length > 0) {
-          const blob = ad._searchBlob || '';
-          for (let t = 0; t < tokenVariantSets.length; t++) {
-            const variants = tokenVariantSets[t];
-            let matchedVariant = false;
-            for (let v = 0; v < variants.length; v++) {
-              if (blob.includes(variants[v])) {
-                matchedVariant = true;
-                break;
-              }
-            }
-            if (!matchedVariant) return false;
-          }
+          if (!adMatchesSearchTokens(ad, tokenVariantSets)) return false;
         }
 
         return true;
@@ -1320,7 +1422,10 @@ export async function GET(req: Request) {
     let activePage = 1;
     let activePageSize = filteredTotal;
 
-    if (page && pageSize) {
+    const noLimit = url.searchParams.get('noLimit') === 'true' || isLimitAll;
+    if (noLimit) {
+      adsToReturn = filtered;
+    } else if (page && pageSize) {
       activePage = page;
       activePageSize = pageSize;
       totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
@@ -1330,8 +1435,6 @@ export async function GET(req: Request) {
       adsToReturn = filtered.slice(0, limitNum);
     } else if (!isFull && !isLimitAll && filtered.length > 100) {
       adsToReturn = filtered.slice(0, 100);
-    } else if (isLimitAll && filtered.length > 2500) {
-      adsToReturn = filtered.slice(0, 2500);
     }
 
     const isLightweightDirectoryPage = Boolean(page && pageSize && !includeInactive && !isFull);
@@ -1556,6 +1659,21 @@ export async function POST(req: Request) {
           newData.trashAds = [{ ...targetAd, deletedAt: new Date().toISOString() }, ...trash];
         }
       }
+    } else if (Array.isArray(body.appendAds)) {
+      const batchRes = await createBotAdBatch(body.appendAds);
+      const latestData = getFastBaseData();
+      const latestIndexed = getIndexedDataset(latestData);
+      return NextResponse.json({
+        success: true,
+        addedCount: batchRes.addedCount,
+        updatedCount: batchRes.updatedCount,
+        skippedDuplicatesCount: batchRes.skippedDuplicatesCount,
+        totalAdsCount: latestIndexed.allActiveAds.length,
+        verifiedCount: latestIndexed.adminStats.approved,
+        globalTotalAdsCount: latestIndexed.allActiveAds.length,
+        globalVerifiedCount: latestIndexed.adminStats.approved,
+        adminStats: latestIndexed.adminStats
+      });
     } else if (body.forceSyncAds && Array.isArray(body.ads)) {
       const incomingAds = cleanAdsArray(body.ads.filter((a: any) => a && a.id));
       for (const ad of incomingAds) {
@@ -1608,9 +1726,29 @@ export async function POST(req: Request) {
       const deletedAds = Array.isArray(currentData.deletedAds) ? currentData.deletedAds : [];
       const clientDeleted = Array.isArray(body.deletedAds) ? body.deletedAds : [];
       const deletedSet = new Set([...deletedAds, ...clientDeleted]);
-      const mergedAds = mergeData({ ads: currentData.ads }, { ads: body.ads }).ads;
+      const currentAds = Array.isArray(currentData.ads) ? currentData.ads : [];
+      const incomingAds = cleanAdsArray((Array.isArray(body.ads) ? body.ads : []).filter((a: any) => a && a.id));
+      for (let i = 0; i < incomingAds.length; i++) {
+        resolveAdGeographyAndCategory(incomingAds[i]);
+      }
+      const existingById = new Map<string, number>();
+      for (let i = 0; i < currentAds.length; i++) {
+        const a = currentAds[i];
+        if (a && a.id) existingById.set(a.id, i);
+      }
+      for (let i = 0; i < incomingAds.length; i++) {
+        const inc = incomingAds[i];
+        if (!inc || !inc.id || deletedSet.has(inc.id)) continue;
+        const idx = existingById.get(inc.id);
+        if (idx !== undefined) {
+          currentAds[idx] = { ...currentAds[idx], ...inc };
+        } else {
+          existingById.set(inc.id, currentAds.length);
+          currentAds.push(inc);
+        }
+      }
       newData.deletedAds = Array.from(deletedSet);
-      newData.ads = mergedAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id));
+      newData.ads = deletedSet.size > 0 ? currentAds.filter((ad: any) => ad && ad.id && !deletedSet.has(ad.id)) : currentAds;
       if (Array.isArray(body.trashAds)) {
         newData.trashAds = body.trashAds.filter((t: any) => t && t.id && !deletedSet.has(t.id));
       }

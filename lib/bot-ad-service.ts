@@ -52,6 +52,8 @@ export interface BotAdPayload {
   town?: string;
   location?: string;
   suburb?: string;
+  postalCode?: string;
+  postal_code?: string;
   address?: string;
   phone: string;
   landline?: string;
@@ -91,6 +93,118 @@ export interface BotAdPayload {
   plan?: string;
   image?: string;
   price?: string | number;
+}
+
+/**
+ * Reads storage JSON files of any size, including multi-gigabyte 2.17M+ ad vaults
+ * that exceed V8's 512MB single-string limit (ERR_STRING_TOO_LONG).
+ */
+export function readLargeStorageJsonSync(filePath: string): any {
+  const st = fs.statSync(filePath);
+  // Fast path for files under 380MB
+  if (st.size < 380 * 1024 * 1024) {
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(raw);
+    } catch (err: any) {
+      if (err?.code !== 'ERR_STRING_TOO_LONG') {
+        throw err;
+      }
+    }
+  }
+
+  // Chunked Buffer reader for 380MB - 4GB+ JSON files
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const CHUNK_BYTES = 16 * 1024 * 1024; // 16MB chunks
+    const buf = Buffer.allocUnsafe(CHUNK_BYTES);
+    let pos = 0;
+    let leftover = '';
+    let inAdsArray = false;
+    let metaData: any = { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now() };
+    const ads: any[] = [];
+
+    while (pos < st.size) {
+      const bytesRead = fs.readSync(fd, buf, 0, CHUNK_BYTES, pos);
+      if (bytesRead <= 0) break;
+      pos += bytesRead;
+      const chunkStr = leftover + buf.toString('utf-8', 0, bytesRead);
+
+      if (!inAdsArray) {
+        const adsMarkerIdx = chunkStr.indexOf('"ads":[');
+        if (adsMarkerIdx === -1) {
+          leftover = chunkStr.slice(-1024);
+          continue;
+        }
+        const prefixStr = chunkStr.slice(0, adsMarkerIdx);
+        try {
+          const cleanPrefix = prefixStr.trim().replace(/,\s*$/, '') + '}';
+          if (cleanPrefix.startsWith('{')) {
+            const parsedMeta = JSON.parse(cleanPrefix);
+            metaData = { ...metaData, ...parsedMeta, ads: [] };
+          }
+        } catch (e) {}
+        inAdsArray = true;
+        leftover = chunkStr.slice(adsMarkerIdx + 7);
+      } else {
+        leftover = chunkStr;
+      }
+
+      // Extract complete JSON objects `{...}` at top level of the `ads` array
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      let objStart = -1;
+      let lastConsumed = 0;
+
+      for (let i = 0; i < leftover.length; i++) {
+        const ch = leftover.charCodeAt(i);
+        if (inStr) {
+          if (esc) {
+            esc = false;
+          } else if (ch === 92) { // '\\'
+            esc = true;
+          } else if (ch === 34) { // '"'
+            inStr = false;
+          }
+          continue;
+        }
+        if (ch === 34) { // '"'
+          inStr = true;
+        } else if (ch === 123) { // '{'
+          if (depth === 0) objStart = i;
+          depth++;
+        } else if (ch === 125) { // '}'
+          depth--;
+          if (depth === 0 && objStart !== -1) {
+            const objJson = leftover.slice(objStart, i + 1);
+            try {
+              const parsedAd = JSON.parse(objJson);
+              if (parsedAd && typeof parsedAd === 'object') {
+                ads.push(parsedAd);
+              }
+            } catch (e) {}
+            objStart = -1;
+            lastConsumed = i + 1;
+          }
+        } else if (ch === 93 && depth === 0) { // ']' end of ads array
+          lastConsumed = leftover.length;
+          break;
+        }
+      }
+
+      if (lastConsumed > 0) {
+        leftover = leftover.slice(lastConsumed);
+      }
+    }
+
+    metaData.ads = ads;
+    return metaData;
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch (e) {}
+  }
 }
 
 export function readServerDb(): any {
@@ -149,8 +263,7 @@ export function readServerDb(): any {
   let bestData: any = null;
   for (const candidate of rankedCandidates) {
     try {
-      const fileContent = fs.readFileSync(candidate.path, 'utf-8');
-      const data = JSON.parse(fileContent);
+      const data = readLargeStorageJsonSync(candidate.path);
       if (data && typeof data === 'object' && Array.isArray(data.ads)) {
         if (latestPurgedData && latestPurgeTime > (data.updatedAt || 0) && latestPurgeTime > (data.lastPurgeAt || 0)) {
           continue;
@@ -171,7 +284,7 @@ export function readServerDb(): any {
     bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
     for (let i = 0; i < bestData.ads.length; i++) {
       const ad = bestData.ads[i];
-      if (ad && !ad._indexedV3 && !ad._geoNormalized && (!ad.province || !ad.categoryCode)) {
+      if (ad && (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined)) {
         resolveAdGeographyAndCategory(ad);
       }
     }
@@ -203,7 +316,7 @@ async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promi
       if (k !== 'ads') meta[k] = data[k];
     }
     const metaStr = JSON.stringify(meta);
-    const prefix = metaStr.slice(0, -1) + (metaStr.length > 2 ? ',"ads":[' : '"ads":[');
+    const prefix = metaStr.slice(0, -1) + (metaStr.length > 2 ? ',"ads":[\n' : '"ads":[\n');
     await handle.write(prefix, null, 'utf-8');
 
     const ads = Array.isArray(data.ads) ? data.ads : [];
@@ -217,7 +330,7 @@ async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promi
         if (!item) continue;
         const itemStr = JSON.stringify(item);
         if (!itemStr) continue;
-        chunkStr += (wroteAny ? ',' : '') + itemStr;
+        chunkStr += (wroteAny ? ',\n' : '') + itemStr;
         wroteAny = true;
       }
       if (chunkStr) {
@@ -227,7 +340,7 @@ async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promi
         await new Promise<void>(resolve => setImmediate(resolve));
       }
     }
-    await handle.write(']}', null, 'utf-8');
+    await handle.write('\n]}', null, 'utf-8');
   } finally {
     await handle.close();
   }
@@ -357,37 +470,28 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   const rawLandline = (payload.landline || payload.telephone || '').trim();
   const rawWhatsapp = (payload.whatsapp || '').trim();
 
-  // Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+  // Minimum requirement: at least 1 number (Phone, Telephone/Landline, or WhatsApp) must be available
   const resolvedPublicPhone = rawPhone || rawLandline || rawWhatsapp;
 
-  const hasAlternativeContact = Boolean(
-    resolvedPublicPhone ||
-    (payload.email && payload.email.trim()) ||
-    (payload.website && payload.website.trim()) ||
-    (payload.facebook || payload.socialFacebook) ||
-    (payload.instagram || payload.socialInstagram) ||
-    (payload.tiktok || payload.socialTikTok) ||
-    (payload.twitter || payload.x || payload.socialX) ||
-    (payload.youtube || payload.socialYoutube) ||
-    (payload.socialLinks && payload.socialLinks.trim())
-  );
-
-  if (!hasAlternativeContact) {
-    return { success: false, error: 'Business has no phone, telephone, WhatsApp, or other contact information.' };
+  if (!resolvedPublicPhone) {
+    return {
+      success: false,
+      error: 'Minimum requirement not met: At least 1 phone number (Phone, Telephone, or WhatsApp) is required.'
+    };
   }
 
   const dbData = readServerDb();
   const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
 
-  const town = payload.city || payload.location || 'Johannesburg';
+  const town = payload.city || payload.town || payload.location || 'Johannesburg';
   const province = normalizeProvinceSlug(payload.province);
   const nowIso = new Date().toISOString();
   const randomSuffix = Math.random().toString(36).substring(2, 8);
   const adId = `ad-agent-${Date.now()}-${randomSuffix}`;
 
-  const defaultDescription = payload.description && payload.description.trim().length >= 10
+  const defaultDescription = payload.description && payload.description.trim().length >= 3
     ? payload.description.trim()
-    : `${payload.title.trim()} offers top-tier professional ${payload.category || 'business'} services in ${town}, ${province.toUpperCase()}. Contact us today for reliable support and quotes.`;
+    : '';
 
   const isFree = payload.isClaimed === false || payload.plan === 'free' || payload.isPremium === false || !payload.plan;
   const isClaimed = payload.isClaimed === true;
@@ -397,8 +501,8 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
 
   const rawServices = Array.isArray(payload.servicesOffered)
     ? payload.servicesOffered.filter(Boolean).join(', ')
-    : (payload.servicesOffered || payload.category || 'Professional Services');
-  const rawHours = payload.tradingHours || payload.operatingHours || 'Mon-Fri: 08:00 - 17:00';
+    : (payload.servicesOffered ? String(payload.servicesOffered).trim() : '');
+  const rawHours = (payload.tradingHours || payload.operatingHours || '').trim();
 
   const newAd: any = {
     id: adId,
@@ -413,6 +517,7 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     town: payload.town || town,
     province: province,
     suburb: payload.suburb ? payload.suburb.trim() : '',
+    postalCode: (payload.postalCode || payload.postal_code || '').trim(),
     serviceAreas: [],
     description: defaultDescription,
     tradingHours: rawHours,
@@ -435,7 +540,7 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
     source: 'agent_bot',
     image: isFree ? '' : (payload.image || ''),
     images: isFree ? [] : ((payload as any).images || []),
-    address: payload.address ? payload.address.trim() : `${town}, ${province.toUpperCase()}, South Africa`,
+    address: payload.address ? payload.address.trim() : '',
     phone: resolvedPublicPhone,
     landline: rawLandline || resolvedPublicPhone,
     telephone: rawLandline || resolvedPublicPhone,
@@ -475,24 +580,22 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   };
 
   resolveAdGeographyAndCategory(newAd);
-  if (!payload.description || payload.description.trim().length < 10) {
-    newAd.description = `${newAd.title} offers top-tier professional ${newAd.category || 'business'} services in ${newAd.city}, ${(newAd.provinceName || newAd.province).toUpperCase()}. Contact us today for reliable support and quotes.`;
-  }
-  if (!payload.address || !payload.address.trim()) {
-    newAd.address = `${newAd.city}, ${newAd.provinceName || newAd.province.toUpperCase()}, South Africa`;
+  if (!newAd.address || !newAd.address.trim()) {
+    const addrParts = [newAd.suburb, newAd.city, newAd.provinceName || newAd.province.toUpperCase(), newAd.postalCode, 'South Africa'].filter(Boolean);
+    newAd.address = addrParts.join(', ');
   }
 
   // Update persistent dedupe index
   if (globalRef.existingAdMap instanceof Map) {
     const tNorm = (newAd.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const pNorm = (newAd.phone || '').replace(/[^0-9]/g, '').slice(-9);
+    const addrNorm = (newAd.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
     const cNorm = (newAd.city || newAd.town || newAd.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const sNorm = (newAd.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const compositeKey = `${tNorm}_${cNorm}_${sNorm}_${pNorm}`;
+    const compositeKey = `${tNorm}_${addrNorm || (cNorm + '_' + sNorm)}_${pNorm}`;
     globalRef.existingAdMap.set(compositeKey, newAd);
   }
 
-  // Prepend to active ads (only clean the new ad, not the entire existing array)
   const cleanedNew = cleanAdsArray([newAd]);
   if (typeof globalRef.incrementallyIndexAds === 'function' && cleanedNew.length > 0) {
     try {
@@ -503,7 +606,8 @@ export async function createBotAd(payload: BotAdPayload): Promise<{ success: boo
   } else {
     globalRef.indexedDataset = null;
   }
-  dbData.ads = [...cleanedNew, ...currentAds];
+  currentAds.push(cleanedNew[0]);
+  dbData.ads = currentAds;
   dbData.lastCreatedAdId = newAd.id;
   dbData.lastCreatedAd = newAd;
 
@@ -550,18 +654,19 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
   const dbData = readServerDb();
   const currentAds = Array.isArray(dbData.ads) ? dbData.ads : [];
 
-  // Reuse persistent O(1) lookup Map in RAM so we NEVER re-scan 198,055 ads on every batch
+  // Reuse persistent O(1) lookup Map in RAM so we NEVER re-scan 2.17M ads on every batch
   if (!(globalRef.existingAdMap instanceof Map)) {
     const adMap = new Map<string, any>();
-    for (const a of currentAds) {
+    for (let i = 0; i < currentAds.length; i++) {
+      const a = currentAds[i];
       if (!a) continue;
       const titleNorm = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const phoneNorm = (a.phone || '').replace(/[^0-9]/g, '').slice(-9);
+      const phoneNorm = (a.phone || a.telephone || a.landline || a.whatsapp || '').replace(/[^0-9]/g, '').slice(-9);
+      const addrNorm = (a.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
       const townNorm = (a.city || a.town || a.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const subNorm = (a.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       if (titleNorm) {
-        adMap.set(`${titleNorm}_${townNorm}_${subNorm}_${phoneNorm}`, a);
-        adMap.set(`${titleNorm}_${townNorm}__${phoneNorm}`, a);
+        adMap.set(`${titleNorm}_${addrNorm || (townNorm + '_' + subNorm)}_${phoneNorm}`, a);
       }
     }
     globalRef.existingAdMap = adMap;
@@ -592,33 +697,22 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
     const rawPhone = (item.phone || '').trim();
     const rawLandline = (item.landline || item.telephone || '').trim();
     const rawWhatsapp = (item.whatsapp || '').trim();
-    // Phone fallback rule: Phone -> Telephone -> WhatsApp shown as Phone Number
+    // Minimum requirement: Phone -> Telephone/Landline -> WhatsApp (at least 1 number must be available)
     const resolvedPublicPhone = rawPhone || rawLandline || rawWhatsapp;
 
-    const hasAnyContact = Boolean(
-      resolvedPublicPhone ||
-      (item.email && item.email.trim()) ||
-      (item.website && item.website.trim()) ||
-      (item.facebook || item.socialFacebook) ||
-      (item.instagram || item.socialInstagram) ||
-      (item.tiktok || item.socialTikTok) ||
-      (item.twitter || item.x || item.socialX) ||
-      (item.youtube || item.socialYoutube) ||
-      (item.socialLinks && item.socialLinks.trim())
-    );
-    if (!hasAnyContact) {
+    if (!resolvedPublicPhone) {
       continue;
     }
 
-    // Pre-build candidate ad and resolve its true South African geography & category first
+    // Pre-build candidate ad and resolve its true South African geography, postal code & category first
     const rawTown = item.city || item.town || item.location || 'Johannesburg';
     const isFree = item.isClaimed === false || item.plan === 'free' || item.isPremium === false || !item.plan;
     const isClaimed = item.isClaimed === true;
     const isPremium = item.isPremium === true;
     const rawServices = Array.isArray(item.servicesOffered)
       ? item.servicesOffered.filter(Boolean).join(', ')
-      : (item.servicesOffered || item.category || 'Professional Services');
-    const rawHours = item.tradingHours || item.operatingHours || 'Mon-Fri: 08:00 - 17:00';
+      : (item.servicesOffered ? String(item.servicesOffered).trim() : '');
+    const rawHours = (item.tradingHours || item.operatingHours || '').trim();
 
     const candidateAd: any = {
       userId: 'agent-bot',
@@ -632,6 +726,7 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       town: item.town || rawTown,
       province: item.province || '',
       suburb: item.suburb ? item.suburb.trim() : '',
+      postalCode: (item.postalCode || item.postal_code || '').trim(),
       serviceAreas: [],
       description: item.description ? item.description.trim() : '',
       tradingHours: rawHours,
@@ -693,30 +788,32 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       updatedAt: nowIso
     };
 
-    // Resolve exact SA province, town/city, suburb, and category in O(1)
+    // Resolve exact SA province, town/city, suburb, postalCode, and category in O(1)
     resolveAdGeographyAndCategory(candidateAd);
 
     if (!candidateAd.address) {
-      candidateAd.address = `${candidateAd.city}, ${candidateAd.provinceName || candidateAd.province.toUpperCase()}, South Africa`;
+      const addrParts = [candidateAd.suburb, candidateAd.city, candidateAd.provinceName || candidateAd.province.toUpperCase(), candidateAd.postalCode, 'South Africa'].filter(Boolean);
+      candidateAd.address = addrParts.join(', ');
     }
 
     const titleNorm = candidateAd.title.toLowerCase().replace(/[^a-z0-9]/g, '');
     const phoneNorm = (candidateAd.phone || '').replace(/[^0-9]/g, '').slice(-9);
+    const addrNorm = (candidateAd.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
     const townNorm = (candidateAd.city || candidateAd.town || candidateAd.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const subNorm = (candidateAd.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    const compositeKey = `${titleNorm}_${townNorm}_${subNorm}_${phoneNorm}`;
-    const fallbackKey = `${titleNorm}_${townNorm}__${phoneNorm}`;
+    const compositeKey = `${titleNorm}_${addrNorm || (townNorm + '_' + subNorm)}_${phoneNorm}`;
 
-    const existingAd = existingAdMap.get(compositeKey) || existingAdMap.get(fallbackKey);
+    const existingAd = existingAdMap.get(compositeKey);
     if (existingAd) {
-      // Enrich existing ad in-place so its province, town, city, suburb, category, and contacts are 100% accurate
+      // Enrich existing ad in-place so its province, town, city, suburb, postalCode, category, and contacts are 100% accurate
       existingAd.province = candidateAd.province;
       existingAd.provinceName = candidateAd.provinceName;
       existingAd.city = candidateAd.city;
       existingAd.town = candidateAd.town;
       existingAd.location = candidateAd.location;
       if (candidateAd.suburb && !existingAd.suburb) existingAd.suburb = candidateAd.suburb;
+      if (candidateAd.postalCode && !existingAd.postalCode) existingAd.postalCode = candidateAd.postalCode;
       if (candidateAd.category && candidateAd.category !== 'General Services') {
         existingAd.category = candidateAd.category;
         existingAd.subcategory = candidateAd.subcategory;
@@ -770,8 +867,8 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       if (candidateAd.servicesOffered && (!existingAd.servicesOffered || existingAd.servicesOffered === 'Professional Services')) {
         existingAd.servicesOffered = candidateAd.servicesOffered;
       }
-      if (!existingAd.description || existingAd.description.startsWith('Local business in ')) {
-        existingAd.description = candidateAd.description;
+      if (!existingAd.description || existingAd.description.startsWith('Local business in ') || existingAd.description === 'Directory listing.') {
+        if (candidateAd.description) existingAd.description = candidateAd.description;
       }
       existingAd.isActive = true;
       if (existingAd.adminApproved !== true && existingAd.verified !== true) {
@@ -789,7 +886,6 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
     candidateAd.id = `ad-agent-${Date.now()}-${randomSuffix}-${addedCount}`;
 
     existingAdMap.set(compositeKey, candidateAd);
-    existingAdMap.set(fallbackKey, candidateAd);
 
     newAdsToAppend.push(candidateAd);
     addedCount++;
@@ -807,7 +903,10 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
       } else {
         globalRef.indexedDataset = null;
       }
-      dbData.ads = [...cleanedBatch, ...currentAds];
+      for (let i = 0; i < cleanedBatch.length; i++) {
+        currentAds.push(cleanedBatch[i]);
+      }
+      dbData.ads = currentAds;
     } else {
       globalRef.indexedDataset = null;
     }
