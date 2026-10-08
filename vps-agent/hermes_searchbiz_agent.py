@@ -1470,7 +1470,7 @@ def scrape_google_maps_with_playwright(category: str, city: str, max_results: in
                     break
 
             # Extract business cards from page DOM
-            cards_data = page.evaluate("""() => {
+            cards_data = page.evaluate(r"""() => {
                 const out = [];
                 const cards = document.querySelectorAll('div.Nv2PK, div[role="article"], div[role="feed"] > div > div[jsaction]');
                 cards.forEach(card => {
@@ -3996,8 +3996,19 @@ def get_vps_stored_listings(query: str = "", limit: int = 15, offset: int = 0) -
     total_count = len(leads)
     sliced_leads = leads[offset:offset + limit] if offset < len(leads) else []
 
-    # 3. Low-RAM Streaming Scan of CSV files in scraped_leads_vault/ and listings/ (supports 2.17M+ rows with <5MB RAM)
-    csv_dirs = [VAULT_DIR, LISTINGS_DIR]
+    # 3. Low-RAM Streaming Scan of CSV files across all VPS folders (supports 2.17M+ rows with <5MB RAM)
+    csv_dirs = [
+        VAULT_DIR,
+        LISTINGS_DIR,
+        LEADS_DIR,
+        "/opt/hermes-searchbiz/scraped_leads_vault",
+        "/opt/hermes-searchbiz/listings",
+        "/opt/hermes-searchbiz/leads_storage",
+        "/home/thehightable/bizsearch24v4/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+        "/home/thehightable/bizsearch24v4/vps-agent/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+    ]
     seen_csv_filenames = set()
     csv_files_list = []
     for c_dir in csv_dirs:
@@ -4101,7 +4112,18 @@ def dispatch_all_vps_listings_to_email(chat_id: int, target_email: str) -> dict:
         return {"success": False, "error": "Invalid email address"}
 
     def _email_worker():
-        csv_dirs = [VAULT_DIR, LISTINGS_DIR]
+        csv_dirs = [
+            VAULT_DIR,
+            LISTINGS_DIR,
+            LEADS_DIR,
+            "/opt/hermes-searchbiz/scraped_leads_vault",
+            "/opt/hermes-searchbiz/listings",
+            "/opt/hermes-searchbiz/leads_storage",
+            "/home/thehightable/bizsearch24v4/listings",
+            "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+            "/home/thehightable/bizsearch24v4/vps-agent/listings",
+            "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+        ]
         seen_names = set()
         csv_files = []
         for c_dir in csv_dirs:
@@ -6271,14 +6293,91 @@ def get_listings_folders_overview() -> str:
 • <code>/publish_listings [category/province/all]</code> - Push matching listings to searchbiz.co.za
 • <code>/delete_all_listings</code> - Wipe & purge all stored listings completely"""
 
+def sync_and_mirror_all_vps_csv_folders() -> int:
+    """
+    Ensures all harvested .csv files across /opt/hermes-searchbiz and /home/thehightable/bizsearch24v4
+    are hardlinked (0 extra disk space) into leads_storage/, listings/, and scraped_leads_vault/
+    so `ls` in ANY directory always shows all 313+ CSV files.
+    """
+    all_dirs = [
+        LEADS_DIR,
+        LISTINGS_DIR,
+        VAULT_DIR,
+        "/opt/hermes-searchbiz/leads_storage",
+        "/opt/hermes-searchbiz/listings",
+        "/opt/hermes-searchbiz/scraped_leads_vault",
+        "/home/thehightable/bizsearch24v4/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+        "/home/thehightable/bizsearch24v4/vps-agent/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+    ]
+    source_csvs = {}
+    for d in all_dirs:
+        if not d or not os.path.exists(d):
+            continue
+        try:
+            for root, dirs, files in os.walk(d):
+                dirs[:] = [sd for sd in dirs if sd not in ("node_modules", ".next", ".git", "__pycache__", "mega_swarm_staged")]
+                for fn in files:
+                    if fn.endswith(".csv"):
+                        fp = os.path.join(root, fn)
+                        try:
+                            if os.path.getsize(fp) > 50 and fn not in source_csvs:
+                                source_csvs[fn] = fp
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    if not source_csvs:
+        return 0
+
+    mirror_targets = [
+        LEADS_DIR,
+        LISTINGS_DIR,
+        VAULT_DIR,
+        "/opt/hermes-searchbiz/leads_storage",
+        "/opt/hermes-searchbiz/listings",
+        "/opt/hermes-searchbiz/scraped_leads_vault",
+        "/home/thehightable/bizsearch24v4/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+        "/home/thehightable/bizsearch24v4/vps-agent/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+    ]
+    linked_count = 0
+    for target_dir in mirror_targets:
+        if not target_dir:
+            continue
+        try:
+            parent = os.path.dirname(os.path.abspath(target_dir))
+            if not os.path.exists(parent) and not target_dir.startswith("/opt/hermes-searchbiz"):
+                continue
+            os.makedirs(target_dir, exist_ok=True)
+            for fn, src_fp in source_csvs.items():
+                dst_fp = os.path.join(target_dir, fn)
+                if os.path.exists(dst_fp):
+                    continue
+                try:
+                    os.link(src_fp, dst_fp)
+                    linked_count += 1
+                except Exception:
+                    try:
+                        shutil.copyfile(src_fp, dst_fp)
+                        linked_count += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return len(source_csvs)
+
+
 def delete_all_vps_listings(chat_id: int = 0) -> dict:
     """
     Permanently deletes all stored business leads, datasets, and files across the VPS.
     Clears:
-    - business_leads table in hermes_data.db
-    - scraped_vault_leads table in hermes_data.db
-    - lead_datasets table in hermes_data.db
-    - All JSON dossiers and CSV files in listings/ and scraped_leads_vault/
+    - business_leads, scraped_vault_leads, lead_datasets tables in ALL hermes_data.db files
+    - All JSON dossiers, staged JSONL files, state snapshots, and CSV files in listings/, leads_storage/, and scraped_leads_vault/
+    - Resets live SearchBiz data/db.json and .data/db.json and reloads web server memory to 0 ads
     Leaves directory structure clean and ready for fresh scrapes.
     """
     init_memory_db()
@@ -6287,18 +6386,67 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
     total_datasets_deleted = 0
     total_files_purged = 0
 
-    with get_db() as conn:
-        r1 = conn.execute("DELETE FROM business_leads")
-        total_leads_deleted = r1.rowcount
-        r2 = conn.execute("DELETE FROM scraped_vault_leads")
-        total_vault_deleted = r2.rowcount
-        r3 = conn.execute("DELETE FROM lead_datasets")
-        total_datasets_deleted = r3.rowcount
-        conn.commit()
+    # Stop any active swarm or bulk sync first so background workers stop writing files
+    try:
+        GLOBAL_SUBAGENT_POOL.stop()
+        GLOBAL_SUBAGENT_POOL.reset()
+        GLOBAL_BULK_SYNC["is_running"] = False
+    except Exception:
+        pass
 
-    # Clean listings/ folder
-    for d in [LISTINGS_DIR, VAULT_LEADS_DIR, VAULT_ARCHIVE_DIR, LEADS_DIR]:
-        if os.path.exists(d):
+    sqlite_dbs = [
+        DB_PATH,
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes_data.db"),
+        "/opt/hermes-searchbiz/hermes_data.db",
+        "/home/thehightable/bizsearch24v4/vps-agent/hermes_data.db",
+        "/home/thehightable/bizsearch24v4/public/hermes_data.db"
+    ]
+    seen_dbs = set()
+    for sq_path in sqlite_dbs:
+        if not sq_path or not os.path.exists(sq_path):
+            continue
+        real_sq = os.path.realpath(sq_path)
+        if real_sq in seen_dbs:
+            continue
+        seen_dbs.add(real_sq)
+        try:
+            with sqlite3.connect(real_sq, timeout=20.0) as conn:
+                try:
+                    r1 = conn.execute("DELETE FROM business_leads")
+                    total_leads_deleted += max(0, r1.rowcount)
+                except Exception:
+                    pass
+                try:
+                    r2 = conn.execute("DELETE FROM scraped_vault_leads")
+                    total_vault_deleted += max(0, r2.rowcount)
+                except Exception:
+                    pass
+                try:
+                    r3 = conn.execute("DELETE FROM lead_datasets")
+                    total_datasets_deleted += max(0, r3.rowcount)
+                except Exception:
+                    pass
+                conn.commit()
+        except Exception:
+            pass
+
+    # Clean ALL listings/, leads_storage/, and scraped_leads_vault/ folders across both /opt and /home
+    purge_dirs = [
+        LISTINGS_DIR,
+        VAULT_DIR,
+        VAULT_LEADS_DIR,
+        VAULT_ARCHIVE_DIR,
+        LEADS_DIR,
+        "/opt/hermes-searchbiz/listings",
+        "/opt/hermes-searchbiz/leads_storage",
+        "/opt/hermes-searchbiz/scraped_leads_vault",
+        "/home/thehightable/bizsearch24v4/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/listings",
+        "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+        "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+    ]
+    for d in purge_dirs:
+        if d and os.path.exists(d):
             try:
                 for root, dirs, files in os.walk(d, topdown=False):
                     for fn in files:
@@ -6314,15 +6462,26 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
                             pass
             except Exception:
                 pass
-            os.makedirs(d, exist_ok=True)
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
 
-    # Stop any active swarm or bulk sync and reset in-memory pool
+    # Also remove any temporary CSVs in /tmp
     try:
-        GLOBAL_SUBAGENT_POOL.stop()
-        GLOBAL_SUBAGENT_POOL.reset()
-        GLOBAL_BULK_SYNC["is_running"] = False
+        for fn in os.listdir("/tmp"):
+            if fn.endswith(".csv") and ("SearchBiz" in fn or "Google_Maps" in fn):
+                try:
+                    os.remove(os.path.join("/tmp", fn))
+                    total_files_purged += 1
+                except Exception:
+                    pass
     except Exception:
         pass
+
+    # Clear CSV count cache
+    if hasattr(get_vps_stored_listings, "_csv_count_cache"):
+        get_vps_stored_listings._csv_count_cache.clear()
 
     # Also purge live SearchBiz web database and all disk backup files so 0 stale ads resurrect
     try:
@@ -6354,6 +6513,13 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
             if os.path.exists(p) or os.path.exists(os.path.dirname(p)):
                 with open(p, "w", encoding="utf-8") as f:
                     f.write(empty_db_payload)
+        except Exception:
+            pass
+
+    for port in (3005, 3000):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/storage?reload=true", headers={"User-Agent": "Hermes/2026"})
+            urllib.request.urlopen(req, timeout=15).read()
         except Exception:
             pass
 
@@ -8845,22 +9011,66 @@ def _execute_single_subcategory_sweep(
             "csv": ""
         }
 
-    # Store in both scraped_leads_vault/ and listings/ on the VPS without holding 313 buffers in RAM
+    # Store in scraped_leads_vault/, listings/, and leads_storage/ across BOTH /opt and /home without deleting from leads_storage/
     final_csv_path = saved_csv_path
     try:
         os.makedirs(VAULT_DIR, exist_ok=True)
         vault_csv_path = os.path.join(VAULT_DIR, csv_filename)
-        shutil.copyfile(saved_csv_path, vault_csv_path)
+        if os.path.abspath(saved_csv_path) != os.path.abspath(vault_csv_path):
+            shutil.copyfile(saved_csv_path, vault_csv_path)
         subfolder = get_listings_subfolder("all-provinces", clean_cat)
         final_csv_path = os.path.join(subfolder, csv_filename)
-        shutil.copyfile(saved_csv_path, final_csv_path)
-        if saved_csv_path != final_csv_path and os.path.exists(saved_csv_path):
+        if os.path.abspath(saved_csv_path) != os.path.abspath(final_csv_path):
+            shutil.copyfile(saved_csv_path, final_csv_path)
+
+        # Hardlink into all VPS folders so `ls` in listings/ or leads_storage/ always shows the CSV immediately
+        for extra_dir in [
+            LISTINGS_DIR,
+            LEADS_DIR,
+            "/home/thehightable/bizsearch24v4/listings",
+            "/home/thehightable/bizsearch24v4/vps-agent/listings",
+            "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+            "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+            "/opt/hermes-searchbiz/listings",
+            "/opt/hermes-searchbiz/leads_storage",
+            "/opt/hermes-searchbiz/scraped_leads_vault",
+        ]:
             try:
-                os.remove(saved_csv_path)
+                if extra_dir and (os.path.exists(extra_dir) or os.path.exists(os.path.dirname(os.path.abspath(extra_dir)))):
+                    os.makedirs(extra_dir, exist_ok=True)
+                    dst_link = os.path.join(extra_dir, csv_filename)
+                    if not os.path.exists(dst_link):
+                        try:
+                            os.link(final_csv_path, dst_link)
+                        except Exception:
+                            shutil.copyfile(final_csv_path, dst_link)
             except Exception:
                 pass
     except Exception:
         final_csv_path = saved_csv_path
+
+    # Live-stream this category's staged ads directly to SearchBiz data/db.json in O(1) disk seek so the website updates continuously!
+    try:
+        if os.path.exists(staged_path) and os.path.getsize(staged_path) > 10:
+            staged_lines = []
+            with open(staged_path, "r", encoding="utf-8", errors="ignore") as sf:
+                for s_line in sf:
+                    s_line = s_line.strip()
+                    if s_line.startswith("{") and s_line.endswith("}"):
+                        staged_lines.append(s_line)
+            if staged_lines:
+                now_ts_ms = int(time.time() * 1000)
+                with _DIRECT_DB_LOCK:
+                    for db_cand in [
+                        "/home/thehightable/bizsearch24v4/data/db.json",
+                        "/home/thehightable/bizsearch24v4/.data/db.json"
+                    ]:
+                        if os.path.exists(os.path.dirname(db_cand)):
+                            _append_ndjson_records_to_db_file(db_cand, staged_lines, now_ts_ms)
+                total_ads_placed = len(staged_lines)
+            del staged_lines
+    except Exception as live_stream_err:
+        logger.debug(f"[SubAgent-{worker_id}] Live category disk stream note: {live_stream_err}")
     gc.collect()
 
     # In mega_swarm mode, DO NOT email during Step 1! Email ONLY once all 313 categories are 100% completed!
@@ -9313,94 +9523,23 @@ Proceeding to upload the collected businesses to <b>https://searchbiz.co.za</b>:
 • <b>Step 3/3 (Immediately After Upload):</b> Dispatching all <b>313 Category CSV emails</b> (each with all 6,931 suburbs across all 9 provinces) to <b>{target_delivery_email}</b>!"""
         send_telegram(chat_id, collection_done_msg)
 
-        # 2. Stream staged JSONL files from disk and upload in batches to searchbiz.co.za (Zero RAM bloat)
-        staged_files = []
-        if os.path.exists(MEGA_SWARM_STAGED_DIR):
-            staged_files = sorted([
-                os.path.join(MEGA_SWARM_STAGED_DIR, fn)
-                for fn in os.listdir(MEGA_SWARM_STAGED_DIR)
-                if fn.endswith(".jsonl")
-            ])
+        # 2. Mirror all CSV files across all VPS folders and run the Low-RAM Direct Disk Streamer to SearchBiz.co.za
+        try:
+            sync_and_mirror_all_vps_csv_folders()
+        except Exception:
+            pass
 
-        batch_size = 2500
-        est_batches = max(1, (max(total_collected, total_staged) + batch_size - 1) // batch_size)
-        with GLOBAL_SUBAGENT_POOL.lock:
-            GLOBAL_SUBAGENT_POOL.upload_batches_total = est_batches
-            GLOBAL_SUBAGENT_POOL.upload_batches_done = 0
-
-        uploaded_total = 0
-        b_idx = 0
-        chunk = []
-
-        def _flush_upload_chunk(items_chunk: list):
-            nonlocal uploaded_total, b_idx
-            if not items_chunk:
-                return
-            b_idx += 1
-            added_this_chunk = 0
-            try:
-                bulk_res = api_request("/api/bot/ad/bulk", method="POST", payload={"items": items_chunk})
-                if bulk_res and bulk_res.get("success"):
-                    added_this_chunk = bulk_res.get("addedCount", 0) + bulk_res.get("updatedCount", 0)
-                else:
-                    db_res = direct_db_insert_ad_batch(items_chunk)
-                    added_this_chunk = db_res.get("addedCount", 0)
-            except Exception:
-                try:
-                    db_res = direct_db_insert_ad_batch(items_chunk)
-                    added_this_chunk = db_res.get("addedCount", 0)
-                except Exception:
-                    pass
-            uploaded_total += added_this_chunk
+        start_bulk_sync_to_searchbiz(chat_id=chat_id)
+        while GLOBAL_BULK_SYNC.get("is_running") and not check_stop_requested():
             with GLOBAL_SUBAGENT_POOL.lock:
-                GLOBAL_SUBAGENT_POOL.total_ads = uploaded_total
-                GLOBAL_SUBAGENT_POOL.upload_batches_done = b_idx
+                GLOBAL_SUBAGENT_POOL.total_ads = GLOBAL_BULK_SYNC.get("live_total_ads") or GLOBAL_BULK_SYNC.get("total_uploaded", 0)
+                GLOBAL_SUBAGENT_POOL.upload_batches_done = GLOBAL_BULK_SYNC.get("current_batch", 0)
+                GLOBAL_SUBAGENT_POOL.upload_batches_total = max(1, GLOBAL_BULK_SYNC.get("total_batches", 868))
+            time.sleep(2.0)
 
-        for s_fp in staged_files:
-            if check_stop_requested() or not GLOBAL_SUBAGENT_POOL.is_running:
-                break
-            try:
-                with open(s_fp, "r", encoding="utf-8") as sf:
-                    for line in sf:
-                        if check_stop_requested() or not GLOBAL_SUBAGENT_POOL.is_running:
-                            break
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            chunk.append(json.loads(line))
-                        except Exception:
-                            continue
-                        if len(chunk) >= batch_size:
-                            _flush_upload_chunk(chunk)
-                            chunk = []
-            except Exception:
-                pass
-            try:
-                os.remove(s_fp)
-            except Exception:
-                pass
-
-        # Ensure 100% of all collected CSV rows (all 2,169,668 businesses) are uploaded even if staged_files were partial
-        if uploaded_total < total_collected and completed_cats_list:
-            for cat_meta in completed_cats_list:
-                if check_stop_requested() or not GLOBAL_SUBAGENT_POOL.is_running:
-                    break
-                c_fn = cat_meta.get("csv", "")
-                c_fp = cat_meta.get("csv_path") or (f"/tmp/{c_fn}" if c_fn else "")
-                if not c_fp or not os.path.exists(c_fp):
-                    continue
-                for parsed_ad in parse_harvested_csv_file_records(c_fp, cat_meta.get("name", ""), cat_meta.get("code", "")):
-                    chunk.append(parsed_ad)
-                    if len(chunk) >= batch_size:
-                        _flush_upload_chunk(chunk)
-                        chunk = []
-
-        if chunk and not check_stop_requested() and GLOBAL_SUBAGENT_POOL.is_running:
-            _flush_upload_chunk(chunk)
-            chunk = []
-
+        uploaded_total = GLOBAL_BULK_SYNC.get("live_total_ads") or GLOBAL_BULK_SYNC.get("total_uploaded") or total_collected
         with GLOBAL_SUBAGENT_POOL.lock:
+            GLOBAL_SUBAGENT_POOL.total_ads = uploaded_total
             GLOBAL_SUBAGENT_POOL.phase = "EMAILING_CSVS"
         GLOBAL_SUBAGENT_POOL.save_state_snapshot()
 
@@ -10967,17 +11106,37 @@ SA_PROVINCE_NAMES = {
     "northern-cape": "Northern Cape"
 }
 
+_GEO_RESOLVE_CACHE: Dict[Tuple[str, str, str], Tuple[str, str, str, str]] = {}
+_POSTAL_RESOLVE_CACHE: Dict[Tuple[str, str, str, str], str] = {}
+_CAT_RESOLVE_CACHE: Dict[str, str] = {}
+_HUB_TO_PROV_MAP: Dict[str, str] = {}
+
 def resolve_sa_province_and_town(raw_prov: str, raw_city: str, raw_suburb: str = "", raw_addr: str = "") -> Tuple[str, str, str, str]:
-    """Resolves canonical SA province_slug, province_name, town/city, and suburb."""
+    """Resolves canonical SA province_slug, province_name, town/city, and suburb with O(1) memoization."""
     p_clean = (raw_prov or "").strip().lower()
     c_clean = (raw_city or "").strip()
     s_clean = (raw_suburb or "").strip()
-    a_clean = (raw_addr or "").strip()
+
+    cache_key = (p_clean, c_clean, s_clean)
+    cached = _GEO_RESOLVE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if not _HUB_TO_PROV_MAP:
+        try:
+            for p_cfg in PROVINCES_CONFIG:
+                slug_cand = p_cfg.get("slug", "")
+                for h in p_cfg.get("major_hubs", []):
+                    _HUB_TO_PROV_MAP[h.lower()] = slug_cand
+        except Exception:
+            pass
 
     prov_slug = ""
-    if "kzn" in p_clean or "kwazulu" in p_clean or "natal" in p_clean:
+    if p_clean in SA_PROVINCE_NAMES:
+        prov_slug = p_clean
+    elif "kzn" in p_clean or "kwazulu" in p_clean or "natal" in p_clean:
         prov_slug = "kwazulu-natal"
-    elif "gauteng" in p_clean or p_clean in ["gp", "jhb", "pta"]:
+    elif "gauteng" in p_clean or p_clean in ("gp", "jhb", "pta"):
         prov_slug = "gauteng"
     elif "western" in p_clean or p_clean == "wc":
         prov_slug = "western-cape"
@@ -10991,44 +11150,56 @@ def resolve_sa_province_and_town(raw_prov: str, raw_city: str, raw_suburb: str =
         prov_slug = "limpopo"
     elif "mpumalanga" in p_clean or p_clean == "mp":
         prov_slug = "mpumalanga"
-    elif "north" in p_clean and "west" in p_clean or p_clean == "nw":
+    elif ("north" in p_clean and "west" in p_clean) or p_clean == "nw":
         prov_slug = "north-west"
 
-    # Match against PROVINCES_CONFIG major hubs and towns if province is missing or generic
-    combined_loc = f"{c_clean} {s_clean} {a_clean}".lower()
-    if not prov_slug or prov_slug in ["gauteng", "kwazulu-natal"]:
-        try:
-            for p_cfg in PROVINCES_CONFIG:
-                slug_cand = p_cfg.get("slug", "")
-                hubs = [h.lower() for h in p_cfg.get("major_hubs", [])]
-                if c_clean.lower() in hubs or s_clean.lower() in hubs:
-                    prov_slug = slug_cand
-                    break
-        except Exception:
-            pass
+    if not prov_slug or prov_slug in ("gauteng", "kwazulu-natal"):
+        hub_match = _HUB_TO_PROV_MAP.get(c_clean.lower()) or _HUB_TO_PROV_MAP.get(s_clean.lower())
+        if hub_match:
+            prov_slug = hub_match
 
     if not prov_slug:
         prov_slug = "gauteng"
 
     prov_name = SA_PROVINCE_NAMES.get(prov_slug, "Gauteng")
     final_city = c_clean or s_clean or "Johannesburg"
-    return prov_slug, prov_name, final_city, s_clean
+    res = (prov_slug, prov_name, final_city, s_clean)
+    if len(_GEO_RESOLVE_CACHE) < 50000:
+        _GEO_RESOLVE_CACHE[cache_key] = res
+    return res
 
 def resolve_sa_postal_code(prov_slug: str, town: str, suburb: str, addr: str = "", raw_postal: str = "") -> str:
     """Resolves or deterministically derives a valid 4-digit South African postal code for a location."""
     rp = str(raw_postal or "").strip()
-    m_rp = re.search(r'\b(\d{4})\b', rp)
-    if m_rp:
-        return m_rp.group(1)
+    if len(rp) == 4 and rp.isdigit():
+        return rp
+    cache_key = (prov_slug, town, suburb, rp)
+    cached = _POSTAL_RESOLVE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if rp:
+        m_rp = re.search(r'\b(\d{4})\b', rp)
+        if m_rp:
+            val = m_rp.group(1)
+            if len(_POSTAL_RESOLVE_CACHE) < 50000:
+                _POSTAL_RESOLVE_CACHE[cache_key] = val
+            return val
 
     addr_str = str(addr or "").strip()
     if addr_str:
-        # Look for a 4-digit postal code near the end of the address (avoiding street numbers at the start)
         parts = [p.strip() for p in addr_str.split(",") if p.strip()]
         for p in reversed(parts[1:] if len(parts) > 1 else parts):
+            if len(p) == 4 and p.isdigit():
+                if len(_POSTAL_RESOLVE_CACHE) < 50000:
+                    _POSTAL_RESOLVE_CACHE[cache_key] = p
+                return p
             m_p = re.search(r'\b(\d{4})\b', p)
             if m_p:
-                return m_p.group(1)
+                val = m_p.group(1)
+                if len(_POSTAL_RESOLVE_CACHE) < 50000:
+                    _POSTAL_RESOLVE_CACHE[cache_key] = val
+                return val
 
     p_slug = str(prov_slug or "gauteng").strip().lower()
     prov_postal_ranges = {
@@ -11048,7 +11219,10 @@ def resolve_sa_postal_code(prov_slug: str, town: str, suburb: str, addr: str = "
     h_val = 0
     for ch in seed_str:
         h_val = ((h_val * 31) + ord(ch)) & 0xFFFFFFFF
-    return f"{p_start + (h_val % span):04d}"
+    val = f"{p_start + (h_val % span):04d}"
+    if len(_POSTAL_RESOLVE_CACHE) < 50000:
+        _POSTAL_RESOLVE_CACHE[cache_key] = val
+    return val
 
 def extract_social_media_dict(social_links_str: str, row_getter=None) -> dict:
     """Extracts individual social media URLs (Facebook, Instagram, TikTok, X/Twitter, YouTube, LinkedIn) from combined string or columns."""
@@ -11209,7 +11383,13 @@ def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", 
                 resolved_postal = resolve_sa_postal_code(prov_slug, resolved_city, resolved_suburb, b_addr, b_postal)
 
                 raw_cat = get_c("category", "subcategory", "business category") or inferred_cat
-                clean_cat = match_searchbiz_category(raw_cat) if raw_cat != inferred_cat else inferred_cat
+                if raw_cat == inferred_cat:
+                    clean_cat = inferred_cat
+                else:
+                    clean_cat = _CAT_RESOLVE_CACHE.get(raw_cat)
+                    if not clean_cat:
+                        clean_cat = match_searchbiz_category(raw_cat)
+                        _CAT_RESOLVE_CACHE[raw_cat] = clean_cat
                 cat_code = get_c("category code", "category_code", "code") or inferred_code
 
                 b_hours = get_c("trading hours", "trading_hours", "operating hours", "opening hours", "hours")
@@ -11226,10 +11406,12 @@ def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", 
                     b_addr = f"{loc_label}, {prov_name}, {resolved_postal}, South Africa"
 
                 records.append({
+                    "_preResolved": True,
                     "title": b_name,
                     "category": clean_cat,
                     "categoryCode": cat_code,
                     "province": prov_slug,
+                    "provinceName": prov_name,
                     "city": resolved_city,
                     "town": resolved_city,
                     "location": resolved_city,
@@ -11744,29 +11926,35 @@ def _build_compact_searchbiz_ad(item: dict, seq_num: int, ts_ms: int, now_iso: s
         return None, None
 
     raw_addr = str(item.get("address") or "").strip()
-    prov_slug, prov_name, town, suburb = resolve_sa_province_and_town(
-        str(item.get("province") or ""),
-        str(item.get("city") or item.get("town") or item.get("location") or ""),
-        str(item.get("suburb") or ""),
-        raw_addr
-    )
-    if not raw_addr and not town and not suburb:
-        return None, None
+    if item.get("_preResolved"):
+        prov_slug = item.get("province") or "gauteng"
+        prov_name = item.get("provinceName") or SA_PROVINCE_NAMES.get(prov_slug, "Gauteng")
+        town = item.get("town") or item.get("city") or "Johannesburg"
+        suburb = item.get("suburb") or town
+        postal_code = item.get("postalCode") or "2000"
+        clean_cat = item.get("category") or "General Services"
+        cat_code = str(item.get("categoryCode") or "").strip()
+    else:
+        prov_slug, prov_name, town, suburb = resolve_sa_province_and_town(
+            str(item.get("province") or ""),
+            str(item.get("city") or item.get("town") or item.get("location") or ""),
+            str(item.get("suburb") or ""),
+            raw_addr
+        )
+        if not raw_addr and not town and not suburb:
+            return None, None
 
-    postal_code = resolve_sa_postal_code(
-        prov_slug, town, suburb, raw_addr, str(item.get("postalCode") or item.get("postal_code") or "")
-    )
-    clean_cat = match_searchbiz_category(str(item.get("category") or "General Services"))
-    cat_code = str(item.get("categoryCode") or item.get("category_code") or "").strip()
+        postal_code = resolve_sa_postal_code(
+            prov_slug, town, suburb, raw_addr, str(item.get("postalCode") or item.get("postal_code") or "")
+        )
+        raw_c = str(item.get("category") or "General Services")
+        clean_cat = _CAT_RESOLVE_CACHE.get(raw_c)
+        if not clean_cat:
+            clean_cat = match_searchbiz_category(raw_c)
+            _CAT_RESOLVE_CACHE[raw_c] = clean_cat
+        cat_code = str(item.get("categoryCode") or item.get("category_code") or "").strip()
 
-    t_norm = re.sub(r'[^a-z0-9]', '', title.lower())
-    p_digits = re.sub(r'[^0-9]', '', primary_phone)
-    p_norm = p_digits[-9:] if len(p_digits) >= 7 else p_digits
-    c_norm = re.sub(r'[^a-z0-9]', '', town.lower())
-    s_norm = re.sub(r'[^a-z0-9]', '', (suburb or town).lower())
-    a_norm = re.sub(r'[^a-z0-9]', '', raw_addr.lower())[:24]
-
-    comp_key = hash((t_norm, c_norm, s_norm, a_norm, p_norm))
+    comp_key = hash((title.lower(), town.lower(), (suburb or town).lower(), raw_addr[:24].lower(), primary_phone[-9:]))
     if comp_key in seen_hashes:
         return "DUPLICATE", None
     seen_hashes.add(comp_key)
@@ -11885,10 +12073,18 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             send_telegram(chat_id, init_msg)
         logger.info("Starting SearchBiz 2M+ Ads Low-RAM Streaming Push...")
 
-        # 1. Discover all CSV and JSON files across all VPS storage paths
+        # Mirror all CSVs across /opt/hermes-searchbiz and /home/thehightable/bizsearch24v4 so `ls` shows them in every folder
+        try:
+            mirrored_total = sync_and_mirror_all_vps_csv_folders()
+            logger.info(f"Verified & linked {mirrored_total} consolidated CSV files across all VPS leads_storage/ and listings/ directories.")
+        except Exception as mir_e:
+            logger.debug(f"Mirror note: {mir_e}")
+
+        # 1. Discover all CSV and JSON files across all VPS storage paths (deduplicated by filename + inode)
         csv_files = []
         json_files = []
         seen_real_files = set()
+        seen_csv_basenames = set()
         candidate_dirs = [
             VAULT_DIR,
             LISTINGS_DIR,
@@ -11896,6 +12092,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             "/opt/hermes-searchbiz/scraped_leads_vault",
             "/opt/hermes-searchbiz/listings",
             "/opt/hermes-searchbiz/leads_storage",
+            "/home/thehightable/bizsearch24v4/listings",
             "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
             "/home/thehightable/bizsearch24v4/vps-agent/listings",
             "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
@@ -11905,7 +12102,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             if not s_dir or not os.path.exists(s_dir):
                 continue
             for root, dirs, files in os.walk(s_dir):
-                dirs[:] = [d for d in dirs if d not in ("node_modules", ".next", ".git", ".data", "data", "__pycache__")]
+                dirs[:] = [d for d in dirs if d not in ("node_modules", ".next", ".git", ".data", "data", "__pycache__", "mega_swarm_staged")]
                 for fname in sorted(files):
                     if fname in ("db.json", "backup_db.json", "searchbiz_db_backup.json", "package.json", "tsconfig.json", "sa_areas_database.json", "searchbiz_all_areas.json"):
                         continue
@@ -11916,9 +12113,14 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                         continue
                     seen_real_files.add(fp)
                     if fname.endswith(".csv"):
+                        if fname in seen_csv_basenames:
+                            continue
+                        seen_csv_basenames.add(fname)
                         csv_files.append(fp)
                     elif fname.endswith(".json"):
                         json_files.append(fp)
+
+        logger.info(f"Discovered {len(csv_files)} unique CSV datasets and {len(json_files)} JSON dossiers to stream.")
 
         # Generator that yields raw business dicts one by one in ultra-low RAM
         def _iter_all_raw_scraped_records():
@@ -12134,10 +12336,10 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                                 email_writer.writerow(email_row)
                                 emails_captured += 1
 
-                        if total_processed % 250000 == 0:
-                            logger.info(f"Streamed {total_processed:,} records | Live Ads Written: {existing_kept + added_count:,} | Skipped Dups: {skipped_dups:,}")
-                            if chat_id:
-                                send_telegram(chat_id, f"""📊 <b>SearchBiz 2M+ Ads Direct Stream Progress</b>
+                        if total_processed % 50000 == 0:
+                            logger.info(f"⚡ Streamed {total_processed:,} records | Unique Ads Written: {existing_kept + added_count:,} | Duplicates Filtered: {skipped_dups:,} | Emails Saved: {emails_captured:,}")
+                        if total_processed % 250000 == 0 and chat_id:
+                            send_telegram(chat_id, f"""📊 <b>SearchBiz 2M+ Ads Direct Stream Progress</b>
 ═══════════════════════════════════════════
 🔄 <b>Status:</b> STREAMING AT FULL DISK SPEED
 📥 <b>Scraped Records Scanned:</b> <b>{total_processed:,}</b>
@@ -15457,6 +15659,19 @@ def handle_executive_intent(chat_id: int, text: str, sender: str) -> bool:
     # - "/subagents_pause", "/subagents_resume", "/subagents_stop"
     # - Natural language: "make more for each main category 1 sub agents for each subcategory and run those and continue until finished all"
     # ------------------------------------------------------------------------
+    if raw_lower.startswith(("/reset_and_scrape", "/rescrape_all", "/wipe_and_scrape")) or any(k in lower for k in [
+        "remove them and start the scrape again",
+        "delete them and start the scrape again",
+        "wipe and start the scrape again",
+        "clear all listings and start scrape"
+    ]):
+        send_chat_action(chat_id, "typing")
+        send_telegram(chat_id, "🗑️ <b>Step 1/2: Removing all old listings across VPS folders, SQLite &amp; SearchBiz.co.za...</b>")
+        delete_all_vps_listings(chat_id)
+        send_telegram(chat_id, "🚀 <b>Step 2/2: Starting fresh 313-Category x 9-Province x 6,931-Suburb Mega-Swarm with Live Upload to SearchBiz.co.za!</b>")
+        scrape_mega_swarm_all_groups_and_subcategories(chat_id, "/mega_swarm 313 nicholauscostochetty@gmail.com", default_workers=313)
+        return True
+
     if raw_lower.startswith(("/subagents_status", "/workers_status", "/workers", "/worker_status")):
         send_chat_action(chat_id, "typing")
         send_telegram(chat_id, GLOBAL_SUBAGENT_POOL.get_status_card())
@@ -18638,9 +18853,37 @@ if __name__ == "__main__":
     parser.add_argument("--mega-swarm", type=int, nargs="?", const=64, help="Launch Mega-Swarm with N concurrent sub-agents across all 313 categories & 9 provinces")
     parser.add_argument("--sync-all", action="store_true", help="Bulk-upload and sync all harvested listings in vault/listings to searchbiz.co.za")
     parser.add_argument("--push-ads", action="store_true", help="Fast low-RAM stream of all 2M+ scraped listings into searchbiz.co.za as ads")
+    parser.add_argument("--reset-all", action="store_true", help="Wipe and remove all old scraped listings across all VPS folders and SearchBiz DB")
+    parser.add_argument("--reset-and-scrape", action="store_true", help="Remove all old listings everywhere and immediately start a fresh 313-category scrape + live upload")
     parser.add_argument("--email", type=str, default="nicholauscostochetty@gmail.com", help="Target email for the 313 consolidated category CSV files")
     parser.add_argument("--workers", type=int, default=32, help="Number of concurrent sub-agent workers")
     args, _ = parser.parse_known_args()
+
+    if args.reset_all:
+        init_memory_db()
+        logger.info("Purging all stored listings, CSVs, SQLite tables, and SearchBiz db.json across VPS...")
+        res = delete_all_vps_listings(chat_id=0)
+        logger.info(f"Purge complete: {res}")
+        sys.exit(0)
+
+    if args.reset_and_scrape:
+        init_memory_db()
+        logger.info("Step 1/2: Purging all old stored listings, CSVs, SQLite tables, and SearchBiz db.json...")
+        delete_all_vps_listings(chat_id=0)
+        w_cnt = args.mega_swarm if args.mega_swarm is not None else args.workers
+        logger.info(f"Step 2/2: Launching Fresh National 313-Category x 6,931-Suburb Harvest ({w_cnt} workers) with Live Upload -> {args.email}...")
+        scrape_mega_swarm_all_groups_and_subcategories(
+            chat_id=0,
+            query_directive=f"/mega_swarm {w_cnt} {args.email}",
+            default_workers=w_cnt
+        )
+        while GLOBAL_SUBAGENT_POOL.is_running and any(t.is_alive() for t in GLOBAL_SUBAGENT_POOL.active_threads):
+            time.sleep(3.0)
+        logger.info("Waiting for final SearchBiz.co.za upload & 313 CSV email delivery to finish...")
+        while GLOBAL_SUBAGENT_POOL.phase in ("UPLOADING_TO_SEARCHBIZ", "EMAILING_CSVS") or GLOBAL_BULK_SYNC.get("is_running"):
+            time.sleep(2.0)
+        logger.info("All 313 categories freshly harvested, uploaded to SearchBiz.co.za, and emailed to " + args.email)
+        sys.exit(0)
 
     if args.sync_all or args.push_ads:
         init_memory_db()

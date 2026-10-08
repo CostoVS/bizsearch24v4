@@ -96,6 +96,26 @@ if [ -f "clean_vps.sh" ]; then
     chmod +x /usr/local/bin/clean_vps 2>/dev/null || true
 fi
 
+for sh_file in push_ads.sh reset_and_scrape.sh; do
+    if [ -f "$sh_file" ]; then
+        cp "$sh_file" "${APP_DIR}/$sh_file" 2>/dev/null || true
+        chmod +x "${APP_DIR}/$sh_file" "$sh_file" 2>/dev/null || true
+    fi
+done
+
+if [ -f "hermes_laya_permanent_memory.json" ]; then
+    cp hermes_laya_permanent_memory.json "${APP_DIR}/hermes_laya_permanent_memory.json" 2>/dev/null || true
+fi
+
+# Link all harvested CSVs between /opt/hermes-searchbiz and local leads_storage/ & listings/
+mkdir -p leads_storage listings scraped_leads_vault ../listings "${APP_DIR}/leads_storage" "${APP_DIR}/listings" "${APP_DIR}/scraped_leads_vault" 2>/dev/null || true
+find "${APP_DIR}" -name "*.csv" -type f 2>/dev/null | while read -r csv_fp; do
+    base_fn="$(basename "$csv_fp")"
+    ln -f "$csv_fp" "leads_storage/$base_fn" 2>/dev/null || cp -f "$csv_fp" "leads_storage/$base_fn" 2>/dev/null || true
+    ln -f "$csv_fp" "listings/$base_fn" 2>/dev/null || cp -f "$csv_fp" "listings/$base_fn" 2>/dev/null || true
+    ln -f "$csv_fp" "../listings/$base_fn" 2>/dev/null || cp -f "$csv_fp" "../listings/$base_fn" 2>/dev/null || true
+done
+
 # Ensure .env has active SearchBiz API and ai@searchbiz.co.za credentials
 if [ -f "${APP_DIR}/.env" ]; then
     sed -i '/SEARCHBIZ_API_URL/d' "${APP_DIR}/.env"

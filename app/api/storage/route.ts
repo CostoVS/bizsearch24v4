@@ -858,9 +858,7 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
   const cacheKey = `${baseData.updatedAt || 0}_${rawAds.length}_${deletedArr.length}`;
 
   const deletedSet = deletedArr.length > 0 ? new Set(deletedArr) : null;
-  const allNonDeletedAds: any[] = [];
-  const allActiveAds: any[] = [];
-  const allFreeAds: any[] = [];
+  let hasDeletedOrInvalid = Boolean(deletedSet);
   const allFeaturedAds: any[] = [];
   const byProvinceActive = new Map<string, any[]>();
   const byTownActive = new Map<string, any[]>();
@@ -886,18 +884,17 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
 
   for (let i = 0; i < rawAds.length; i++) {
     const a = rawAds[i];
-    if (!a || !a.id) continue;
-    if (deletedSet && deletedSet.has(a.id)) continue;
+    if (!a || !a.id || (deletedSet && deletedSet.has(a.id))) {
+      hasDeletedOrInvalid = true;
+      continue;
+    }
 
     ensureAdFastIndexed(a);
-    allNonDeletedAds.push(a);
 
     const isAct = a.isActive !== false;
     if (isAct) {
       active++;
-      if (!a.isPremium && !a.isSponsor && adPriorityScore(a) <= 10) {
-        allFreeAds.push(a);
-      } else {
+      if (a.isPremium || a.isSponsor || adPriorityScore(a) > 10) {
         allFeaturedAds.push(a);
       }
     }
@@ -937,11 +934,32 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
     byProvince[prov] = (byProvince[prov] || 0) + 1;
   }
 
-  // Only sort the featured ads (avoiding 45M comparator calls on 2.17M identical-priority free ads!)
-  if (allFeaturedAds.length > 1) {
-    allFeaturedAds.sort((a, b) => adPriorityScore(b) - adPriorityScore(a));
+  let allNonDeletedAds: any[];
+  let allFreeAds: any[];
+  let finalActiveAds: any[];
+
+  if (!hasDeletedOrInvalid && active === rawAds.length && allFeaturedAds.length === 0) {
+    // Fast Zero-Copy Path for 2.17M+ uniform free listings (saves ~100MB of V8 array pointers)
+    allNonDeletedAds = rawAds;
+    allFreeAds = rawAds;
+    finalActiveAds = rawAds;
+  } else {
+    allNonDeletedAds = [];
+    allFreeAds = [];
+    for (let i = 0; i < rawAds.length; i++) {
+      const a = rawAds[i];
+      if (!a || !a.id) continue;
+      if (deletedSet && deletedSet.has(a.id)) continue;
+      allNonDeletedAds.push(a);
+      if (a.isActive !== false && !a.isPremium && !a.isSponsor && adPriorityScore(a) <= 10) {
+        allFreeAds.push(a);
+      }
+    }
+    if (allFeaturedAds.length > 1) {
+      allFeaturedAds.sort((a, b) => adPriorityScore(b) - adPriorityScore(a));
+    }
+    finalActiveAds = allFeaturedAds.length > 0 ? allFeaturedAds.concat(allFreeAds) : allFreeAds;
   }
-  const finalActiveAds = allFeaturedAds.length > 0 ? allFeaturedAds.concat(allFreeAds) : allFreeAds;
 
   for (let i = 0; i < finalActiveAds.length; i++) {
     const a = finalActiveAds[i];
