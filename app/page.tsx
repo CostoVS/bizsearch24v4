@@ -41,18 +41,14 @@ export default function HomePage() {
 
     const handleUpdate = () => {
       const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
-      if (stored.length > 0) {
-        setAds(prev => (prev.length === 0 ? stored : prev));
-      }
+      setAds(stored);
       setTotalCompaniesCount(getTotalAdsCount());
       setTotalVerifiedCount(getVerifiedAdsCount());
     };
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "searchbiz_all_ads" || e.key === "searchbiz_deleted_ads" || e.key === "searchbiz_total_ads_count" || e.key === "searchbiz_verified_count") {
         const stored = getStoredAds().filter((a: any) => a && a.isActive !== false);
-        if (stored.length > 0) {
-          setAds(prev => (prev.length === 0 ? stored : prev));
-        }
+        setAds(stored);
         setTotalCompaniesCount(getTotalAdsCount());
         setTotalVerifiedCount(getVerifiedAdsCount());
       }
@@ -74,6 +70,8 @@ export default function HomePage() {
         if (!active || !data) return;
         const freeList = Array.isArray(data.ads) ? data.ads.filter((a: any) => a && a.isActive !== false) : [];
         const featuredList = Array.isArray(data.featuredAds) ? data.featuredAds.filter((a: any) => a && a.isActive !== false) : [];
+        const gTotal = data.globalTotalAdsCount ?? data.totalAdsCount ?? 0;
+        const gVer = data.globalVerifiedCount ?? data.verifiedCount ?? 0;
         setServerFreeAds(freeList);
         if (featuredList.length > 0 || freeList.length > 0) {
           const combined = [...featuredList, ...freeList];
@@ -81,13 +79,16 @@ export default function HomePage() {
           if (freeAdsPage === 1) {
             safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(combined.slice(0, 48)));
           }
+        } else if (gTotal === 0) {
+          setAds([]);
+          safeLocalStorage.setItem("searchbiz_all_ads", "[]");
+          safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
+          safeLocalStorage.setItem("searchbiz_category_counts", "{}");
         }
         if (typeof data.totalAdsCount === 'number') {
           setTotalFreeCount(data.totalAdsCount);
         }
-        const gTotal = data.globalTotalAdsCount ?? data.totalAdsCount;
-        const gVer = data.globalVerifiedCount ?? data.verifiedCount;
-        if (typeof gTotal === 'number' && gTotal > 0) {
+        if (typeof gTotal === 'number' && gTotal >= 0) {
           setTotalCompaniesCount(gTotal);
           safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
         }

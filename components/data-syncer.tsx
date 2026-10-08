@@ -33,10 +33,17 @@ export function DataSyncer() {
               saveCategoryAdsCounts(data.adminStats.byCategory);
             }
 
-            // 1. Ads sync (only write to localStorage if empty or counts changed)
+            // 1. Ads sync (always clear if server has 0 ads, or write to localStorage if empty or counts changed)
             if (Array.isArray(data.ads)) {
               const existingLocalAds = safeLocalStorage.getItem("searchbiz_all_ads");
-              if (!existingLocalAds || adsChanged) {
+              if (totalCnt === 0 || data.ads.length === 0) {
+                if (existingLocalAds !== "[]") {
+                  safeLocalStorage.setItem("searchbiz_all_ads", "[]");
+                  safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
+                  safeLocalStorage.setItem("searchbiz_category_counts", "{}");
+                  adsChanged = true;
+                }
+              } else if (!existingLocalAds || existingLocalAds === "[]" || adsChanged) {
                 const serverAds = data.ads.filter((a: any) => a && a.id);
                 const storedDeleted = safeLocalStorage.getItem("searchbiz_deleted_ads");
                 let localDeleted: string[] = [];

@@ -6437,13 +6437,16 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
         VAULT_LEADS_DIR,
         VAULT_ARCHIVE_DIR,
         LEADS_DIR,
+        SENT_LISTINGS_DIR,
         "/opt/hermes-searchbiz/listings",
         "/opt/hermes-searchbiz/leads_storage",
         "/opt/hermes-searchbiz/scraped_leads_vault",
+        "/opt/hermes-searchbiz/sent_listings",
         "/home/thehightable/bizsearch24v4/listings",
         "/home/thehightable/bizsearch24v4/vps-agent/listings",
         "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
         "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
+        "/home/thehightable/bizsearch24v4/vps-agent/sent_listings",
     ]
     for d in purge_dirs:
         if d and os.path.exists(d):
@@ -6455,15 +6458,27 @@ def delete_all_vps_listings(chat_id: int = 0) -> dict:
                             total_files_purged += 1
                         except Exception:
                             pass
-                    for sd in dirs:
-                        try:
-                            os.rmdir(os.path.join(root, sd))
-                        except Exception:
-                            pass
+                shutil.rmtree(d, ignore_errors=True)
             except Exception:
                 pass
             try:
                 os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+
+    # Sweep any remaining .csv or .jsonl files anywhere inside /opt/hermes-searchbiz or vps-agent
+    for base_root in ["/opt/hermes-searchbiz", "/home/thehightable/bizsearch24v4/vps-agent", os.path.dirname(os.path.abspath(__file__))]:
+        if base_root and os.path.exists(base_root):
+            try:
+                for root, dirs, files in os.walk(base_root):
+                    dirs[:] = [sd for sd in dirs if sd not in ("node_modules", ".git", ".next", "__pycache__")]
+                    for fn in files:
+                        if fn.endswith((".csv", ".jsonl")):
+                            try:
+                                os.remove(os.path.join(root, fn))
+                                total_files_purged += 1
+                            except Exception:
+                                pass
             except Exception:
                 pass
 
@@ -8668,8 +8683,21 @@ def _execute_single_subcategory_sweep(
         "Suburb"
     ])
 
+    email_csv_filename = f"SearchBiz_Emails_{safe_code}_{safe_cat}.csv"
+    saved_email_csv_path = f"/tmp/{email_csv_filename}"
+    email_rows_buffer = []
+
     def _record_verified_lead(b_entry: dict, ad_payload: dict, staged_file_handle):
         nonlocal cat_scraped_count
+        raw_em = str(b_entry.get("email") or "").strip().lower()
+        clean_emails_list = []
+        for em_cand in re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', raw_em):
+            em_l = em_cand.lower().strip()
+            if em_l not in clean_emails_list and not em_l.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")):
+                clean_emails_list.append(em_l)
+        validated_email_str = "; ".join(clean_emails_list)
+        b_entry["email"] = validated_email_str
+
         combined_socials = " | ".join([
             x for x in [
                 b_entry.get("twitter"),
@@ -8684,17 +8712,20 @@ def _execute_single_subcategory_sweep(
                 b_entry.get("social_links")
             ] if x
         ])
+        b_phone_val = b_entry.get("public_phone") or b_entry.get("phone") or b_entry.get("telephone") or b_entry.get("whatsapp") or ""
+        b_tel_val = b_entry.get("telephone") or b_entry.get("phone") or b_phone_val
+        b_wa_val = b_entry.get("whatsapp") or ""
         writer.writerow([
             b_entry.get("name", ""),
             b_entry.get("address", ""),
-            b_entry.get("public_phone") or b_entry.get("phone", ""),
-            b_entry.get("telephone", "") or b_entry.get("phone", ""),
-            b_entry.get("whatsapp", ""),
+            b_phone_val,
+            b_tel_val,
+            b_wa_val,
             b_entry.get("trading_hours", ""),
             b_entry.get("services", ""),
             b_entry.get("description", ""),
             b_entry.get("website", ""),
-            b_entry.get("email", ""),
+            validated_email_str,
             combined_socials,
             b_entry.get("twitter", ""),
             b_entry.get("tiktok", ""),
@@ -8708,11 +8739,47 @@ def _execute_single_subcategory_sweep(
             b_entry.get("city", ""),
             b_entry.get("suburb", "")
         ])
-        if staged_file_handle is not None and ad_payload is not None:
-            try:
-                staged_file_handle.write(json.dumps(ad_payload, ensure_ascii=False) + "\n")
-            except Exception:
-                pass
+        if validated_email_str:
+            email_rows_buffer.append([
+                b_entry.get("name", ""),
+                validated_email_str,
+                b_phone_val,
+                b_tel_val,
+                b_wa_val,
+                b_entry.get("address", ""),
+                b_entry.get("postal_code", ""),
+                b_entry.get("suburb", ""),
+                b_entry.get("city", ""),
+                b_entry.get("province", ""),
+                clean_cat,
+                c_code,
+                b_entry.get("website", ""),
+                "Level 2 Verified Upgrade (R199.00/month)"
+            ])
+        if ad_payload is not None:
+            now_iso_str = datetime.now().isoformat()
+            ad_payload["email"] = validated_email_str
+            ad_payload["phone"] = b_phone_val
+            ad_payload["telephone"] = b_tel_val
+            ad_payload["whatsapp"] = b_wa_val
+            if not ad_payload.get("id"):
+                ad_payload["id"] = f"csv_{safe_code}_{cat_scraped_count + 1}_{int(time.time() * 1000)}"
+            ad_payload.setdefault("userId", "agent-bot")
+            ad_payload.setdefault("isActive", True)
+            ad_payload.setdefault("isApproved", True)
+            ad_payload.setdefault("adminApproved", True)
+            ad_payload.setdefault("status", "active")
+            ad_payload.setdefault("approvalStatus", "approved")
+            ad_payload.setdefault("source", "csv")
+            ad_payload.setdefault("isSponsor", False)
+            ad_payload.setdefault("provinceName", b_entry.get("province") or "")
+            ad_payload.setdefault("createdAt", now_iso_str)
+            ad_payload.setdefault("updatedAt", now_iso_str)
+            if staged_file_handle is not None:
+                try:
+                    staged_file_handle.write(json.dumps(ad_payload, ensure_ascii=False, separators=(',', ':')) + "\n")
+                except Exception:
+                    pass
         cat_scraped_count += 1
 
     # Stagger initial start slightly per worker_id so all 313 threads don't spike CPU at the exact same millisecond
@@ -9049,11 +9116,65 @@ def _execute_single_subcategory_sweep(
     except Exception:
         final_csv_path = saved_csv_path
 
+    # Also append all businesses with emails to the dedicated master outreach CSV file for future Level 2 (R199/mo) email campaigns!
+    if email_rows_buffer:
+        try:
+            master_email_csv_name = "all_businesses_with_emails_for_level2_outreach.csv"
+            master_email_header = [
+                "Business name",
+                "Email or emails",
+                "Phone number",
+                "Telephone number",
+                "Whatsapp number",
+                "Address",
+                "Postal code",
+                "Suburb",
+                "City / Town",
+                "Province",
+                "Category",
+                "Category Code",
+                "Website link",
+                "Upgrade Offer"
+            ]
+            with _DIRECT_DB_LOCK:
+                primary_email_vault = os.path.join(VAULT_DIR, master_email_csv_name)
+                os.makedirs(VAULT_DIR, exist_ok=True)
+                write_header = not os.path.exists(primary_email_vault) or os.path.getsize(primary_email_vault) == 0
+                with open(primary_email_vault, "a", encoding="utf-8-sig", newline="") as ef:
+                    ew = csv.writer(ef)
+                    if write_header:
+                        ew.writerow(master_email_header)
+                    ew.writerows(email_rows_buffer)
+                for extra_em_dir in [
+                    LISTINGS_DIR,
+                    LEADS_DIR,
+                    "/home/thehightable/bizsearch24v4/listings",
+                    "/home/thehightable/bizsearch24v4/vps-agent/listings",
+                    "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
+                    "/opt/hermes-searchbiz/listings",
+                    "/opt/hermes-searchbiz/leads_storage",
+                ]:
+                    try:
+                        if extra_em_dir:
+                            os.makedirs(extra_em_dir, exist_ok=True)
+                            dst_em = os.path.join(extra_em_dir, master_email_csv_name)
+                            if os.path.abspath(dst_em) != os.path.abspath(primary_email_vault) and not os.path.exists(dst_em):
+                                try:
+                                    os.link(primary_email_vault, dst_em)
+                                except Exception:
+                                    shutil.copyfile(primary_email_vault, dst_em)
+                    except Exception:
+                        pass
+        except Exception as em_vault_err:
+            logger.debug(f"[SubAgent-{worker_id}] Email outreach CSV write note: {em_vault_err}")
+        finally:
+            email_rows_buffer.clear()
+
     # Live-stream this category's staged ads directly to SearchBiz data/db.json in O(1) disk seek so the website updates continuously!
     try:
-        if os.path.exists(staged_path) and os.path.getsize(staged_path) > 10:
+        if os.path.exists(staged_jsonl_path) and os.path.getsize(staged_jsonl_path) > 10:
             staged_lines = []
-            with open(staged_path, "r", encoding="utf-8", errors="ignore") as sf:
+            with open(staged_jsonl_path, "r", encoding="utf-8", errors="ignore") as sf:
                 for s_line in sf:
                     s_line = s_line.strip()
                     if s_line.startswith("{") and s_line.endswith("}"):
@@ -9068,6 +9189,10 @@ def _execute_single_subcategory_sweep(
                         if os.path.exists(os.path.dirname(db_cand)):
                             _append_ndjson_records_to_db_file(db_cand, staged_lines, now_ts_ms)
                 total_ads_placed = len(staged_lines)
+                try:
+                    api_request("/api/storage?reload=true", method="GET")
+                except Exception:
+                    pass
             del staged_lines
     except Exception as live_stream_err:
         logger.debug(f"[SubAgent-{worker_id}] Live category disk stream note: {live_stream_err}")
@@ -18794,6 +18919,20 @@ def main():
 
     # 2. Initialize SQLite Database
     init_memory_db()
+
+    # 2b. One-time automatic purge of legacy unverified/broken 2M listings on VPS so fresh /mega_swarm 313 starts clean
+    legacy_purge_flag = "/opt/hermes-searchbiz/.purged_legacy_2m_v2026_10_08"
+    if not os.path.exists(legacy_purge_flag):
+        try:
+            logger.info("Executing one-time purge of legacy 2M listings across VPS and SearchBiz.co.za...")
+            delete_all_vps_listings(chat_id=0)
+            os.makedirs(os.path.dirname(legacy_purge_flag), exist_ok=True)
+            with open(legacy_purge_flag, "w", encoding="utf-8") as pf:
+                pf.write(str(int(time.time())))
+            GLOBAL_SUBAGENT_POOL._was_running_before_restart = False
+            logger.info("One-time legacy 2M listings purge complete. Ready for fresh /mega_swarm 313.")
+        except Exception as p_err:
+            logger.warning(f"One-time purge note: {p_err}")
 
     # 3. Start Scheduled Tasks Background Daemon
     scheduler_thread = threading.Thread(target=scheduler_worker, daemon=True)

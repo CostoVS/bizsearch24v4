@@ -12,6 +12,7 @@ const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
 const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
 const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
+const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08');
 
 // Global cache access matching /app/api/storage/route.ts
 const globalRef = global as any;
@@ -269,6 +270,42 @@ export function readLargeStorageJsonSync(filePath: string): any {
 }
 
 export function readServerDb(): any {
+  try {
+    if (!fs.existsSync(LEGACY_PURGE_MARKER)) {
+      const nowPurge = Date.now();
+      const cleanState = {
+        ads: [],
+        banners: [],
+        messages: [],
+        deletedMessages: [],
+        deletedAds: [],
+        trashAds: [],
+        customPartners: [],
+        community_posts: [],
+        slugs: [],
+        claimRequests: [],
+        updatedAt: nowPurge,
+        lastPurgeAt: nowPurge
+      };
+      const cleanJson = JSON.stringify(cleanState, null, 2);
+      for (const p of [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP]) {
+        try {
+          const dir = path.dirname(p);
+          if (fs.existsSync(dir) || p === PERSIST_PATH || p === JSON_PATH) {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(p, cleanJson, 'utf-8');
+          }
+        } catch (e) {}
+      }
+      fs.mkdirSync(path.dirname(LEGACY_PURGE_MARKER), { recursive: true });
+      fs.writeFileSync(LEGACY_PURGE_MARKER, String(nowPurge), 'utf-8');
+      globalRef.storageCache = cleanState;
+      globalRef.indexedDataset = null;
+      globalRef.adminStatsCache = null;
+      return cleanState;
+    }
+  } catch (e) {}
+
   // Instant O(1) memory hit if globalRef.storageCache is already populated in RAM (even if 0 ads after an admin purge)
   if (
     globalRef.storageCache &&

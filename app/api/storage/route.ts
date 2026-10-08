@@ -124,6 +124,7 @@ const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
 const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
 const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
+const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08');
 
 function getDiskMtime(): number {
   try {
@@ -233,6 +234,40 @@ function adMatchesSearchTokens(ad: any, tokenVariantSets: string[][]): boolean {
 }
 
 function getLocalDataNoCache() {
+  // One-time automatic purge of legacy unverified/broken 2M listings so the VPS starts clean before a fresh /mega_swarm 313
+  try {
+    if (!fs.existsSync(LEGACY_PURGE_MARKER)) {
+      const nowPurge = Date.now();
+      const cleanState = {
+        ads: [],
+        banners: [],
+        messages: [],
+        deletedMessages: [],
+        deletedAds: [],
+        trashAds: [],
+        customPartners: [],
+        community_posts: [],
+        slugs: [],
+        claimRequests: [],
+        updatedAt: nowPurge,
+        lastPurgeAt: nowPurge
+      };
+      const cleanJson = JSON.stringify(cleanState, null, 2);
+      for (const p of [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP]) {
+        try {
+          const dir = path.dirname(p);
+          if (fs.existsSync(dir) || p === PERSIST_PATH || p === JSON_PATH) {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(p, cleanJson, 'utf-8');
+          }
+        } catch (e) {}
+      }
+      fs.mkdirSync(path.dirname(LEGACY_PURGE_MARKER), { recursive: true });
+      fs.writeFileSync(LEGACY_PURGE_MARKER, String(nowPurge), 'utf-8');
+      return cleanState;
+    }
+  } catch (e) {}
+
   // First check primary persistence files to see if an intentional admin purge occurred recently
   const primaryPaths = [PERSIST_PATH, JSON_PATH];
   let latestPurgedData: any = null;
@@ -595,14 +630,16 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
     const diskData = readLargeStorageJsonSync(targetPathToRead);
     const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const diskUpdatedAt = diskData?.updatedAt || 0;
+    const diskPurgeTime = diskData?.lastPurgeAt || 0;
 
     // Never overwrite memory if memory has a newer purge timestamp than the file on disk
-    if (!force && memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskCount > memCount) {
+    if (!force && memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskPurgeTime <= memPurgeTime && diskCount > memCount) {
       globalRef.storageMtime = currentMtime;
       return;
     }
 
-    if (force || (diskCount >= memCount && diskCount > 0)) {
+    const diskWasPurged = (diskPurgeTime > memPurgeTime) || (diskCount === 0 && diskPurgeTime > 0);
+    if (force || diskWasPurged || (diskCount >= memCount && diskCount > 0)) {
       const CHUNK = 10000;
       for (let i = 0; i < diskData.ads.length; i += CHUNK) {
         const end = Math.min(i + CHUNK, diskData.ads.length);
@@ -1559,7 +1596,15 @@ export async function POST(req: Request) {
     const currentData = getFastBaseData();
     const newData = { ...currentData };
 
-    if (body.adminAction) {
+    if (body.action === 'clear_all_ads' || body.clearAllAds === true) {
+      const nowTs = Date.now();
+      newData.lastPurgeAt = nowTs;
+      newData.ads = [];
+      newData.trashAds = [];
+      newData.deletedAds = [];
+      newData.lastCreatedAdId = null;
+      newData.lastCreatedAd = null;
+    } else if (body.adminAction) {
       const ads = Array.isArray(currentData.ads) ? [...currentData.ads] : [];
       const action = body.adminAction;
 
@@ -1750,8 +1795,8 @@ export async function POST(req: Request) {
       const allDeletedSet = new Set([...currentDeleted, ...clientDeleted]);
       newData.deletedAds = Array.from(allDeletedSet);
 
-      // SAFETY SHIELD: Never wipe existing server ads if client sends an empty array or partial preview slice
-      if (incomingAds.length === 0 && currentAds.length > 0) {
+      // SAFETY SHIELD: Never wipe existing server ads if client sends an empty array or partial preview slice (unless allowTruncate is explicitly true)
+      if (incomingAds.length === 0 && currentAds.length > 0 && !body.allowTruncate) {
         newData.ads = currentAds.filter((a: any) => a && a.id && !allDeletedSet.has(a.id));
       } else if (incomingAds.length < currentAds.length && !body.allowTruncate) {
         const mergedMap = new Map();
@@ -1805,7 +1850,7 @@ export async function POST(req: Request) {
 
     newData.updatedAt = Date.now();
     globalRef.adminStatsCache = null;
-    const isPurgeAction = body.adminAction === 'bulk_purge' || Boolean(body.deleteAdId);
+    const isPurgeAction = body.adminAction === 'bulk_purge' || body.action === 'clear_all_ads' || Boolean(body.clearAllAds) || Boolean(body.deleteAdId);
     saveLocalDataNoCache(newData, isPurgeAction);
     if (isPurgeAction) {
       await flushStorageToDiskAsync(newData, true);

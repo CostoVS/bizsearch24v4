@@ -107,6 +107,24 @@ if [ -f "hermes_laya_permanent_memory.json" ]; then
     cp hermes_laya_permanent_memory.json "${APP_DIR}/hermes_laya_permanent_memory.json" 2>/dev/null || true
 fi
 
+# One-time automatic purge of legacy unverified/broken 2M listings so the VPS starts 100% clean before fresh /mega_swarm 313
+LEGACY_PURGE_FLAG="${APP_DIR}/.purged_legacy_2m_v2026_10_08"
+if [ ! -f "${LEGACY_PURGE_FLAG}" ]; then
+    echo "🧹 Executing one-time purge of legacy 2M listings across VPS and SearchBiz.co.za..."
+    rm -rf "${APP_DIR}/leads_storage"/* "${APP_DIR}/listings"/* "${APP_DIR}/scraped_leads_vault"/* 2>/dev/null || true
+    rm -rf leads_storage/* listings/* scraped_leads_vault/* ../listings/* 2>/dev/null || true
+    rm -f ../data/backup_db.json ../.data/backup_db.json "${APP_DIR}/leads_storage/searchbiz_db_backup.json" 2>/dev/null || true
+    NOW_MS="$(date +%s)000"
+    mkdir -p ../data ../.data 2>/dev/null || true
+    printf '{"ads":[],"banners":[],"messages":[],"deletedMessages":[],"deletedAds":[],"trashAds":[],"customPartners":[],"community_posts":[],"slugs":[],"claimRequests":[],"updatedAt":%s,"lastPurgeAt":%s}\n' "${NOW_MS}" "${NOW_MS}" > ../data/db.json
+    cp -f ../data/db.json ../.data/db.json 2>/dev/null || true
+    printf '%s\n' "${NOW_MS}" > ../.data/.purged_legacy_2m_v2026_10_08 2>/dev/null || true
+    printf '%s\n' "${NOW_MS}" > "${LEGACY_PURGE_FLAG}" 2>/dev/null || true
+    curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3005/api/storage" -H "Content-Type: application/json" -d '{"adminAction":"bulk_purge","scope":"all"}' >/dev/null 2>&1 || true
+    curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3000/api/storage" -H "Content-Type: application/json" -d '{"adminAction":"bulk_purge","scope":"all"}' >/dev/null 2>&1 || true
+    echo "✅ Legacy 2M listings purged cleanly!"
+fi
+
 # Link all harvested CSVs between /opt/hermes-searchbiz and local leads_storage/ & listings/
 mkdir -p leads_storage listings scraped_leads_vault ../listings "${APP_DIR}/leads_storage" "${APP_DIR}/listings" "${APP_DIR}/scraped_leads_vault" 2>/dev/null || true
 find "${APP_DIR}" -name "*.csv" -type f 2>/dev/null | while read -r csv_fp; do

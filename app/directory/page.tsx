@@ -155,7 +155,7 @@ function DirectoryContent() {
           }
           const gTotal = data.globalTotalAdsCount ?? data.totalAdsCount;
           const gVer = data.globalVerifiedCount ?? data.verifiedCount;
-          if (typeof gTotal === 'number' && gTotal > 0) {
+          if (typeof gTotal === 'number' && gTotal >= 0) {
             safeLocalStorage.setItem("searchbiz_total_ads_count", String(gTotal));
           }
           if (typeof gVer === 'number' && gVer >= 0) {
@@ -164,8 +164,11 @@ function DirectoryContent() {
           if (data.adminStats?.byCategory) {
             saveCategoryAdsCounts(data.adminStats.byCategory);
           }
-          if (!hasFilters && currentPage === 1 && validAds.length > 0) {
+          if (!hasFilters && currentPage === 1) {
             safeLocalStorage.setItem("searchbiz_all_ads", JSON.stringify(validAds.slice(0, 48)));
+            if (validAds.length === 0) {
+              safeLocalStorage.setItem("searchbiz_custom_ads", "[]");
+            }
           }
         }
       })
