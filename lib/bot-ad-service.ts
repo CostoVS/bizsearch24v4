@@ -366,11 +366,16 @@ export function readServerDb(): any {
     try {
       const data = readLargeStorageJsonSync(candidate.path);
       if (data && typeof data === 'object' && Array.isArray(data.ads)) {
+        if (data.ads.length > 0) {
+          bestData = data;
+          break; // File with actual active ads found - always prioritize!
+        }
         if (latestPurgedData && latestPurgeTime > (data.updatedAt || 0) && latestPurgeTime > (data.lastPurgeAt || 0)) {
           continue;
         }
-        bestData = data;
-        break; // Parse only the single best file!
+        if (!bestData) {
+          bestData = data;
+        }
       }
     } catch (e) {
       console.error(`[BotAdService] Failed to read ${candidate.path}:`, e);

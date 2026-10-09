@@ -11692,21 +11692,43 @@ def infer_category_from_csv_filename(csv_path: str, default_cat_name: str = "", 
 
 def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", default_cat_code: str = "") -> list:
     """
-    Parses all rows from a harvested SearchBiz CSV file (supporting UTF-8 with BOM utf-8-sig, 11-column, 16-column, and 22-column schemas).
-    Resolves column indices ONCE per file header for 15x faster streaming across 2.17M+ rows.
+    Bulletproof streaming parser for harvested SearchBiz CSV datasets across all formats
+    (supporting utf-8-sig BOM, comma/semicolon/tab delimiters, 11/16/19/22/27-column schemas, and DictReader fallback).
+    Wrapped with per-row exception isolation so single malformed rows never drop entire files.
     """
     records = []
     if not csv_path or not os.path.exists(csv_path):
         return records
 
+    try:
+        if os.path.getsize(csv_path) < 10:
+            return records
+    except Exception:
+        return records
+
     inferred_cat, inferred_code = infer_category_from_csv_filename(csv_path, default_cat_name, default_cat_code)
 
     try:
+        # Detect delimiter and sniff header
+        delim = ","
+        with open(csv_path, "r", encoding="utf-8-sig", errors="replace") as f_peek:
+            sample_lines = []
+            for _ in range(5):
+                line = f_peek.readline()
+                if line:
+                    sample_lines.append(line)
+            sample_text = "".join(sample_lines)
+            if sample_text.count(";") > sample_text.count(","):
+                delim = ";"
+            elif sample_text.count("\t") > sample_text.count(","):
+                delim = "\t"
+
         with open(csv_path, "r", encoding="utf-8-sig", errors="replace") as f:
-            reader = csv.reader(f)
+            reader = csv.reader(f, delimiter=delim)
             header = next(reader, None)
             if not header:
                 return records
+
             h_map = {}
             for idx, col in enumerate(header):
                 c_clean = (col or "").lstrip("\ufeff").strip().lower()
@@ -11724,10 +11746,16 @@ def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", 
                     i = h_map.get(c_name)
                     if i is not None and i not in idxs:
                         idxs.append(i)
+                # Fuzzy fallback if exact match not found
+                if not idxs:
+                    for k, v in h_map.items():
+                        for c_name in col_names:
+                            if c_name in k and v not in idxs:
+                                idxs.append(v)
                 return tuple(idxs)
 
-            idx_name = find_col_indices("business name", "business_name", "name", "title", "company name", "company", "business")
-            idx_addr = find_col_indices("address", "full address", "street address", "physical address", "location address")
+            idx_name = find_col_indices("business name", "business_name", "company name", "company", "title", "name", "business")
+            idx_addr = find_col_indices("address", "street address", "full address", "physical address", "location address")
             idx_suburb = find_col_indices("suburb", "area", "suburb / area", "neighbourhood", "neighborhood")
             idx_city = find_col_indices("city / town", "city/town", "city", "town", "location", "municipality")
             idx_prov = find_col_indices("province", "region", "state")
@@ -11743,15 +11771,12 @@ def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", 
             idx_web = find_col_indices("website link", "website", "web", "url", "website url", "site")
             idx_email = find_col_indices("email or emails", "email", "emails", "email address", "email addresses", "found email", "e-mail")
             idx_social = find_col_indices("social media links", "social links", "social media", "socials")
-            idx_fb = find_col_indices("facebook", "fb")
-            idx_ig = find_col_indices("instagram", "ig")
-            idx_tt = find_col_indices("tiktok", "tik tok")
-            idx_tw = find_col_indices("x", "twitter", "x (twitter)")
-            idx_yt = find_col_indices("youtube", "yt")
-            idx_li = find_col_indices("linkedin")
-
-            if not idx_name:
-                return records
+            idx_fb = find_col_indices("facebook url", "facebook", "fb")
+            idx_ig = find_col_indices("instagram url", "instagram", "ig")
+            idx_tt = find_col_indices("tiktok url", "tiktok", "tik tok")
+            idx_tw = find_col_indices("x / twitter url", "twitter url", "x", "twitter", "x (twitter)")
+            idx_yt = find_col_indices("youtube url", "youtube", "yt")
+            idx_li = find_col_indices("linkedin url", "linkedin")
 
             def pick(row, row_len, indices):
                 for i in indices:
@@ -11768,115 +11793,192 @@ def parse_harvested_csv_file_records(csv_path: str, default_cat_name: str = "", 
                 if row_len < 2:
                     continue
 
-                b_name = pick(row, row_len, idx_name)
-                if not b_name or len(b_name) < 2:
+                try:
+                    b_name = pick(row, row_len, idx_name)
+                    if not b_name or len(b_name) < 2:
+                        continue
+
+                    b_phone = pick(row, row_len, idx_phone)
+                    b_tel = pick(row, row_len, idx_tel)
+                    b_wa = pick(row, row_len, idx_wa)
+                    primary_phone = b_phone or b_tel or b_wa
+                    if not primary_phone:
+                        continue
+
+                    b_addr = pick(row, row_len, idx_addr)
+                    b_suburb = pick(row, row_len, idx_suburb)
+                    b_city = pick(row, row_len, idx_city)
+                    b_prov = pick(row, row_len, idx_prov)
+                    b_postal = pick(row, row_len, idx_postal)
+
+                    if b_addr and (not b_suburb or not b_city or not b_prov or not b_postal):
+                        addr_parts = [p.strip() for p in b_addr.split(",") if p.strip()]
+                        if addr_parts and addr_parts[-1].lower() in ("south africa", "za", "rsa"):
+                            addr_parts.pop()
+                        if addr_parts and len(addr_parts[-1]) == 4 and addr_parts[-1].isdigit():
+                            if not b_postal:
+                                b_postal = addr_parts[-1]
+                            addr_parts.pop()
+                        if len(addr_parts) >= 4:
+                            if not b_prov: b_prov = addr_parts[-1]
+                            if not b_city: b_city = addr_parts[-2]
+                            if not b_suburb: b_suburb = addr_parts[-3]
+                        elif len(addr_parts) == 3:
+                            if not b_prov: b_prov = addr_parts[-1]
+                            if not b_city: b_city = addr_parts[-2]
+                            if not b_suburb: b_suburb = addr_parts[-2]
+                        elif len(addr_parts) == 2:
+                            if not b_city: b_city = addr_parts[-1]
+                            if not b_suburb: b_suburb = addr_parts[0]
+
+                    prov_slug, prov_name, resolved_city, resolved_suburb = resolve_sa_province_and_town(
+                        b_prov, b_city, b_suburb, b_addr
+                    )
+                    resolved_postal = resolve_sa_postal_code(prov_slug, resolved_city, resolved_suburb, b_addr, b_postal)
+
+                    raw_cat = pick(row, row_len, idx_cat) or inferred_cat
+                    if raw_cat == inferred_cat:
+                        clean_cat = inferred_cat
+                    else:
+                        clean_cat = _CAT_RESOLVE_CACHE.get(raw_cat)
+                        if not clean_cat:
+                            clean_cat = match_searchbiz_category(raw_cat)
+                            _CAT_RESOLVE_CACHE[raw_cat] = clean_cat
+                    cat_code = pick(row, row_len, idx_code) or (inferred_code if clean_cat == inferred_cat else "") or resolve_category_code_fast(clean_cat, inferred_code)
+
+                    b_hours = pick(row, row_len, idx_hours)
+                    b_services = pick(row, row_len, idx_serv)
+                    b_desc = pick(row, row_len, idx_desc)
+                    b_web = pick(row, row_len, idx_web)
+                    b_email = pick(row, row_len, idx_email)
+                    b_social_raw = pick(row, row_len, idx_social)
+                    fb_v = pick(row, row_len, idx_fb)
+                    ig_v = pick(row, row_len, idx_ig)
+                    tt_v = pick(row, row_len, idx_tt)
+                    tw_v = pick(row, row_len, idx_tw)
+                    yt_v = pick(row, row_len, idx_yt)
+                    li_v = pick(row, row_len, idx_li)
+
+                    if not b_addr:
+                        loc_label = f"{resolved_suburb}, {resolved_city}" if resolved_suburb and resolved_suburb.lower() != resolved_city.lower() else resolved_city
+                        b_addr = f"{loc_label}, {prov_name}, {resolved_postal}, South Africa"
+
+                    records.append({
+                        "_preResolved": True,
+                        "title": b_name,
+                        "category": clean_cat,
+                        "categoryCode": cat_code,
+                        "province": prov_slug,
+                        "provinceName": prov_name,
+                        "city": resolved_city,
+                        "town": resolved_city,
+                        "location": resolved_city,
+                        "suburb": resolved_suburb or resolved_city,
+                        "postalCode": resolved_postal,
+                        "address": b_addr,
+                        "phone": primary_phone,
+                        "telephone": b_tel or primary_phone,
+                        "landline": b_tel or primary_phone,
+                        "whatsapp": b_wa or primary_phone,
+                        "tradingHours": b_hours,
+                        "servicesOffered": b_services or clean_cat,
+                        "description": b_desc,
+                        "website": b_web,
+                        "email": b_email,
+                        "socialLinks": b_social_raw,
+                        "facebook": fb_v,
+                        "instagram": ig_v,
+                        "tiktok": tt_v,
+                        "twitter": tw_v,
+                        "youtube": yt_v,
+                        "linkedin": li_v,
+                        "isClaimed": False,
+                        "isPremium": False,
+                        "verified": False,
+                        "isApproved": True,
+                        "adminApproved": True,
+                        "status": "active",
+                        "approvalStatus": "approved",
+                        "plan": "free"
+                    })
+                except Exception as r_err:
+                    logger.debug(f"Row parse error in {csv_path}: {r_err}")
                     continue
 
-                b_phone = pick(row, row_len, idx_phone)
-                b_tel = pick(row, row_len, idx_tel)
-                b_wa = pick(row, row_len, idx_wa)
-                primary_phone = b_phone or b_tel or b_wa
-                if not primary_phone:
-                    continue
-
-                b_addr = pick(row, row_len, idx_addr)
-                b_suburb = pick(row, row_len, idx_suburb)
-                b_city = pick(row, row_len, idx_city)
-                b_prov = pick(row, row_len, idx_prov)
-                b_postal = pick(row, row_len, idx_postal)
-
-                if b_addr and (not b_suburb or not b_city or not b_prov or not b_postal):
-                    addr_parts = [p.strip() for p in b_addr.split(",") if p.strip()]
-                    if addr_parts and addr_parts[-1].lower() in ("south africa", "za", "rsa"):
-                        addr_parts.pop()
-                    if addr_parts and len(addr_parts[-1]) == 4 and addr_parts[-1].isdigit():
-                        if not b_postal:
-                            b_postal = addr_parts[-1]
-                        addr_parts.pop()
-                    if len(addr_parts) >= 4:
-                        if not b_prov: b_prov = addr_parts[-1]
-                        if not b_city: b_city = addr_parts[-2]
-                        if not b_suburb: b_suburb = addr_parts[-3]
-                    elif len(addr_parts) == 3:
-                        if not b_prov: b_prov = addr_parts[-1]
-                        if not b_city: b_city = addr_parts[-2]
-                        if not b_suburb: b_suburb = addr_parts[-2]
-                    elif len(addr_parts) == 2:
-                        if not b_city: b_city = addr_parts[-1]
-                        if not b_suburb: b_suburb = addr_parts[0]
-
-                prov_slug, prov_name, resolved_city, resolved_suburb = resolve_sa_province_and_town(
-                    b_prov, b_city, b_suburb, b_addr
-                )
-                resolved_postal = resolve_sa_postal_code(prov_slug, resolved_city, resolved_suburb, b_addr, b_postal)
-
-                raw_cat = pick(row, row_len, idx_cat) or inferred_cat
-                if raw_cat == inferred_cat:
-                    clean_cat = inferred_cat
-                else:
-                    clean_cat = _CAT_RESOLVE_CACHE.get(raw_cat)
-                    if not clean_cat:
-                        clean_cat = match_searchbiz_category(raw_cat)
-                        _CAT_RESOLVE_CACHE[raw_cat] = clean_cat
-                cat_code = pick(row, row_len, idx_code) or (inferred_code if clean_cat == inferred_cat else "") or resolve_category_code_fast(clean_cat, inferred_code)
-
-                b_hours = pick(row, row_len, idx_hours)
-                b_services = pick(row, row_len, idx_serv)
-                b_desc = pick(row, row_len, idx_desc)
-                b_web = pick(row, row_len, idx_web)
-                b_email = pick(row, row_len, idx_email)
-                b_social_raw = pick(row, row_len, idx_social)
-                fb_v = pick(row, row_len, idx_fb)
-                ig_v = pick(row, row_len, idx_ig)
-                tt_v = pick(row, row_len, idx_tt)
-                tw_v = pick(row, row_len, idx_tw)
-                yt_v = pick(row, row_len, idx_yt)
-                li_v = pick(row, row_len, idx_li)
-
-                if not b_addr:
-                    loc_label = f"{resolved_suburb}, {resolved_city}" if resolved_suburb and resolved_suburb.lower() != resolved_city.lower() else resolved_city
-                    b_addr = f"{loc_label}, {prov_name}, {resolved_postal}, South Africa"
-
-                records.append({
-                    "_preResolved": True,
-                    "title": b_name,
-                    "category": clean_cat,
-                    "categoryCode": cat_code,
-                    "province": prov_slug,
-                    "provinceName": prov_name,
-                    "city": resolved_city,
-                    "town": resolved_city,
-                    "location": resolved_city,
-                    "suburb": resolved_suburb or resolved_city,
-                    "postalCode": resolved_postal,
-                    "address": b_addr,
-                    "phone": primary_phone,
-                    "telephone": b_tel or primary_phone,
-                    "landline": b_tel or primary_phone,
-                    "whatsapp": b_wa or primary_phone,
-                    "tradingHours": b_hours,
-                    "servicesOffered": b_services or clean_cat,
-                    "description": b_desc,
-                    "website": b_web,
-                    "email": b_email,
-                    "socialLinks": b_social_raw,
-                    "facebook": fb_v,
-                    "instagram": ig_v,
-                    "tiktok": tt_v,
-                    "twitter": tw_v,
-                    "youtube": yt_v,
-                    "linkedin": li_v,
-                    "isClaimed": False,
-                    "isPremium": False,
-                    "verified": False,
-                    "isApproved": True,
-                    "adminApproved": True,
-                    "status": "active",
-                    "approvalStatus": "approved",
-                    "plan": "free"
-                })
     except Exception as e:
         logger.error(f"parse_harvested_csv_file_records error on {csv_path}: {e}")
+
+    # Fallback to DictReader if list reader captured 0 records
+    if not records:
+        try:
+            with open(csv_path, "r", encoding="utf-8-sig", errors="replace") as df:
+                d_reader = csv.DictReader(df)
+                for d_row in d_reader:
+                    if not d_row:
+                        continue
+                    try:
+                        b_name = (d_row.get("Business name") or d_row.get("Business Name") or d_row.get("business_name") or d_row.get("name") or d_row.get("title") or "").strip()
+                        if not b_name or len(b_name) < 2:
+                            continue
+                        b_phone = (d_row.get("Phone number") or d_row.get("Phone Number") or d_row.get("Telephone / Mobile") or d_row.get("phone") or "").strip()
+                        b_tel = (d_row.get("Telephone number") or d_row.get("Telephone / Mobile") or d_row.get("telephone") or "").strip()
+                        b_wa = (d_row.get("Whatsapp number") or d_row.get("WhatsApp Number") or d_row.get("whatsapp") or "").strip()
+                        primary_phone = b_phone or b_tel or b_wa
+                        if not primary_phone:
+                            continue
+                        b_city = (d_row.get("City / Town") or d_row.get("city") or d_row.get("town") or "").strip()
+                        b_suburb = (d_row.get("Suburb") or d_row.get("suburb") or "").strip()
+                        b_prov = (d_row.get("Province") or d_row.get("province") or "").strip()
+                        b_addr = (d_row.get("Address") or d_row.get("Street Address") or d_row.get("address") or "").strip()
+                        b_postal = (d_row.get("Postal code") or d_row.get("postal_code") or d_row.get("Postal Code") or "").strip()
+                        b_cat = (d_row.get("Category") or d_row.get("category") or inferred_cat or "General Services").strip()
+
+                        prov_slug, prov_name, resolved_city, resolved_suburb = resolve_sa_province_and_town(b_prov, b_city, b_suburb, b_addr)
+                        resolved_postal = resolve_sa_postal_code(prov_slug, resolved_city, resolved_suburb, b_addr, b_postal)
+                        clean_cat = match_searchbiz_category(b_cat)
+                        c_code = d_row.get("Category Code") or d_row.get("category_code") or resolve_category_code_fast(clean_cat)
+
+                        records.append({
+                            "_preResolved": True,
+                            "title": b_name,
+                            "category": clean_cat,
+                            "categoryCode": c_code,
+                            "province": prov_slug,
+                            "provinceName": prov_name,
+                            "city": resolved_city,
+                            "town": resolved_city,
+                            "location": resolved_city,
+                            "suburb": resolved_suburb or resolved_city,
+                            "postalCode": resolved_postal,
+                            "address": b_addr or f"{resolved_suburb}, {resolved_city}, {prov_name}, {resolved_postal}, South Africa",
+                            "phone": primary_phone,
+                            "telephone": b_tel or primary_phone,
+                            "whatsapp": b_wa or primary_phone,
+                            "tradingHours": (d_row.get("Trading hours") or d_row.get("Trading Hours") or "").strip(),
+                            "servicesOffered": (d_row.get("Services offered") or d_row.get("Services Offered") or clean_cat).strip(),
+                            "description": (d_row.get("About the business") or d_row.get("About the Business") or "").strip(),
+                            "website": (d_row.get("Website link") or d_row.get("Website") or "").strip(),
+                            "email": (d_row.get("Email or emails") or d_row.get("Email Address") or d_row.get("email") or "").strip(),
+                            "socialLinks": (d_row.get("Social media links") or "").strip(),
+                            "facebook": (d_row.get("Facebook") or d_row.get("Facebook URL") or "").strip(),
+                            "instagram": (d_row.get("Instagram") or d_row.get("Instagram URL") or "").strip(),
+                            "tiktok": (d_row.get("TikTok") or d_row.get("TikTok URL") or "").strip(),
+                            "twitter": (d_row.get("X") or d_row.get("X / Twitter URL") or d_row.get("twitter") or "").strip(),
+                            "youtube": (d_row.get("YouTube") or d_row.get("YouTube URL") or "").strip(),
+                            "linkedin": (d_row.get("LinkedIn URL") or d_row.get("linkedin") or "").strip(),
+                            "isClaimed": False,
+                            "isPremium": False,
+                            "verified": False,
+                            "isApproved": True,
+                            "adminApproved": True,
+                            "status": "active",
+                            "approvalStatus": "approved",
+                            "plan": "free"
+                        })
+                    except Exception:
+                        continue
+        except Exception as de:
+            logger.debug(f"DictReader fallback note for {csv_path}: {de}")
 
     return records
 
@@ -12520,15 +12622,22 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
         except Exception as mir_e:
             logger.debug(f"Mirror note: {mir_e}")
 
-        # 1. Discover all CSV and JSON files across all VPS storage paths (deduplicated by filename + inode)
+        # 1. Discover all CSV and JSON files across all VPS storage paths (deduplicated by inode & realpath)
         csv_files = []
         json_files = []
         seen_real_files = set()
-        seen_csv_basenames = set()
+        seen_inodes = set()
+        agent_dir = os.path.dirname(os.path.abspath(__file__))
         candidate_dirs = [
             VAULT_DIR,
             LISTINGS_DIR,
             LEADS_DIR,
+            os.path.join(agent_dir, "scraped_leads_vault"),
+            os.path.join(agent_dir, "listings"),
+            os.path.join(agent_dir, "leads_storage"),
+            os.path.join(agent_dir, "..", "listings"),
+            os.path.join(agent_dir, "..", "scraped_leads_vault"),
+            os.path.join(agent_dir, "..", "leads_storage"),
             "/opt/hermes-searchbiz/scraped_leads_vault",
             "/opt/hermes-searchbiz/listings",
             "/opt/hermes-searchbiz/leads_storage",
@@ -12536,7 +12645,8 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
             "/home/thehightable/bizsearch24v4/vps-agent/scraped_leads_vault",
             "/home/thehightable/bizsearch24v4/vps-agent/listings",
             "/home/thehightable/bizsearch24v4/vps-agent/leads_storage",
-            "/var/www/searchbiz/listings"
+            "/var/www/searchbiz/listings",
+            "/tmp"
         ]
         for s_dir in candidate_dirs:
             if not s_dir or not os.path.exists(s_dir):
@@ -12552,10 +12662,18 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                     if fp in seen_real_files:
                         continue
                     seen_real_files.add(fp)
-                    if fname.endswith(".csv"):
-                        if fname in seen_csv_basenames:
+                    try:
+                        st = os.stat(fp)
+                        if st.st_size < 10:
                             continue
-                        seen_csv_basenames.add(fname)
+                        ino_key = (st.st_ino, st.st_dev)
+                        if ino_key in seen_inodes:
+                            continue
+                        seen_inodes.add(ino_key)
+                    except Exception:
+                        pass
+
+                    if fname.endswith(".csv"):
                         csv_files.append(fp)
                     elif fname.endswith(".json"):
                         json_files.append(fp)
@@ -12788,19 +12906,34 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
 📧 <b>Emails Captured for R199 Upgrade:</b> <b>{emails_captured:,}</b>
 🌐 <b>Total Ads in SearchBiz DB:</b> <b>{existing_kept + added_count:,}</b>""")
 
-                    out_f.write(f'\n],"updatedAt":{int(time.time() * 1000)}}}\n')
+                    out_f.write(f'\n],"updatedAt":{int(time.time() * 1000)},"lastPurgeAt":0}}\n')
 
-                # Atomically swap tmp file into data/db.json and hardlink .data/db.json
+                # Atomically swap tmp file into data/db.json and link/copy to all candidate paths
                 os.replace(tmp_db_path, primary_db_path)
-                try:
-                    if os.path.exists(dot_db_path):
-                        os.remove(dot_db_path)
-                    os.link(primary_db_path, dot_db_path)
-                except Exception:
-                    try:
-                        shutil.copy2(primary_db_path, dot_db_path)
-                    except Exception:
-                        pass
+                sync_dest_targets = [
+                    dot_db_path,
+                    os.path.join(primary_root, "data", "db.json"),
+                    os.path.join(primary_root, ".data", "db.json"),
+                    "/home/thehightable/bizsearch24v4/data/db.json",
+                    "/home/thehightable/bizsearch24v4/.data/db.json",
+                    "/var/www/searchbiz/data/db.json",
+                    "/var/www/searchbiz/.data/db.json",
+                    "/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json"
+                ]
+                for dst_path in sync_dest_targets:
+                    if dst_path and dst_path != primary_db_path:
+                        try:
+                            dst_dir = os.path.dirname(dst_path)
+                            if os.path.exists(os.path.dirname(os.path.abspath(dst_dir))) or os.path.exists(dst_dir):
+                                os.makedirs(dst_dir, exist_ok=True)
+                                if os.path.exists(dst_path):
+                                    os.remove(dst_path)
+                                try:
+                                    os.link(primary_db_path, dst_path)
+                                except Exception:
+                                    shutil.copy2(primary_db_path, dst_path)
+                        except Exception:
+                            pass
 
                 # Remove any stale multi-GB backup_db.json files so disk space stays clean
                 for old_bak in [
@@ -12809,7 +12942,7 @@ Send <code>/sync_status</code> to view live upload telemetry!"""
                     "/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json"
                 ]:
                     try:
-                        if os.path.exists(old_bak) and os.path.getsize(old_bak) > 50 * 1024 * 1024:
+                        if os.path.exists(old_bak) and os.path.getsize(old_bak) > 50 * 1024 * 1024 and old_bak != primary_db_path:
                             os.remove(old_bak)
                     except Exception:
                         pass

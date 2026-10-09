@@ -611,14 +611,21 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
     const diskUpdatedAt = diskData?.updatedAt || 0;
     const diskPurgeTime = diskData?.lastPurgeAt || 0;
 
-    // Never overwrite memory if memory has a newer purge timestamp than the file on disk
-    if (!force && memPurgeTime > 0 && diskUpdatedAt <= memPurgeTime && diskPurgeTime <= memPurgeTime && diskCount > memCount) {
+    // If disk has active ads, always load them into memory index!
+    if (diskCount > 0) {
+      diskData.updatedAt = diskData.updatedAt || Date.now();
+      const prebuiltIndex = buildIndexedDatasetSync(diskData);
+      globalRef.storageCache = diskData;
       globalRef.storageMtime = currentMtime;
+      globalRef.storageCacheTime = Date.now();
+      globalRef.indexedDataset = prebuiltIndex;
+      globalRef.adminStatsCache = prebuiltIndex.adminStats;
+      globalRef.existingAdMap = null;
       return;
     }
 
     const diskWasPurged = (diskPurgeTime > memPurgeTime) || (diskCount === 0 && diskPurgeTime > 0);
-    if (force || diskWasPurged || (diskCount >= memCount && diskCount > 0)) {
+    if (force || diskWasPurged || diskCount >= memCount) {
       diskData.updatedAt = diskData.updatedAt || Date.now();
       const prebuiltIndex = buildIndexedDatasetSync(diskData);
       globalRef.storageCache = diskData;
@@ -1488,7 +1495,7 @@ export async function GET(req: Request) {
     let activePage = 1;
     let activePageSize = filteredTotal;
 
-    const noLimit = url.searchParams.get('noLimit') === 'true' || isLimitAll;
+    const noLimit = url.searchParams.get('noLimit') === 'true' || url.searchParams.get('unlimited') === 'true' || isLimitAll || Boolean(pageSize && pageSize >= 999999);
     if (noLimit) {
       adsToReturn = filtered;
     } else if (page && pageSize) {

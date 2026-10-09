@@ -34,9 +34,10 @@ fi
 find /var/log -type f \( -name "*.gz" -o -name "*.1" -o -name "*.2" -o -name "*.old" \) -delete 2>/dev/null || true
 find /var/log -type f -name "*.log" -size +50M -exec truncate -s 0 {} + 2>/dev/null || true
 
-# 5. Clean /tmp, /var/tmp, pip cache, npm cache, and orphaned .tmp.* files
-echo "🗑️ Purging temporary files, pip cache, npm cache, and redundant multi-GB DB backups..."
-rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+# 5. Clean /var/tmp, pip cache, npm cache, and orphaned .tmp.* files
+echo "🗑️ Purging old temporary files, pip cache, npm cache, and redundant multi-GB DB backups..."
+find /tmp -type f -not -name "*.csv" -not -name "*.json" -not -name "*.db" -mtime +1 -delete 2>/dev/null || true
+rm -rf /var/tmp/* 2>/dev/null || true
 rm -rf /root/.cache/pip /root/.npm /home/*/.cache/pip /home/*/.npm 2>/dev/null || true
 find /home /opt -type f -name "*.tmp.*" -delete 2>/dev/null || true
 find /home /opt -type f \( -name "backup_db.json" -o -name "searchbiz_db_backup.json" \) -size +50M -delete 2>/dev/null || true

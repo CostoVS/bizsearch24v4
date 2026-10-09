@@ -167,21 +167,6 @@ paths = [
     '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json'
 ]
 
-latest_purge_at = 0
-purged_path = None
-for p in ['../.data/db.json', '../data/db.json']:
-    if os.path.exists(p):
-        try:
-            sz = os.path.getsize(p)
-            if 2 < sz < 2000000:
-                with open(p, 'r', encoding='utf-8', errors='ignore') as f:
-                    d = json.load(f)
-                    if isinstance(d, dict) and d.get('lastPurgeAt', 0) > latest_purge_at:
-                        latest_purge_at = d.get('lastPurgeAt', 0)
-                        purged_path = p
-        except Exception:
-            pass
-
 best_path = None
 best_size = -1
 for p in paths:
@@ -190,7 +175,7 @@ for p in paths:
             sz = os.path.getsize(p)
             if sz <= 10:
                 continue
-            # Never call json.load() on huge files (>2MB); verify JSON head/tail in 0 KB of RAM!
+            # Verify JSON head and tail in 0 KB of RAM
             with open(p, 'rb') as f:
                 head = f.read(256).decode('utf-8', errors='ignore').strip()
                 if not head.startswith('{') or '\"ads\"' not in head:
@@ -200,17 +185,11 @@ for p in paths:
                 tail = f.read(512).decode('utf-8', errors='ignore').strip()
                 if not tail.endswith('}'):
                     continue
-            if latest_purge_at > 0 and purged_path and p != purged_path:
-                continue
             if sz > best_size:
                 best_size = sz
                 best_path = p
         except Exception:
             pass
-
-if not best_path and purged_path:
-    best_path = purged_path
-    best_size = os.path.getsize(purged_path)
 
 if best_path and best_size > 0:
     mb_sz = round(best_size / (1024 * 1024), 2)
