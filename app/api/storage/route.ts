@@ -14,7 +14,15 @@ interface CatIndexEntry {
   codes: string[];
 }
 
-const FAST_NORM = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const NORM_STR_CACHE = new Map<string, string>();
+const FAST_NORM = (s: string): string => {
+  if (!s) return '';
+  let cached = NORM_STR_CACHE.get(s);
+  if (cached !== undefined) return cached;
+  cached = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (NORM_STR_CACHE.size < 65000) NORM_STR_CACHE.set(s, cached);
+  return cached;
+};
 
 const PROV_ALIASES_BLOB: Record<string, string> = {
   'kwazulu-natal': 'kzn kwazulu natal durban pmb',
@@ -156,12 +164,17 @@ if (globalRef.dbOfflineUntil === undefined) {
 function ensureAdFastIndexed(ad: any): void {
   if (!ad) return;
   if (ad.isClaimed === false || ad.plan === 'free' || !ad.isPremium) {
-    ad.verified = false;
-    ad.isVerified = false;
+    if (ad.verified === true) ad.verified = false;
+    if (ad.isVerified === true) ad.isVerified = false;
   }
-  if (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined) {
-    resolveAdGeographyAndCategory(ad);
+  if (ad._geoNormalized && ad.province && ad.postalCode !== undefined) {
+    if (!ad.categoryCode) {
+      const entry = getAdSectorEntry(ad);
+      ad.categoryCode = entry?.codes?.[0] || '20.1';
+    }
+    return;
   }
+  resolveAdGeographyAndCategory(ad);
 }
 
 function getAdSectorEntry(ad: any): CatIndexEntry | undefined {
@@ -234,58 +247,6 @@ function adMatchesSearchTokens(ad: any, tokenVariantSets: string[][]): boolean {
 }
 
 function getLocalDataNoCache() {
-  // One-time automatic purge of legacy unverified/broken 2M listings so the VPS starts clean before a fresh /mega_swarm 313
-  try {
-    if (!fs.existsSync(LEGACY_PURGE_MARKER)) {
-      const nowPurge = Date.now();
-      const cleanState = {
-        ads: [],
-        banners: [],
-        messages: [],
-        deletedMessages: [],
-        deletedAds: [],
-        trashAds: [],
-        customPartners: [],
-        community_posts: [],
-        slugs: [],
-        claimRequests: [],
-        updatedAt: nowPurge,
-        lastPurgeAt: nowPurge
-      };
-      const cleanJson = JSON.stringify(cleanState, null, 2);
-      for (const p of [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP]) {
-        try {
-          const dir = path.dirname(p);
-          if (fs.existsSync(dir) || p === PERSIST_PATH || p === JSON_PATH) {
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(p, cleanJson, 'utf-8');
-          }
-        } catch (e) {}
-      }
-      const legacyCsvDirs = [
-        path.join(process.cwd(), 'listings'),
-        path.join(process.cwd(), 'vps-agent', 'listings'),
-        path.join(process.cwd(), 'vps-agent', 'leads_storage'),
-        path.join(process.cwd(), 'vps-agent', 'scraped_leads_vault'),
-        '/opt/hermes-searchbiz/listings',
-        '/opt/hermes-searchbiz/leads_storage',
-        '/opt/hermes-searchbiz/scraped_leads_vault'
-      ];
-      for (const lDir of legacyCsvDirs) {
-        try {
-          if (fs.existsSync(lDir)) {
-            fs.rmSync(lDir, { recursive: true, force: true });
-            fs.mkdirSync(lDir, { recursive: true });
-          }
-        } catch (e) {}
-      }
-      saveDbData(cleanState).catch(() => {});
-      fs.mkdirSync(path.dirname(LEGACY_PURGE_MARKER), { recursive: true });
-      fs.writeFileSync(LEGACY_PURGE_MARKER, String(nowPurge), 'utf-8');
-      return cleanState;
-    }
-  } catch (e) {}
-
   // First check primary persistence files to see if an intentional admin purge occurred recently
   const primaryPaths = [PERSIST_PATH, JSON_PATH];
   let latestPurgedData: any = null;
@@ -624,7 +585,7 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
     for (const p of candidatePaths) {
       try {
         if (fs.existsSync(p)) {
-          const st = await fs.promises.stat(p);
+          const st = fs.statSync(p);
           if (st.size > maxSize) {
             maxSize = st.size;
             targetPathToRead = p;
@@ -637,7 +598,7 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
     const memCount = Array.isArray(globalRef.storageCache?.ads) ? globalRef.storageCache.ads.length : 0;
     const memPurgeTime = globalRef.storageCache?.lastPurgeAt || 0;
 
-    // Free old multi-hundred-MB references before parsing a large disk file so V8 never holds 2 copies in RAM
+    // Atomic synchronous swap: never yield between freeing old cache and assigning new cache so concurrent HTTP requests never trigger a double load!
     if (force || maxSize > 25 * 1024 * 1024) {
       globalRef.indexedDataset = null;
       globalRef.adminStatsCache = null;
@@ -658,16 +619,6 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
 
     const diskWasPurged = (diskPurgeTime > memPurgeTime) || (diskCount === 0 && diskPurgeTime > 0);
     if (force || diskWasPurged || (diskCount >= memCount && diskCount > 0)) {
-      const CHUNK = 10000;
-      for (let i = 0; i < diskData.ads.length; i += CHUNK) {
-        const end = Math.min(i + CHUNK, diskData.ads.length);
-        for (let j = i; j < end; j++) {
-          ensureAdFastIndexed(diskData.ads[j]);
-        }
-        if (end < diskData.ads.length) {
-          await new Promise<void>(r => setImmediate(r));
-        }
-      }
       diskData.updatedAt = diskData.updatedAt || Date.now();
       const prebuiltIndex = buildIndexedDatasetSync(diskData);
       globalRef.storageCache = diskData;
@@ -807,7 +758,7 @@ function indexSingleActiveAdIntoMaps(
   bySuburbActive: Map<string, any[]>,
   byPostalCodeActive: Map<string, any[]>,
   byCategoryCodeActive: Map<string, any[]>,
-  byCategoryCounts: Record<string, number>
+  byCategoryCounts?: Record<string, number>
 ): void {
   const prov = String(a.province || 'gauteng').toLowerCase().trim();
   addAdToMapList(byProvinceActive, prov, a);
@@ -827,21 +778,22 @@ function indexSingleActiveAdIntoMaps(
     addAdToMapList(byPostalCodeActive, postal, a);
   }
 
-  const matched = getAdSectorEntry(a);
-  const codeKey = String(a.categoryCode || (matched?.codes?.[0] ?? '20.1')).toLowerCase().trim();
+  let codeKey = String(a.categoryCode || '').toLowerCase().trim();
+  if (!codeKey) {
+    const matched = getAdSectorEntry(a);
+    codeKey = String(matched?.codes?.[0] ?? '20.1').toLowerCase().trim();
+  }
   addAdToMapList(byCategoryCodeActive, codeKey, a);
 
-  if (matched) {
-    const keys = matched.keys;
-    for (let k = 0; k < keys.length; k++) {
-      const key = keys[k];
-      byCategoryCounts[key] = (byCategoryCounts[key] || 0) + 1;
+  if (byCategoryCounts) {
+    const matched = CATEGORY_INDEX_MAP.get(codeKey) || getAdSectorEntry(a);
+    if (matched) {
+      const keys = matched.keys;
+      for (let k = 0; k < keys.length; k++) {
+        const key = keys[k];
+        byCategoryCounts[key] = (byCategoryCounts[key] || 0) + 1;
+      }
     }
-  } else {
-    const rawCat = String(a.category || 'Other').trim();
-    const cleanCat = stripCategoryNumber(rawCat).toLowerCase().trim();
-    if (rawCat) byCategoryCounts[rawCat] = (byCategoryCounts[rawCat] || 0) + 1;
-    if (cleanCat && cleanCat !== rawCat) byCategoryCounts[cleanCat] = (byCategoryCounts[cleanCat] || 0) + 1;
   }
 }
 
@@ -1024,9 +976,25 @@ function buildIndexedDatasetSync(baseData: any): IndexedDataset {
       byTownActive,
       bySuburbActive,
       byPostalCodeActive,
-      byCategoryCodeActive,
-      byCategory
+      byCategoryCodeActive
     );
+  }
+
+  // Compute byCategory counts in O(313) bucket iterations instead of O(2.17M * 15) per-ad increments!
+  for (const [codeKey, bucket] of byCategoryCodeActive.entries()) {
+    const count = bucket.length;
+    if (count === 0) continue;
+    const matched = CATEGORY_INDEX_MAP.get(codeKey) || (bucket[0] ? getAdSectorEntry(bucket[0]) : undefined);
+    if (matched) {
+      const keys = matched.keys;
+      for (let k = 0; k < keys.length; k++) {
+        const key = keys[k];
+        byCategory[key] = (byCategory[key] || 0) + count;
+      }
+    } else if (bucket[0]) {
+      const rawCat = String(bucket[0].category || 'Other').trim();
+      if (rawCat) byCategory[rawCat] = (byCategory[rawCat] || 0) + count;
+    }
   }
 
   const adminStats = {

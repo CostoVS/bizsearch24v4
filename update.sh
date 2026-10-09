@@ -16,19 +16,6 @@ fi
 
 mkdir -p .data data
 
-LEGACY_PURGE_FLAG=".data/.purged_legacy_2m_v2026_10_08_r2"
-if [ ! -f "${LEGACY_PURGE_FLAG}" ]; then
-  echo "🧹 Purging all old legacy listings across SearchBiz & VPS before clean start..."
-  rm -rf listings/* vps-agent/listings/* vps-agent/leads_storage/* vps-agent/scraped_leads_vault/* /opt/hermes-searchbiz/listings/* /opt/hermes-searchbiz/leads_storage/* /opt/hermes-searchbiz/scraped_leads_vault/* 2>/dev/null || true
-  rm -f data/backup_db.json .data/backup_db.json /opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json 2>/dev/null || true
-  NOW_MS="$(date +%s)000"
-  printf '{"ads":[],"banners":[],"messages":[],"deletedMessages":[],"deletedAds":[],"trashAds":[],"customPartners":[],"community_posts":[],"slugs":[],"claimRequests":[],"updatedAt":%s,"lastPurgeAt":%s}\n' "${NOW_MS}" "${NOW_MS}" > data/db.json
-  cp -f data/db.json .data/db.json 2>/dev/null || true
-  printf '%s\n' "${NOW_MS}" > "${LEGACY_PURGE_FLAG}" 2>/dev/null || true
-  mkdir -p /opt/hermes-searchbiz 2>/dev/null || true
-  printf '%s\n' "${NOW_MS}" > "/opt/hermes-searchbiz/.purged_legacy_2m_v2026_10_08_r2" 2>/dev/null || true
-fi
-
 if [ -f "docker-compose.yml" ] && command -v docker &> /dev/null; then
   echo "🐳 Rebuilding and starting searchbiz-web container..."
   systemctl start docker 2>/dev/null || true

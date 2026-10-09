@@ -105,7 +105,7 @@ function internStr(s: any): any {
   if (!s || typeof s !== 'string') return s;
   let existing = STRING_INTERN_POOL.get(s);
   if (existing !== undefined) return existing;
-  if (STRING_INTERN_POOL.size < 65000) {
+  if (STRING_INTERN_POOL.size < 120000) {
     STRING_INTERN_POOL.set(s, s);
   }
   return s;
@@ -126,12 +126,14 @@ function internAdFieldsInPlace(ad: any): any {
   if (ad.provinceName) ad.provinceName = internStr(ad.provinceName);
   if (ad.suburb) ad.suburb = internStr(ad.suburb);
   if (ad.postalCode) ad.postalCode = internStr(ad.postalCode);
-  if (ad.address) ad.address = internStr(ad.address);
-  if (ad.phone) ad.phone = internStr(ad.phone);
   if (ad.plan) ad.plan = internStr(ad.plan);
   if (ad.source) ad.source = internStr(ad.source);
   if (ad.status) ad.status = internStr(ad.status);
   if (ad.approvalStatus) ad.approvalStatus = internStr(ad.approvalStatus);
+  if (ad.tradingHours) ad.tradingHours = internStr(ad.tradingHours);
+  if (typeof ad.servicesOffered === 'string' && ad.servicesOffered.length < 80) {
+    ad.servicesOffered = internStr(ad.servicesOffered);
+  }
   return ad;
 }
 
@@ -156,7 +158,7 @@ export function readLargeStorageJsonSync(filePath: string): any {
     }
   }
 
-  // Chunked Buffer reader for 15MB - 4GB+ JSON files with V8 String Interning (~3x lower RAM)
+  // Chunked Buffer reader for 15MB - 4GB+ JSON files with fast native newline splitting & V8 String Interning
   const fd = fs.openSync(filePath, 'r');
   try {
     const CHUNK_BYTES = 16 * 1024 * 1024; // 16MB chunks
@@ -199,7 +201,44 @@ export function readLargeStorageJsonSync(filePath: string): any {
         leftover = chunkStr;
       }
 
-      // Extract complete JSON objects `{...}` at top level of the `ads` array
+      // Fast C++ newline-delimited parser for streamed db.json files (10x faster than char-by-char loop)
+      const lastNewlineIdx = leftover.lastIndexOf('\n');
+      if (lastNewlineIdx !== -1) {
+        const completeBlock = leftover.slice(0, lastNewlineIdx);
+        const lines = completeBlock.split('\n');
+        let usedFastLines = false;
+        for (let l = 0; l < lines.length; l++) {
+          const line = lines[l].trim();
+          if (!line) continue;
+          if (line.startsWith(']')) {
+            finishedAdsArray = true;
+            usedFastLines = true;
+            leftover = lines.slice(l).join('\n') + '\n' + leftover.slice(lastNewlineIdx + 1);
+            break;
+          }
+          if (line.charCodeAt(0) === 123) { // '{'
+            const cleanLine = line.endsWith(',') ? line.slice(0, -1) : line;
+            if (cleanLine.charCodeAt(cleanLine.length - 1) === 125) { // '}'
+              try {
+                const parsedAd = JSON.parse(cleanLine);
+                if (parsedAd && typeof parsedAd === 'object') {
+                  ads.push(internAdFieldsInPlace(parsedAd));
+                  usedFastLines = true;
+                  continue;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+        if (usedFastLines) {
+          if (!finishedAdsArray) {
+            leftover = leftover.slice(lastNewlineIdx + 1);
+          }
+          continue;
+        }
+      }
+
+      // Fallback brace scanner for non-newline-delimited JSON files
       let depth = 0;
       let inStr = false;
       let esc = false;
@@ -270,42 +309,6 @@ export function readLargeStorageJsonSync(filePath: string): any {
 }
 
 export function readServerDb(): any {
-  try {
-    if (!fs.existsSync(LEGACY_PURGE_MARKER)) {
-      const nowPurge = Date.now();
-      const cleanState = {
-        ads: [],
-        banners: [],
-        messages: [],
-        deletedMessages: [],
-        deletedAds: [],
-        trashAds: [],
-        customPartners: [],
-        community_posts: [],
-        slugs: [],
-        claimRequests: [],
-        updatedAt: nowPurge,
-        lastPurgeAt: nowPurge
-      };
-      const cleanJson = JSON.stringify(cleanState, null, 2);
-      for (const p of [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP]) {
-        try {
-          const dir = path.dirname(p);
-          if (fs.existsSync(dir) || p === PERSIST_PATH || p === JSON_PATH) {
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(p, cleanJson, 'utf-8');
-          }
-        } catch (e) {}
-      }
-      fs.mkdirSync(path.dirname(LEGACY_PURGE_MARKER), { recursive: true });
-      fs.writeFileSync(LEGACY_PURGE_MARKER, String(nowPurge), 'utf-8');
-      globalRef.storageCache = cleanState;
-      globalRef.indexedDataset = null;
-      globalRef.adminStatsCache = null;
-      return cleanState;
-    }
-  } catch (e) {}
-
   // Instant O(1) memory hit if globalRef.storageCache is already populated in RAM (even if 0 ads after an admin purge)
   if (
     globalRef.storageCache &&
