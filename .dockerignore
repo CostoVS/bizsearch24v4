@@ -15,7 +15,15 @@ yarn-error.log*
 searchbizv3
 searchbizv2
 bizsearch24*
-searchbiz*
 internal_backups
 backup_*
 *.bak
+.data
+data
+listings
+vps-agent
+*.db
+*.sqlite
+*.sqlite3
+raw_po_part*.txt
+

@@ -19172,11 +19172,61 @@ def safe_handle_message(msg: dict):
                 pass
 
 
+def ensure_searchbiz_web_alive() -> bool:
+    """Checks if local SearchBiz Next.js web backend (port 3005 or 3000) is responding; if down (502 Bad Gateway), starts searchbiz-web Docker container and reloads Nginx."""
+    for port in (3005, 3000):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/storage?statsOnly=true", headers={"User-Agent": "Hermes-Watchdog/1.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+
+    logger.warning("502 Bad Gateway Prevention: SearchBiz web backend on 3005/3000 is down. Auto-starting searchbiz-web container...")
+    try:
+        subprocess.run(
+            "systemctl start docker 2>/dev/null || true; "
+            "docker start searchbiz-postgres-db 2>/dev/null || true; "
+            "docker start searchbiz-web 2>/dev/null || "
+            "(cd /home/thehightable/bizsearch24v4 && docker compose up -d web 2>/dev/null) || "
+            "(cd .. && docker compose up -d web 2>/dev/null) || true; "
+            "systemctl start nginx 2>/dev/null || true; "
+            "systemctl reload nginx 2>/dev/null || true",
+            shell=True,
+            timeout=45
+        )
+    except Exception as e:
+        logger.debug(f"Auto-start searchbiz-web note: {e}")
+
+    time.sleep(2)
+    for port in (3005, 3000):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/storage?statsOnly=true", headers={"User-Agent": "Hermes-Watchdog/1.0"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+    return False
+
+
+def web_gateway_watchdog_worker():
+    """Background daemon that checks port 3005/3000 every 60s so searchbiz.co.za never stays on 502 Bad Gateway."""
+    while True:
+        try:
+            ensure_searchbiz_web_alive()
+        except Exception:
+            pass
+        time.sleep(60)
+
+
 def main():
     logger.info("=====================================================")
     logger.info("Hermes SearchBiz VPS Agent starting up...")
     logger.info(f"Target Bot: @Searchbiz_bot (Token: {TELEGRAM_BOT_TOKEN[:10]}...)")
     logger.info(f"Ollama Brain: {OLLAMA_API_URL} ({OLLAMA_MODEL})")
+    ensure_searchbiz_web_alive()
     api_base = get_active_api_base()
     logger.info(f"SearchBiz Live API: {api_base}")
     logger.info(f"Persistent Memory Database: {DB_PATH}")
@@ -19189,7 +19239,7 @@ def main():
     init_memory_db()
 
     # 2b. One-time automatic purge of legacy unverified/broken 2M listings on VPS so fresh /mega_swarm 313 starts clean
-    legacy_purge_flag = "/opt/hermes-searchbiz/.purged_legacy_2m_v2026_10_08"
+    legacy_purge_flag = "/opt/hermes-searchbiz/.purged_legacy_2m_v2026_10_08_r2"
     if not os.path.exists(legacy_purge_flag):
         try:
             logger.info("Executing one-time purge of legacy 2M listings across VPS and SearchBiz.co.za...")
@@ -19202,9 +19252,11 @@ def main():
         except Exception as p_err:
             logger.warning(f"One-time purge note: {p_err}")
 
-    # 3. Start Scheduled Tasks Background Daemon
+    # 3. Start Scheduled Tasks & 502 Gateway Watchdog Background Daemons
     scheduler_thread = threading.Thread(target=scheduler_worker, daemon=True)
     scheduler_thread.start()
+    watchdog_thread = threading.Thread(target=web_gateway_watchdog_worker, daemon=True)
+    watchdog_thread.start()
 
     # 4. Verify Telegram Bot connection
     me = telegram_call("getMe")

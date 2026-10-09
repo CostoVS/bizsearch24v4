@@ -250,8 +250,28 @@ if best_path and best_size > 0:
 
 chmod 777 ../.data ../data ../.data/db.json ../data/db.json 2>/dev/null || true
 
+# Ensure SearchBiz Web Container (port 3005 / 3000) & Nginx are up to prevent 502 Bad Gateway
+if ! curl -sSf --connect-timeout 2 --max-time 4 "http://127.0.0.1:3005/api/storage?statsOnly=true" >/dev/null 2>&1 && ! curl -sSf --connect-timeout 2 --max-time 4 "http://127.0.0.1:3000/api/storage?statsOnly=true" >/dev/null 2>&1; then
+    echo "🌐 SearchBiz web backend not responding on 3005/3000 — starting searchbiz-web to fix 502 Bad Gateway..."
+    if command -v docker &> /dev/null; then
+        systemctl start docker 2>/dev/null || true
+        docker start searchbiz-postgres-db 2>/dev/null || true
+        docker start searchbiz-web 2>/dev/null || (cd .. && docker compose up -d web 2>/dev/null) || (cd /home/thehightable/bizsearch24v4 && docker compose up -d web 2>/dev/null) || true
+    fi
+    if command -v pm2 &> /dev/null; then
+        pm2 restart all 2>/dev/null || true
+    fi
+fi
+
+if command -v nginx &> /dev/null; then
+    systemctl start nginx 2>/dev/null || true
+    systemctl reload nginx 2>/dev/null || true
+fi
+
 # Non-blocking background pre-warm with strict 3s timeout so update_agent.sh NEVER hangs
 (
+    sleep 2
+    curl -s --connect-timeout 2 --max-time 4 "http://127.0.0.1:3005/" >/dev/null 2>&1 || true
     curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:3005/api/storage?statsOnly=true" >/dev/null 2>&1 || true
     curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:3005/api/storage?freeOnly=true&includeFeatured=true&page=1&pageSize=12" >/dev/null 2>&1 || true
 ) &

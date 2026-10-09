@@ -31,7 +31,13 @@ fi
 
 if [ -f "docker-compose.yml" ] && command -v docker &> /dev/null; then
   echo "🐳 Rebuilding and starting searchbiz-web container..."
-  docker compose up --build -d web
+  systemctl start docker 2>/dev/null || true
+  docker compose up --build -d web || docker compose up -d web || docker start searchbiz-web 2>/dev/null || true
+fi
+
+if command -v nginx &> /dev/null; then
+  systemctl start nginx 2>/dev/null || true
+  systemctl reload nginx 2>/dev/null || true
 fi
 
 if [ -d "vps-agent" ] && [ -f "vps-agent/update_agent.sh" ]; then
