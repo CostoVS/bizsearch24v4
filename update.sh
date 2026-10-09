@@ -9,6 +9,11 @@ cd "${SCRIPT_DIR}"
 
 echo "🚀 Updating SearchBiz Web & Agent with Zero-Lag RAM Indexing..."
 
+if [ -d ".git" ]; then
+  echo "🔄 Syncing latest repository changes from GitHub (overwriting any untracked conflicts)..."
+  git fetch origin main 2>/dev/null && git reset --hard origin/main 2>/dev/null || true
+fi
+
 mkdir -p .data data
 
 LEGACY_PURGE_FLAG=".data/.purged_legacy_2m_v2026_10_08_r2"
