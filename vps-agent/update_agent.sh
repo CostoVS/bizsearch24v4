@@ -108,20 +108,36 @@ if [ -f "hermes_laya_permanent_memory.json" ]; then
 fi
 
 # One-time automatic purge of legacy unverified/broken 2M listings so the VPS starts 100% clean before fresh /mega_swarm 313
-LEGACY_PURGE_FLAG="${APP_DIR}/.purged_legacy_2m_v2026_10_08"
+LEGACY_PURGE_FLAG="${APP_DIR}/.purged_legacy_2m_v2026_10_08_r2"
 if [ ! -f "${LEGACY_PURGE_FLAG}" ]; then
-    echo "🧹 Executing one-time purge of legacy 2M listings across VPS and SearchBiz.co.za..."
+    echo "🧹 Executing one-time purge of legacy 2M listings across VPS, SQLite, and SearchBiz.co.za..."
     rm -rf "${APP_DIR}/leads_storage"/* "${APP_DIR}/listings"/* "${APP_DIR}/scraped_leads_vault"/* 2>/dev/null || true
     rm -rf leads_storage/* listings/* scraped_leads_vault/* ../listings/* 2>/dev/null || true
+    rm -f "${APP_DIR}/mega_swarm_state.json" mega_swarm_state.json 2>/dev/null || true
     rm -f ../data/backup_db.json ../.data/backup_db.json "${APP_DIR}/leads_storage/searchbiz_db_backup.json" 2>/dev/null || true
+    python3 -c "
+import sqlite3, os
+for db_p in ['hermes_data.db', '${APP_DIR}/hermes_data.db', '../public/hermes_data.db']:
+    if os.path.exists(db_p):
+        try:
+            with sqlite3.connect(db_p, timeout=10) as c:
+                for tbl in ('business_leads', 'scraped_vault_leads', 'lead_datasets'):
+                    try: c.execute(f'DELETE FROM {tbl}')
+                    except Exception: pass
+                c.commit()
+        except Exception:
+            pass
+" 2>/dev/null || true
     NOW_MS="$(date +%s)000"
     mkdir -p ../data ../.data 2>/dev/null || true
     printf '{"ads":[],"banners":[],"messages":[],"deletedMessages":[],"deletedAds":[],"trashAds":[],"customPartners":[],"community_posts":[],"slugs":[],"claimRequests":[],"updatedAt":%s,"lastPurgeAt":%s}\n' "${NOW_MS}" "${NOW_MS}" > ../data/db.json
     cp -f ../data/db.json ../.data/db.json 2>/dev/null || true
-    printf '%s\n' "${NOW_MS}" > ../.data/.purged_legacy_2m_v2026_10_08 2>/dev/null || true
+    printf '%s\n' "${NOW_MS}" > ../.data/.purged_legacy_2m_v2026_10_08_r2 2>/dev/null || true
     printf '%s\n' "${NOW_MS}" > "${LEGACY_PURGE_FLAG}" 2>/dev/null || true
     curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3005/api/storage" -H "Content-Type: application/json" -d '{"adminAction":"bulk_purge","scope":"all"}' >/dev/null 2>&1 || true
     curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3000/api/storage" -H "Content-Type: application/json" -d '{"adminAction":"bulk_purge","scope":"all"}' >/dev/null 2>&1 || true
+    curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3005/api/bot/listings" -H "Content-Type: application/json" -d '{"action":"clear_all_ads"}' >/dev/null 2>&1 || true
+    curl -s --connect-timeout 2 --max-time 5 -X POST "http://127.0.0.1:3000/api/bot/listings" -H "Content-Type: application/json" -d '{"action":"clear_all_ads"}' >/dev/null 2>&1 || true
     echo "✅ Legacy 2M listings purged cleanly!"
 fi
 

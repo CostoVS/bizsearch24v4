@@ -12,7 +12,7 @@ const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
 const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
 const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
-const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08');
+const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08_r2');
 
 // Global cache access matching /app/api/storage/route.ts
 const globalRef = global as any;
@@ -542,6 +542,61 @@ export function writeServerDb(data: any, immediate: boolean = false, keepIndexVa
       }
     }, debounceMs);
   }
+}
+
+export function purgeAllServerAds(): void {
+  const nowPurge = Date.now();
+  const cleanState = {
+    ads: [],
+    banners: [],
+    messages: [],
+    deletedMessages: [],
+    deletedAds: [],
+    trashAds: [],
+    customPartners: [],
+    community_posts: [],
+    slugs: [],
+    claimRequests: [],
+    updatedAt: nowPurge,
+    lastPurgeAt: nowPurge
+  };
+  if (globalRef.flushTimer) {
+    clearTimeout(globalRef.flushTimer);
+    globalRef.flushTimer = null;
+  }
+  const cleanJson = JSON.stringify(cleanState, null, 2);
+  for (const p of [PERSIST_PATH, JSON_PATH, BACKUP_PATH, BACKUP_DOT_PATH, VPS_STORAGE_BACKUP]) {
+    try {
+      const dir = path.dirname(p);
+      if (fs.existsSync(dir) || p === PERSIST_PATH || p === JSON_PATH) {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(p, cleanJson, 'utf-8');
+      }
+    } catch (e) {}
+  }
+  const legacyCsvDirs = [
+    path.join(process.cwd(), 'listings'),
+    path.join(process.cwd(), 'vps-agent', 'listings'),
+    path.join(process.cwd(), 'vps-agent', 'leads_storage'),
+    path.join(process.cwd(), 'vps-agent', 'scraped_leads_vault'),
+    '/opt/hermes-searchbiz/listings',
+    '/opt/hermes-searchbiz/leads_storage',
+    '/opt/hermes-searchbiz/scraped_leads_vault'
+  ];
+  for (const lDir of legacyCsvDirs) {
+    try {
+      if (fs.existsSync(lDir)) {
+        fs.rmSync(lDir, { recursive: true, force: true });
+        fs.mkdirSync(lDir, { recursive: true });
+      }
+    } catch (e) {}
+  }
+  globalRef.storageCache = cleanState;
+  globalRef.indexedDataset = null;
+  globalRef.adminStatsCache = null;
+  globalRef.existingAdMap = null;
+  globalRef.pendingDiskFlush = false;
+  globalRef.lastSelfWriteTime = nowPurge;
 }
 
 // Normalize province string to canonical slug

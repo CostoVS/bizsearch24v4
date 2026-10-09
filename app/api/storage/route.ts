@@ -124,7 +124,7 @@ const PERSIST_PATH = path.join(process.cwd(), 'data', 'db.json');
 const BACKUP_PATH = path.join(process.cwd(), 'data', 'backup_db.json');
 const BACKUP_DOT_PATH = path.join(process.cwd(), '.data', 'backup_db.json');
 const VPS_STORAGE_BACKUP = '/opt/hermes-searchbiz/leads_storage/searchbiz_db_backup.json';
-const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08');
+const LEGACY_PURGE_MARKER = path.join(process.cwd(), '.data', '.purged_legacy_2m_v2026_10_08_r2');
 
 function getDiskMtime(): number {
   try {
@@ -262,6 +262,24 @@ function getLocalDataNoCache() {
           }
         } catch (e) {}
       }
+      const legacyCsvDirs = [
+        path.join(process.cwd(), 'listings'),
+        path.join(process.cwd(), 'vps-agent', 'listings'),
+        path.join(process.cwd(), 'vps-agent', 'leads_storage'),
+        path.join(process.cwd(), 'vps-agent', 'scraped_leads_vault'),
+        '/opt/hermes-searchbiz/listings',
+        '/opt/hermes-searchbiz/leads_storage',
+        '/opt/hermes-searchbiz/scraped_leads_vault'
+      ];
+      for (const lDir of legacyCsvDirs) {
+        try {
+          if (fs.existsSync(lDir)) {
+            fs.rmSync(lDir, { recursive: true, force: true });
+            fs.mkdirSync(lDir, { recursive: true });
+          }
+        } catch (e) {}
+      }
+      saveDbData(cleanState).catch(() => {});
       fs.mkdirSync(path.dirname(LEGACY_PURGE_MARKER), { recursive: true });
       fs.writeFileSync(LEGACY_PURGE_MARKER, String(nowPurge), 'utf-8');
       return cleanState;
