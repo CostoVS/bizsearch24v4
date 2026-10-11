@@ -194,48 +194,118 @@ function getAdSectorEntry(ad: any): CatIndexEntry | undefined {
   );
 }
 
+function toLitePublicAd(ad: any): any {
+  if (!ad || typeof ad !== 'object') return ad;
+  const lite: any = {
+    id: ad.id,
+    title: ad.title,
+    category: ad.category,
+    location: ad.location || ad.city || ad.town || '',
+    city: ad.city || ad.town || ad.location || '',
+    province: ad.province || 'gauteng',
+    phone: ad.phone || ad.telephone || ad.landline || ad.whatsapp || '',
+    description: typeof ad.description === 'string' && ad.description.length > 220
+      ? ad.description.slice(0, 217) + '...'
+      : (ad.description || ''),
+    isActive: ad.isActive !== false,
+    adminApproved: ad.adminApproved !== false
+  };
+  if (ad.suburb) lite.suburb = ad.suburb;
+  if (ad.postalCode) lite.postalCode = ad.postalCode;
+  if (ad.address) lite.address = ad.address;
+  if (ad.categoryCode) lite.categoryCode = ad.categoryCode;
+  if (ad.categoryGroup) lite.categoryGroup = ad.categoryGroup;
+  if (ad.provinceName) lite.provinceName = ad.provinceName;
+  if (ad.landline || ad.telephone) lite.telephone = ad.telephone || ad.landline;
+  if (ad.whatsapp) lite.whatsapp = ad.whatsapp;
+  if (ad.email) lite.email = ad.email;
+  if (ad.website) lite.website = ad.website;
+  if (ad.tradingHours) lite.tradingHours = ad.tradingHours;
+  if (ad.servicesOffered) lite.servicesOffered = ad.servicesOffered;
+  if (ad.verified) lite.verified = true;
+  if (ad.isPremium) {
+    lite.isPremium = true;
+    lite.plan = ad.plan || 'PREMIUM';
+  }
+  if (ad.isSponsor) lite.isSponsor = true;
+  if (ad.isSpotlight) lite.isSpotlight = true;
+  if (ad.isBannerPlacement) lite.isBannerPlacement = true;
+  if (ad.isVideoPromo) lite.isVideoPromo = true;
+  if (ad.isClaimed) lite.isClaimed = true;
+  if (ad.image) lite.image = ad.image;
+  if (Array.isArray(ad.images) && ad.images.length > 0) lite.images = ad.images;
+  if (ad.fixedPosition) lite.fixedPosition = ad.fixedPosition;
+  if (ad.socialLinks) lite.socialLinks = ad.socialLinks;
+  if (ad.facebook || ad.socialFacebook) lite.facebook = ad.facebook || ad.socialFacebook;
+  if (ad.instagram || ad.socialInstagram) lite.instagram = ad.instagram || ad.socialInstagram;
+  if (ad.tiktok || ad.socialTikTok) lite.tiktok = ad.tiktok || ad.socialTikTok;
+  if (ad.youtube || ad.socialYoutube) lite.youtube = ad.youtube || ad.socialYoutube;
+  if (ad.twitter || ad.socialX) lite.twitter = ad.twitter || ad.socialX;
+  if (ad.linkedin || ad.socialLinkedin) lite.linkedin = ad.linkedin || ad.socialLinkedin;
+  if (ad.userId && ad.userId !== 'agent-bot') lite.userId = ad.userId;
+  return lite;
+}
+
 function adMatchesSearchTokens(ad: any, tokenVariantSets: string[][]): boolean {
   const title = String(ad.title || '').toLowerCase();
   const cat = String(ad.category || '').toLowerCase();
-  const sub = String(ad.suburb || '').toLowerCase();
-  const town = String(ad.city || ad.town || ad.location || '').toLowerCase();
-  const prov = String(ad.province || '').toLowerCase();
-  const provName = String(ad.provinceName || '').toLowerCase();
-  const provAliases = PROV_ALIASES_BLOB[prov] || '';
-  const postal = String(ad.postalCode || '').toLowerCase();
-  const addr = String(ad.address || '').toLowerCase();
-  const serv = Array.isArray(ad.servicesOffered)
-    ? ad.servicesOffered.join(' ').toLowerCase()
-    : String(ad.servicesOffered || '').toLowerCase();
-  const desc = String(ad.description || '').toLowerCase();
-  const phone = String(ad.phone || ad.telephone || ad.whatsapp || '').replace(/[^0-9]/g, '');
-  const group = String(ad.categoryGroup || ad.parentCategory || '').toLowerCase();
-  const code = String(ad.categoryCode || '').toLowerCase();
-  const email = String(ad.email || '').toLowerCase();
-  const web = String(ad.website || '').toLowerCase();
+  let sub: string | null = null;
+  let town: string | null = null;
+  let prov: string | null = null;
+  let provName: string | null = null;
+  let provAliases: string | null = null;
+  let postal: string | null = null;
+  let addr: string | null = null;
+  let serv: string | null = null;
+  let desc: string | null = null;
+  let phone: string | null = null;
+  let group: string | null = null;
+  let code: string | null = null;
+  let email: string | null = null;
+  let web: string | null = null;
 
   for (let t = 0; t < tokenVariantSets.length; t++) {
     const variants = tokenVariantSets[t];
     let matchedVariant = false;
     for (let v = 0; v < variants.length; v++) {
       const tok = variants[v];
+      if (title.includes(tok) || cat.includes(tok)) {
+        matchedVariant = true;
+        break;
+      }
+      if (sub === null) {
+        sub = String(ad.suburb || '').toLowerCase();
+        town = String(ad.city || ad.town || ad.location || '').toLowerCase();
+        prov = String(ad.province || '').toLowerCase();
+        provName = String(ad.provinceName || '').toLowerCase();
+        provAliases = PROV_ALIASES_BLOB[prov] || '';
+        postal = String(ad.postalCode || '').toLowerCase();
+        addr = String(ad.address || '').toLowerCase();
+        serv = Array.isArray(ad.servicesOffered)
+          ? ad.servicesOffered.join(' ').toLowerCase()
+          : String(ad.servicesOffered || '').toLowerCase();
+        desc = String(ad.description || '').toLowerCase();
+        phone = String(ad.phone || ad.telephone || ad.whatsapp || '').replace(/[^0-9]/g, '');
+        group = String(ad.categoryGroup || ad.parentCategory || '').toLowerCase();
+        code = String(ad.categoryCode || '').toLowerCase();
+        email = String(ad.email || '').toLowerCase();
+        web = String(ad.website || '').toLowerCase();
+      }
       if (
-        title.includes(tok) ||
-        cat.includes(tok) ||
-        sub.includes(tok) ||
-        town.includes(tok) ||
+        sub!.includes(tok) ||
+        town!.includes(tok) ||
         postal === tok ||
-        addr.includes(tok) ||
-        serv.includes(tok) ||
-        desc.includes(tok) ||
-        prov.includes(tok) ||
-        provName.includes(tok) ||
-        provAliases.includes(tok) ||
-        group.includes(tok) ||
+        addr!.includes(tok) ||
+        serv!.includes(tok) ||
+        desc!.includes(tok) ||
+        prov!.includes(tok) ||
+        provName!.includes(tok) ||
+        provAliases!.includes(tok) ||
+        group!.includes(tok) ||
         code === tok ||
-        phone.includes(tok) ||
-        email.includes(tok) ||
-        web.includes(tok)
+        phone!.includes(tok) ||
+        email!.includes(tok) ||
+        web!.includes(tok)
       ) {
         matchedVariant = true;
         break;
@@ -405,16 +475,23 @@ async function flushStorageToDiskAsync(data: any, forceAllBackups: boolean = fal
   }
 }
 
-function saveLocalDataNoCache(data: any, immediateAllBackups: boolean = false) {
+function saveLocalDataNoCache(data: any, immediateAllBackups: boolean = false, keepIndexValid: boolean = false) {
   if (!data.updatedAt) {
     data.updatedAt = Date.now();
   }
+  data._dedupedV2 = true;
   globalRef.storageCache = data;
   globalRef.storageCacheTime = Date.now();
-  globalRef.existingAdKeysSet = null;
-  globalRef.existingAdMap = null;
-  globalRef.adminStatsCache = null;
-  globalRef.indexedDataset = null;
+  if (!keepIndexValid) {
+    globalRef.existingAdKeysSet = null;
+    globalRef.existingAdMap = null;
+    globalRef.adminStatsCache = null;
+    globalRef.indexedDataset = null;
+  } else if (globalRef.indexedDataset) {
+    const rawAdsLen = Array.isArray(data.ads) ? data.ads.length : 0;
+    const delLen = Array.isArray(data.deletedAds) ? data.deletedAds.length : 0;
+    globalRef.indexedDataset.cacheKey = `${data.updatedAt}_${rawAdsLen}_${delLen}`;
+  }
   globalRef.pendingDiskFlush = true;
   globalRef.lastSelfWriteTime = Date.now();
 
@@ -428,16 +505,17 @@ function saveLocalDataNoCache(data: any, immediateAllBackups: boolean = false) {
   }
 
   const adCount = Array.isArray(data.ads) ? data.ads.length : 0;
-  const debounceMs = adCount < 1000 ? 250 : adCount > 5000 ? 10000 : 2500;
+  const debounceMs = adCount < 1000 ? 250 : adCount > 5000 ? 6000 : 2500;
 
-  if (!globalRef.flushTimer) {
-    globalRef.flushTimer = setTimeout(() => {
-      globalRef.flushTimer = null;
-      if (globalRef.storageCache) {
-        flushStorageToDiskAsync(globalRef.storageCache);
-      }
-    }, debounceMs);
+  if (globalRef.flushTimer) {
+    clearTimeout(globalRef.flushTimer);
   }
+  globalRef.flushTimer = setTimeout(() => {
+    globalRef.flushTimer = null;
+    if (globalRef.storageCache) {
+      flushStorageToDiskAsync(globalRef.storageCache);
+    }
+  }, debounceMs);
 }
 
 async function getDbData(): Promise<any> {
@@ -774,6 +852,10 @@ function indexSingleActiveAdIntoMaps(
   if (townNorm) {
     addAdToMapList(byTownActive, townNorm, a);
   }
+  const locNorm = FAST_NORM(a.location || '');
+  if (locNorm && locNorm !== townNorm) {
+    addAdToMapList(byTownActive, locNorm, a);
+  }
 
   const subNorm = FAST_NORM(a.suburb || '');
   if (subNorm) {
@@ -804,23 +886,37 @@ function indexSingleActiveAdIntoMaps(
   }
 }
 
-function incrementallyIndexAds(newAds: any[]): void {
+function incrementallyIndexAds(newAds: any[], baseData?: any): void {
   const ds: IndexedDataset | undefined = globalRef.indexedDataset;
   if (!ds || !Array.isArray(newAds) || newAds.length === 0) return;
+
+  const baseAds = Array.isArray(baseData?.ads) ? baseData.ads : null;
+  const pushNonDeleted = ds.allNonDeletedAds !== baseAds;
+  const pushActive = ds.allActiveAds !== baseAds && ds.allActiveAds !== ds.allNonDeletedAds;
+  const pushFree =
+    ds.allFreeAds !== baseAds &&
+    ds.allFreeAds !== ds.allActiveAds &&
+    ds.allFreeAds !== ds.allNonDeletedAds;
 
   for (let i = 0; i < newAds.length; i++) {
     const a = newAds[i];
     if (!a || !a.id) continue;
     ensureAdFastIndexed(a);
-    ds.allNonDeletedAds.push(a);
+    if (pushNonDeleted) {
+      ds.allNonDeletedAds.push(a);
+    }
     ds.adminStats.total++;
 
     const isAct = a.isActive !== false;
     if (isAct) {
       ds.adminStats.active++;
-      ds.allActiveAds.push(a);
+      if (pushActive) {
+        ds.allActiveAds.push(a);
+      }
       if (!a.isPremium && !a.isSponsor) {
-        ds.allFreeAds.push(a);
+        if (pushFree) {
+          ds.allFreeAds.push(a);
+        }
       } else {
         ds.allFeaturedAds.push(a);
       }
@@ -861,10 +957,16 @@ function incrementallyIndexAds(newAds: any[]): void {
       );
     }
   }
+
+  if (baseData && Array.isArray(baseData.ads)) {
+    const delLen = Array.isArray(baseData.deletedAds) ? baseData.deletedAds.length : 0;
+    ds.cacheKey = `${baseData.updatedAt || 0}_${baseData.ads.length}_${delLen}`;
+  }
   ds.queryCache.clear();
 }
 
 globalRef.incrementallyIndexAds = incrementallyIndexAds;
+globalRef.getIndexedDataset = getIndexedDataset;
 
 function buildIndexedDatasetSync(baseData: any): IndexedDataset {
   const rawAds = Array.isArray(baseData.ads) ? baseData.ads : [];
@@ -1099,7 +1201,8 @@ export async function GET(req: Request) {
 
     if (claimsOnly) {
       return NextResponse.json({
-        claimRequests: baseData.claimRequests || []
+        claimRequests: baseData.claimRequests || [],
+        messages: baseData.messages || []
       }, {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1328,6 +1431,10 @@ export async function GET(req: Request) {
       const searchTokens = meaningfulTokens.length > 0 ? meaningfulTokens : rawTokens;
       const tokenVariantSets = searchTokens.map(tok => getSearchTokenVariants(tok));
 
+      const needsGeoCheck = Boolean(
+        effectivePostalCode || postalParam || nLocSlug || nAddrParam || nTargetProv || nTownParam || nSubParam
+      );
+
       filtered = candidatePool.filter((ad: any) => {
         if (!ad) return false;
 
@@ -1361,99 +1468,104 @@ export async function GET(req: Request) {
           if (currentStatus !== statusParam) return false;
         }
 
-        const adProvLower = String(ad.province || '').toLowerCase();
-        const nAdProv = FAST_NORM(adProvLower);
-        const nAdProvName = FAST_NORM(ad.provinceName || '');
-        const nAdTown = FAST_NORM(ad.city || ad.town || ad.location || '');
-        const nAdLoc = FAST_NORM(ad.location || '');
-        const nAdSub = FAST_NORM(ad.suburb || '');
-        const adPostal = String(ad.postalCode || '').trim();
-        const nAdAddr = FAST_NORM(ad.address || '');
-        const isGlobal = adProvLower === 'national' || nAdLoc === 'alllocations';
+        if (needsGeoCheck) {
+          const adProvLower = String(ad.province || '').toLowerCase();
+          const nAdLoc = FAST_NORM(ad.location || '');
+          const isGlobal = adProvLower === 'national' || nAdLoc === 'alllocations';
 
-        if (effectivePostalCode && !usedExactPostalIndex && !isGlobal) {
-          if (adPostal !== effectivePostalCode && !String(ad.address || '').includes(effectivePostalCode)) {
-            return false;
-          }
-        } else if (postalParam && !effectivePostalCode && !isGlobal) {
-          if (!adPostal.includes(postalParam) && !String(ad.address || '').toLowerCase().includes(postalParam.toLowerCase())) {
-            return false;
-          }
-        }
+          if (!isGlobal) {
+            const adPostal = String(ad.postalCode || '').trim();
+            if (effectivePostalCode && !usedExactPostalIndex) {
+              if (adPostal !== effectivePostalCode && !String(ad.address || '').includes(effectivePostalCode)) {
+                return false;
+              }
+            } else if (postalParam && !effectivePostalCode) {
+              if (!adPostal.includes(postalParam) && !String(ad.address || '').toLowerCase().includes(postalParam.toLowerCase())) {
+                return false;
+              }
+            }
 
-        if (nLocSlug && !isGlobal) {
-          const slugMatch =
-            nAdProv === nLocSlug || nAdProvName === nLocSlug ||
-            nAdTown === nLocSlug || nAdLoc === nLocSlug || nAdSub === nLocSlug ||
-            (nAdTown && (nAdTown.includes(nLocSlug) || nLocSlug.includes(nAdTown))) ||
-            (nAdSub && (nAdSub.includes(nLocSlug) || nLocSlug.includes(nAdSub))) ||
-            (nAdProv && (nAdProv.includes(nLocSlug) || nLocSlug.includes(nAdProv))) ||
-            (nAdAddr && nAdAddr.includes(nLocSlug));
+            const nAdProv = FAST_NORM(adProvLower);
+            const nAdProvName = FAST_NORM(ad.provinceName || '');
+            const nAdTown = FAST_NORM(ad.city || ad.town || ad.location || '');
+            const nAdSub = FAST_NORM(ad.suburb || '');
+            const nAdAddr = FAST_NORM(ad.address || '');
 
-          if (!slugMatch) {
-            const saMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) =>
-              FAST_NORM(sa.town) === nLocSlug || FAST_NORM(sa.suburb) === nLocSlug || FAST_NORM(sa.province) === nLocSlug
-            );
-            if (!saMatch) return false;
-          }
-        }
+            if (nLocSlug) {
+              const slugMatch =
+                nAdProv === nLocSlug || nAdProvName === nLocSlug ||
+                nAdTown === nLocSlug || nAdLoc === nLocSlug || nAdSub === nLocSlug ||
+                (nAdTown && (nAdTown.includes(nLocSlug) || nLocSlug.includes(nAdTown))) ||
+                (nAdSub && (nAdSub.includes(nLocSlug) || nLocSlug.includes(nAdSub))) ||
+                (nAdProv && (nAdProv.includes(nLocSlug) || nLocSlug.includes(nAdProv))) ||
+                (nAdAddr && nAdAddr.includes(nLocSlug));
 
-        if (nAddrParam) {
-          if (
-            !nAdAddr.includes(nAddrParam) && 
-            !nAddrParam.includes(nAdAddr) && 
-            !nAdTown.includes(nAddrParam) && 
-            !nAdSub.includes(nAddrParam) &&
-            adPostal !== addrParam
-          ) {
-            return false;
-          }
-        }
-        
-        if (nTargetProv && !isGlobal) {
-          const provMatch = adProvLower === targetProv || 
-                            nAdProv === nTargetProv || 
-                            nAdProvName === nTargetProv || 
-                            (nAdProv && (nAdProv.includes(nTargetProv) || nTargetProv.includes(nAdProv)));
-          if (!provMatch) {
-            const serviceProvMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
-              const sp = FAST_NORM(sa.province || '');
-              const spn = FAST_NORM(sa.provinceName || '');
-              return sp === nTargetProv || spn === nTargetProv || (sp && sp.includes(nTargetProv));
-            });
-            if (!serviceProvMatch) return false;
-          }
-        }
+              if (!slugMatch) {
+                const saMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) =>
+                  FAST_NORM(sa.town) === nLocSlug || FAST_NORM(sa.suburb) === nLocSlug || FAST_NORM(sa.province) === nLocSlug
+                );
+                if (!saMatch) return false;
+              }
+            }
 
-        if (nTownParam && !isGlobal) {
-          const townMatch = nAdTown === nTownParam || 
-                            nAdLoc === nTownParam ||
-                            nAdSub === nTownParam || 
-                            (nAdTown && (nAdTown.includes(nTownParam) || nTownParam.includes(nAdTown))) || 
-                            (nAdSub && nAdSub.includes(nTownParam)) ||
-                            (nAdAddr && nAdAddr.includes(nTownParam));
-          if (!townMatch) {
-            const serviceTownMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
-              const st = FAST_NORM(sa.town || '');
-              const ss = FAST_NORM(sa.suburb || '');
-              return st === nTownParam || ss === nTownParam || (st && st.includes(nTownParam)) || (ss && ss.includes(nTownParam));
-            });
-            if (!serviceTownMatch) return false;
-          }
-        }
+            if (nAddrParam) {
+              if (
+                !nAdAddr.includes(nAddrParam) && 
+                !nAddrParam.includes(nAdAddr) && 
+                !nAdTown.includes(nAddrParam) && 
+                !nAdSub.includes(nAddrParam) &&
+                adPostal !== addrParam
+              ) {
+                return false;
+              }
+            }
+            
+            if (nTargetProv) {
+              const provMatch = adProvLower === targetProv || 
+                                nAdProv === nTargetProv || 
+                                nAdProvName === nTargetProv || 
+                                (nAdProv && (nAdProv.includes(nTargetProv) || nTargetProv.includes(nAdProv)));
+              if (!provMatch) {
+                const serviceProvMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+                  const sp = FAST_NORM(sa.province || '');
+                  const spn = FAST_NORM(sa.provinceName || '');
+                  return sp === nTargetProv || spn === nTargetProv || (sp && sp.includes(nTargetProv));
+                });
+                if (!serviceProvMatch) return false;
+              }
+            }
 
-        if (nSubParam && !isGlobal) {
-          const subMatch = nAdSub === nSubParam || 
-                           (nAdSub && (nAdSub.includes(nSubParam) || nSubParam.includes(nAdSub))) || 
-                           (nAdTown && nAdTown.includes(nSubParam)) || 
-                           (nAdAddr && nAdAddr.includes(nSubParam));
-          if (!subMatch) {
-            const serviceSubMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
-              const ss = FAST_NORM(sa.suburb || '');
-              const st = FAST_NORM(sa.town || '');
-              return ss === nSubParam || (ss && ss.includes(nSubParam)) || st === nSubParam;
-            });
-            if (!serviceSubMatch) return false;
+            if (nTownParam) {
+              const townMatch = nAdTown === nTownParam || 
+                                nAdLoc === nTownParam ||
+                                nAdSub === nTownParam || 
+                                (nAdTown && (nAdTown.includes(nTownParam) || nTownParam.includes(nAdTown))) || 
+                                (nAdSub && nAdSub.includes(nTownParam)) ||
+                                (nAdAddr && nAdAddr.includes(nTownParam));
+              if (!townMatch) {
+                const serviceTownMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+                  const st = FAST_NORM(sa.town || '');
+                  const ss = FAST_NORM(sa.suburb || '');
+                  return st === nTownParam || ss === nTownParam || (st && st.includes(nTownParam)) || (ss && ss.includes(nTownParam));
+                });
+                if (!serviceTownMatch) return false;
+              }
+            }
+
+            if (nSubParam) {
+              const subMatch = nAdSub === nSubParam || 
+                               (nAdSub && (nAdSub.includes(nSubParam) || nSubParam.includes(nAdSub))) || 
+                               (nAdTown && nAdTown.includes(nSubParam)) || 
+                               (nAdAddr && nAdAddr.includes(nSubParam));
+              if (!subMatch) {
+                const serviceSubMatch = Array.isArray(ad.serviceAreas) && ad.serviceAreas.some((sa: any) => {
+                  const ss = FAST_NORM(sa.suburb || '');
+                  const st = FAST_NORM(sa.town || '');
+                  return ss === nSubParam || (ss && ss.includes(nSubParam)) || st === nSubParam;
+                });
+                if (!serviceSubMatch) return false;
+              }
+            }
           }
         }
 
@@ -1487,30 +1599,42 @@ export async function GET(req: Request) {
       ? verifiedCount
       : (filtered === indexed.allFreeAds)
         ? adminStats.verified
-        : filtered.reduce((acc: number, a: any) => acc + (a && (a.verified === true || a.adminApproved === true || a.isPremium === true || a.isSponsor === true) ? 1 : 0), 0);
+        : (adminStats.active > 0 && adminStats.approved === adminStats.active)
+          ? filteredTotal
+          : filtered.reduce((acc: number, a: any) => acc + (a && (a.verified === true || a.adminApproved === true || a.isPremium === true || a.isSponsor === true) ? 1 : 0), 0);
 
-    // Handle Pagination slice
+    // Handle Pagination slice (stream in fast 250-ad lite chunks when noLimit is active on huge result sets so V8 & mobile browsers load in <10ms)
     let adsToReturn = filtered;
     let totalPages = 1;
-    let activePage = 1;
+    let activePage = page || 1;
     let activePageSize = filteredTotal;
 
     const noLimit = url.searchParams.get('noLimit') === 'true' || url.searchParams.get('unlimited') === 'true' || isLimitAll || Boolean(pageSize && pageSize >= 999999);
     if (noLimit) {
-      adsToReturn = filtered;
+      const SAFE_STREAM_CHUNK = 250;
+      if (filteredTotal > SAFE_STREAM_CHUNK) {
+        const startIdx = (activePage - 1) * SAFE_STREAM_CHUNK;
+        adsToReturn = filtered.slice(startIdx, startIdx + SAFE_STREAM_CHUNK);
+        activePageSize = SAFE_STREAM_CHUNK;
+        totalPages = Math.max(1, Math.ceil(filteredTotal / SAFE_STREAM_CHUNK));
+      } else {
+        adsToReturn = filtered;
+      }
     } else if (page && pageSize) {
+      const safePageSize = Math.min(pageSize, 500);
       activePage = page;
-      activePageSize = pageSize;
-      totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
-      const startIndex = (page - 1) * pageSize;
-      adsToReturn = filtered.slice(startIndex, startIndex + pageSize);
+      activePageSize = safePageSize;
+      totalPages = Math.max(1, Math.ceil(filteredTotal / safePageSize));
+      const startIndex = (page - 1) * safePageSize;
+      adsToReturn = filtered.slice(startIndex, startIndex + safePageSize);
     } else if (limitNum && !isNaN(limitNum)) {
-      adsToReturn = filtered.slice(0, limitNum);
+      adsToReturn = filtered.slice(0, Math.min(limitNum, 500));
     } else if (!isFull && !isLimitAll && filtered.length > 100) {
       adsToReturn = filtered.slice(0, 100);
     }
 
     const isLightweightDirectoryPage = Boolean(page && pageSize && !includeInactive && !isFull);
+    const liteAdsOut = isLightweightDirectoryPage ? adsToReturn.map(toLitePublicAd) : adsToReturn;
 
     const responsePayload: any = isLightweightDirectoryPage
       ? {
@@ -1519,12 +1643,11 @@ export async function GET(req: Request) {
           verifiedCount: filteredVerified,
           globalTotalAdsCount: totalAdsCount,
           globalVerifiedCount: verifiedCount,
-          adminStats,
           page: activePage,
           pageSize: activePageSize,
           totalPages,
-          ads: adsToReturn,
-          ...(includeFeatured ? { featuredAds: indexed.allFeaturedAds } : {})
+          ads: liteAdsOut,
+          ...(includeFeatured ? { featuredAds: indexed.allFeaturedAds.slice(0, 48).map(toLitePublicAd) } : {})
         }
       : {
           banners: baseData.banners || [],
@@ -1548,8 +1671,9 @@ export async function GET(req: Request) {
           ads: adsToReturn
         };
 
-    if (!isFull && !includeInactive) {
-      if (indexed.queryCache.size > 250) {
+    // Only cache small/medium responses in RAM queryCache to prevent memory bloat on Contabo VPS
+    if (!isFull && !includeInactive && liteAdsOut.length <= 300) {
+      if (indexed.queryCache.size > 150) {
         indexed.queryCache.clear();
       }
       indexed.queryCache.set(queryCacheKey, responsePayload);
@@ -1835,17 +1959,37 @@ export async function POST(req: Request) {
       }
     } else {
       Object.assign(newData, body);
+      let deletedFiltered = false;
       if (Array.isArray(body.deletedAds) && Array.isArray(newData.ads)) {
         const delSet = new Set(body.deletedAds);
+        const beforeLen = newData.ads.length;
         newData.ads = newData.ads.filter((a: any) => a && a.id && !delSet.has(a.id));
+        if (newData.ads.length !== beforeLen) deletedFiltered = true;
+      }
+      if (!deletedFiltered) {
+        newData.updatedAt = Date.now();
+        saveLocalDataNoCache(newData, false, true);
+        const currentIndexed = getIndexedDataset(newData);
+        return NextResponse.json({
+          success: true,
+          totalAdsCount: currentIndexed.allActiveAds.length,
+          verifiedCount: currentIndexed.adminStats.approved,
+          globalTotalAdsCount: currentIndexed.allActiveAds.length,
+          globalVerifiedCount: currentIndexed.adminStats.approved,
+          adminStats: currentIndexed.adminStats
+        }, {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+          }
+        });
       }
     }
 
     newData.updatedAt = Date.now();
     globalRef.adminStatsCache = null;
-    const isPurgeAction = body.adminAction === 'bulk_purge' || body.action === 'clear_all_ads' || Boolean(body.clearAllAds) || Boolean(body.deleteAdId);
-    saveLocalDataNoCache(newData, isPurgeAction);
-    if (isPurgeAction) {
+    const isFullPurgeAction = body.adminAction === 'bulk_purge' || body.action === 'clear_all_ads' || Boolean(body.clearAllAds);
+    saveLocalDataNoCache(newData, isFullPurgeAction, false);
+    if (isFullPurgeAction) {
       await flushStorageToDiskAsync(newData, true);
       globalRef.indexedDataset = buildIndexedDatasetSync(newData);
       globalRef.adminStatsCache = globalRef.indexedDataset.adminStats;

@@ -1,5 +1,6 @@
 import { isCustomerReviewOrGarbage } from "./clean-ad";
 import { detectLocationFromPhoneAndText } from "./location-detector";
+import { resolveAdGeographyAndCategory, normalizeProvinceSlug } from "./ad-normalizer";
 
 /**
  * Standard CSV line parser that properly handles:
@@ -445,7 +446,7 @@ export function parseCsvRowToRecord(
   let whatsapp = "";
 
   const phoneHeaders = [
-    "phone number", "phone", "cell", "mobile", "contact number", "contact", "cellphone", "cell phone", "usdlk"
+    "phone / cell", "phone/cell", "phone number", "phone", "cell", "mobile", "contact number", "contact", "cellphone", "cell phone", "usdlk"
   ];
   for (const ph of phoneHeaders) {
     if (row[ph]) {
@@ -458,7 +459,7 @@ export function parseCsvRowToRecord(
   }
 
   const telHeaders = [
-    "telephone number", "telephone", "telephone / mobile", "tel number", "tel", "landline", "office number", "work phone"
+    "telephone / landline", "telephone/landline", "telephone number", "telephone", "telephone / mobile", "tel number", "tel", "landline", "office number", "work phone"
   ];
   for (const th of telHeaders) {
     if (row[th]) {
@@ -506,6 +507,15 @@ export function parseCsvRowToRecord(
   if (!telephone && resolvedPrimaryPhone) telephone = resolvedPrimaryPhone;
 
   // 4. Category & Category Code
+  // If admin explicitly chose a category (not "Other", "auto", or "General Business Services"), prioritize the admin's chosen category
+  const hasExplicitAdminCategory = Boolean(
+    defaultCategory &&
+    defaultCategory !== "Other" &&
+    defaultCategory !== "auto" &&
+    defaultCategory !== "General" &&
+    defaultCategory !== "General Business Services"
+  );
+
   let category = "";
   const catHeaders = ["category", "sub category", "subcategory", "industry", "type", "trade", "sector", "business type", "w4efsd"];
   for (const ch of catHeaders) {
@@ -522,20 +532,27 @@ export function parseCsvRowToRecord(
       if (!category) category = fnMatch[3].replace(/_/g, " ").trim();
     }
   }
-  if (!category) {
-    category = defaultCategory || "General Business Services";
+  if (hasExplicitAdminCategory) {
+    category = defaultCategory;
+    const codeMatch = defaultCategory.match(/^(\d+\.\d+)\s+/);
+    if (codeMatch) {
+      categoryCode = codeMatch[1];
+    }
+  } else if (!category) {
+    category = defaultCategory && defaultCategory !== "auto" ? defaultCategory : "General Business Services";
   }
 
   // 5. Explicit Suburb, City/Town, Province, and Postal Code columns
   const explicitSuburb = (row["suburb"] || row["area"] || row["neighbourhood"] || row["neighborhood"] || "").trim();
-  let city = (row["city / town"] || row["city"] || row["town"] || row["municipality"] || explicitSuburb || "").trim();
-  let province = (row["province"] || row["state"] || row["region"] || "").trim().toLowerCase();
+  let city = (row["town / city"] || row["town/city"] || row["city / town"] || row["city/town"] || row["city"] || row["town"] || row["municipality"] || explicitSuburb || "").trim();
+  const rawCsvProvince = (row["province"] || row["state"] || row["region"] || "").trim();
+  let province = normalizeProvinceSlug(rawCsvProvince) || "";
   let postalCode = (row["postal code"] || row["postalcode"] || row["postcode"] || row["zip"] || row["zip code"] || "").trim();
 
   // 6. Physical / Street Address (Minimum Requirement #2)
   let address = "";
   const explicitAddressHeaders = [
-    "address", "street address", "full address", "physical address", "street",
+    "full street address", "address", "street address", "full address", "physical address", "business address", "street",
     "formatted address", "site address", "address line 1", "address line", "vicinity"
   ];
   for (const ah of explicitAddressHeaders) {
@@ -697,7 +714,7 @@ export function parseCsvRowToRecord(
 
   // Website
   let website = "";
-  const webHeaders = ["website link", "website", "web", "url", "site", "company website", "homepage"];
+  const webHeaders = ["website url", "web url", "website link", "website", "web", "url", "site", "company website", "homepage"];
   for (const wh of webHeaders) {
     if (row[wh] && !row[wh].includes("google.com/maps") && (row[wh].startsWith("http") || row[wh].includes("www.") || row[wh].includes(".co.za") || row[wh].includes(".com"))) {
       website = row[wh].trim();
@@ -727,7 +744,7 @@ export function parseCsvRowToRecord(
 
   // About business / Description
   let description = "";
-  const descHeaders = ["about the business", "about business", "about", "description", "about / description", "summary", "details", "overview"];
+  const descHeaders = ["about / description", "about the business", "about business", "about", "description", "summary", "details", "overview"];
   for (const dh of descHeaders) {
     if (row[dh] && !isScraperStatusOrGarbage(row[dh])) {
       description = row[dh].trim();
@@ -739,33 +756,64 @@ export function parseCsvRowToRecord(
   }
 
   // Social media links (X, TikTok, Facebook, Instagram, YouTube, LinkedIn, Social media links)
-  const twitter = (row["x"] || row["x / twitter url"] || row["twitter"] || row["twitter url"] || row["socialx"] || "").trim();
-  const tiktok = (row["tiktok"] || row["tiktok url"] || row["socialtiktok"] || "").trim();
-  const facebook = (row["facebook"] || row["facebook url"] || row["socialfacebook"] || "").trim();
-  const instagram = (row["instagram"] || row["instagram url"] || row["socialinstagram"] || "").trim();
-  const youtube = (row["youtube"] || row["youtube url"] || row["socialyoutube"] || "").trim();
-  const linkedin = (row["linkedin"] || row["linkedin url"] || row["sociallinkedin"] || "").trim();
-  const rawSocialLinks = (row["social media links"] || row["social links"] || row["other social links"] || row["socials"] || "").trim();
+  const twitter = (row["x / twitter url"] || row["x/twitter url"] || row["x"] || row["twitter"] || row["twitter url"] || row["socialx"] || "").trim();
+  const tiktok = (row["tiktok url"] || row["tiktok"] || row["socialtiktok"] || "").trim();
+  const facebook = (row["facebook url"] || row["facebook"] || row["socialfacebook"] || "").trim();
+  const instagram = (row["instagram url"] || row["instagram"] || row["socialinstagram"] || "").trim();
+  const youtube = (row["youtube url"] || row["youtube"] || row["socialyoutube"] || "").trim();
+  const linkedin = (row["linkedin url"] || row["linkedin"] || row["sociallinkedin"] || "").trim();
+  const rawSocialLinks = (row["other social links"] || row["social media links"] || row["social links"] || row["socials"] || "").trim();
   const socialLinks = rawSocialLinks || [twitter, tiktok, facebook, instagram, youtube, linkedin].filter(Boolean).join(" | ");
 
-  // 8. Province & City Location Detection
-  const locDetection = detectLocationFromPhoneAndText(
-    phone || "",
-    `${title || ""} ${address || ""} ${explicitSuburb || ""} ${city || ""} ${province || ""}`,
-    defaultProvince,
-    coords || undefined
-  );
+  // 8. Province, Town/City & Suburb Auto-Resolution from CSV columns, Suburb/Town lookup table, Postal Code, Address & Phone
+  const effectiveFallbackProv = (!defaultProvince || defaultProvince === "all") ? "gauteng" : defaultProvince;
+  const geoCandidate: any = {
+    title,
+    category,
+    categoryCode,
+    province: province || "",
+    city: city || "",
+    town: city || "",
+    location: city || "",
+    suburb: explicitSuburb || "",
+    postalCode: postalCode || "",
+    address: address || "",
+    phone: phone || ""
+  };
+  resolveAdGeographyAndCategory(geoCandidate);
 
-  if (!province || (province === "gauteng" && locDetection.province !== "gauteng")) {
-    province = locDetection.province || defaultProvince || "gauteng";
+  if (!province && geoCandidate.province) {
+    province = geoCandidate.province;
   }
-  if (!city || (city === "Johannesburg" && locDetection.city !== "Johannesburg")) {
-    city = locDetection.city || "Johannesburg";
+  const resolvedSuburb = explicitSuburb || geoCandidate.suburb || "";
+  if (!city && geoCandidate.city) {
+    city = geoCandidate.city;
+  }
+  if (!postalCode && geoCandidate.postalCode) {
+    postalCode = geoCandidate.postalCode;
+  }
+
+  // If province was still not explicitly in the CSV row, detect from phone area code / address / town text
+  if (!rawCsvProvince) {
+    const locDetection = detectLocationFromPhoneAndText(
+      phone || "",
+      `${title || ""} ${address || ""} ${resolvedSuburb || ""} ${city || ""}`,
+      effectiveFallbackProv,
+      coords || undefined
+    );
+    if (!province || (province === "gauteng" && locDetection.province && locDetection.province !== "gauteng")) {
+      province = locDetection.province || effectiveFallbackProv;
+    }
+    if (!city || (city === "Johannesburg" && locDetection.city && locDetection.city !== "Johannesburg")) {
+      city = locDetection.city || "Johannesburg";
+    }
+  } else if (!province) {
+    province = effectiveFallbackProv;
   }
 
   // Construct fallback address if row only had suburb/city/province columns
-  if (!address && (explicitSuburb || city)) {
-    const addrParts = [explicitSuburb, city, postalCode, province].filter(Boolean);
+  if (!address && (resolvedSuburb || city)) {
+    const addrParts = [resolvedSuburb, city, postalCode, province].filter(Boolean);
     address = addrParts.join(", ");
   }
 
@@ -776,11 +824,11 @@ export function parseCsvRowToRecord(
     telephone: (telephone || phone || "").substring(0, 50).trim(),
     whatsapp: (whatsapp || "").substring(0, 50).trim(),
     email: (email || "").substring(0, 120).trim(),
-    category: (category || defaultCategory || "General Business Services").trim(),
-    categoryCode: categoryCode || undefined,
-    province: (province || "gauteng").trim(),
+    category: (hasExplicitAdminCategory ? defaultCategory : (geoCandidate.category || category || defaultCategory || "General Business Services")).trim(),
+    categoryCode: categoryCode || geoCandidate.categoryCode || undefined,
+    province: (province || effectiveFallbackProv || "gauteng").trim(),
     city: (city || "Johannesburg").trim(),
-    suburb: explicitSuburb || undefined,
+    suburb: resolvedSuburb || undefined,
     postalCode: postalCode || undefined,
     tradingHours: (tradingHours || "").substring(0, 200).trim(),
     servicesOffered: (servicesOffered || "").substring(0, 500).trim(),

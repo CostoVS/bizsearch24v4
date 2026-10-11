@@ -184,51 +184,72 @@ export default async function LocationPage({ params }: Props) {
   const nCustomCity = customSlugMatch ? FAST_NORM(customSlugMatch.city || '') : '';
   const nCustomProv = customSlugMatch ? FAST_NORM(customSlugMatch.province || '') : '';
 
-  // Fast O(1) SSR lookup via pre-built globalRef.indexedDataset maps when available
+  // Fast O(1) SSR lookup via pre-built globalRef.indexedDataset maps
   const globalRef = global as any;
+  if (!globalRef.indexedDataset && typeof globalRef.getIndexedDataset === 'function' && globalRef.storageCache) {
+    try {
+      globalRef.getIndexedDataset(globalRef.storageCache);
+    } catch (e) {}
+  }
   const ds = globalRef.indexedDataset;
   const natPool: any[] = ds?.byProvinceActive?.get('national') || [];
-  let adsForLocation: any[] = [];
+  let initialAdsSlice: any[] = [];
+  let totalLocationCount = 0;
   let usedFastIndex = false;
 
   if (ds && !customSlugMatch) {
     if (type === 'Province') {
-      const pList = ds.byProvinceActive?.get(targetSlug) || ds.byProvinceActive?.get(targetNorm);
-      if (pList) {
-        adsForLocation = natPool.length > 0 && targetSlug !== 'national' ? [...pList, ...natPool] : pList;
-        usedFastIndex = true;
-      }
+      const pList: any[] = ds.byProvinceActive?.get(targetSlug) || ds.byProvinceActive?.get(targetNorm) || [];
+      const addNat = targetSlug !== 'national' && natPool.length > 0;
+      totalLocationCount = pList.length + (addNat ? natPool.length : 0);
+      initialAdsSlice = pList.length >= 48
+        ? pList.slice(0, 48)
+        : (addNat ? [...pList, ...natPool.slice(0, 48 - pList.length)] : pList.slice(0, 48));
+      usedFastIndex = true;
     } else if (type === 'Suburb') {
-      const sList = (nSpecificSub && ds.bySuburbActive?.get(nSpecificSub)) || ds.bySuburbActive?.get(targetNorm);
-      if (sList) {
-        adsForLocation = natPool.length > 0 ? [...sList, ...natPool] : sList;
-        usedFastIndex = true;
-      }
+      const sList: any[] = (nSpecificSub && ds.bySuburbActive?.get(nSpecificSub)) || ds.bySuburbActive?.get(targetNorm) || [];
+      totalLocationCount = sList.length + natPool.length;
+      initialAdsSlice = sList.length >= 48
+        ? sList.slice(0, 48)
+        : (natPool.length > 0 ? [...sList, ...natPool.slice(0, 48 - sList.length)] : sList.slice(0, 48));
+      usedFastIndex = true;
     } else {
-      const tList = ds.byTownActive?.get(targetNorm) || ds.byTownActive?.get(nProperName) || ds.bySuburbActive?.get(targetNorm);
-      if (tList) {
-        adsForLocation = natPool.length > 0 ? [...tList, ...natPool] : tList;
-        usedFastIndex = true;
-      }
+      const tList: any[] = ds.byTownActive?.get(targetNorm) || ds.byTownActive?.get(nProperName) || ds.bySuburbActive?.get(targetNorm) || [];
+      totalLocationCount = tList.length + natPool.length;
+      initialAdsSlice = tList.length >= 48
+        ? tList.slice(0, 48)
+        : (natPool.length > 0 ? [...tList, ...natPool.slice(0, 48 - tList.length)] : tList.slice(0, 48));
+      usedFastIndex = true;
     }
+  } else if (ds && customSlugMatch) {
+    const cList: any[] =
+      (nCustomCity && (ds.byTownActive?.get(nCustomCity) || ds.bySuburbActive?.get(nCustomCity))) ||
+      (nCustomProv && ds.byProvinceActive?.get(slugify(customSlugMatch.province || ''))) ||
+      [];
+    totalLocationCount = cList.length + natPool.length;
+    initialAdsSlice = cList.length >= 48
+      ? cList.slice(0, 48)
+      : (natPool.length > 0 ? [...cList, ...natPool.slice(0, 48 - cList.length)] : cList.slice(0, 48));
+    usedFastIndex = true;
   }
 
   if (!usedFastIndex) {
+    const adsForLocation: any[] = [];
     const candidatePool: any[] =
       (targetProvinceSlug && ds?.byProvinceActive?.has(targetProvinceSlug))
         ? ds.byProvinceActive.get(targetProvinceSlug)
         : allStoredAds;
 
-    for (let i = 0; i < candidatePool.length; i++) {
+    const maxScan = Math.min(candidatePool.length, 25000);
+    for (let i = 0; i < maxScan; i++) {
       const ad = candidatePool[i];
       if (!ad || ad.isActive === false) continue;
 
-      const nAdProv = ad._provNorm ?? FAST_NORM(ad.province || '');
-      const nAdTown = ad._townNorm ?? FAST_NORM(ad.city || ad.town || ad.location || '');
-      const nAdLoc = ad._locNorm ?? FAST_NORM(ad.location || '');
-      const nAdSub = ad._subNorm ?? FAST_NORM(ad.suburb || '');
-      const nAdAddr = ad._addrNorm ?? FAST_NORM(ad.address || '');
-      const isGlobalLocation = ad._provLower === 'national' || nAdLoc === 'alllocations' || nAdProv === 'national';
+      const nAdProv = FAST_NORM(ad.province || '');
+      const nAdTown = FAST_NORM(ad.city || ad.town || ad.location || '');
+      const nAdLoc = FAST_NORM(ad.location || '');
+      const nAdSub = FAST_NORM(ad.suburb || '');
+      const isGlobalLocation = nAdProv === 'national' || nAdLoc === 'alllocations';
 
       if (isGlobalLocation) {
         adsForLocation.push(ad);
@@ -247,50 +268,25 @@ export default async function LocationPage({ params }: Props) {
       }
 
       if (type === 'Province') {
-        if (ad._provLower === targetSlug || nAdProv === targetNorm || nAdProv === nProperName) {
+        if (nAdProv === targetNorm || nAdProv === nProperName) {
           adsForLocation.push(ad);
         }
         continue;
       }
 
       if (type === 'Suburb') {
-        if (
-          nAdSub === targetNorm ||
-          (nSpecificSub && (
-            nAdSub === nSpecificSub ||
-            nAdLoc.includes(nSpecificSub) ||
-            nAdAddr.includes(nSpecificSub)
-          ))
-        ) {
+        if (nAdSub === targetNorm || (nSpecificSub && nAdSub === nSpecificSub)) {
           adsForLocation.push(ad);
         }
         continue;
       }
 
-      // Town-level or generic location matching
-      if (
-        nAdTown === targetNorm ||
-        nAdLoc === targetNorm ||
-        nAdSub === targetNorm ||
-        nAdTown === nProperName ||
-        (targetNorm.length > 3 && (nAdTown.includes(targetNorm) || nAdAddr.includes(targetNorm)))
-      ) {
+      if (nAdTown === targetNorm || nAdLoc === targetNorm || nAdSub === targetNorm || nAdTown === nProperName) {
         adsForLocation.push(ad);
       }
     }
-
-    adsForLocation.sort((a, b) => {
-      const score = (item: any) => {
-        if (item.isSponsor) return 100;
-        if (item.isSpotlight) return 90;
-        if (item.isBannerPlacement) return 80;
-        if (item.isVideoPromo) return 70;
-        if (item.isPremium) return 60;
-        if (item.verified) return 40;
-        return 10;
-      };
-      return score(b) - score(a);
-    });
+    totalLocationCount = adsForLocation.length;
+    initialAdsSlice = adsForLocation.slice(0, 48);
   }
 
   return (
@@ -310,7 +306,7 @@ export default async function LocationPage({ params }: Props) {
         </Link>
       </div>
 
-      <LocationListings ads={adsForLocation.slice(0, 48)} properName={properName} initialTotalCount={adsForLocation.length} />
+      <LocationListings ads={initialAdsSlice} properName={properName} initialTotalCount={totalLocationCount} />
 
       {/* Geolocated Visual Map Component */}
       <div className="mt-12 w-full h-[420px] rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative z-0">

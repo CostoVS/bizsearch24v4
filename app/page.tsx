@@ -455,13 +455,15 @@ export default function HomePage() {
                             🔒 Locked Paid Details (Level 2 — R199/mo)
                           </span>
                         </div>
-                        <div className="blur-[4px] select-none pointer-events-none opacity-60 text-[10px] space-y-1">
-                          <AdDescription description={ad.description || `${ad.title} in ${ad.location}`} />
-                          <p className="font-medium text-slate-500">
+                        <div className="blur-[2px] select-none pointer-events-none opacity-55 text-[10px] space-y-1">
+                          <p className="line-clamp-2 text-slate-600">
+                            {ad.description || `${ad.title} in ${ad.location}`}
+                          </p>
+                          <p className="font-medium text-slate-500 truncate">
                             Services: {ad.servicesOffered || ad.category} | Hours: {(ad as any).tradingHours || '08:00 - 17:00'}
                           </p>
-                          <p className="font-medium text-slate-500">
-                            Website • Email • X • Facebook • Instagram • YouTube • TikTok
+                          <p className="font-medium text-slate-500 truncate">
+                            Website • Email • Social Links Locked
                           </p>
                         </div>
                       </div>

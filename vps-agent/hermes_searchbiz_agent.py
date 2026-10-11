@@ -9413,17 +9413,27 @@ def _execute_single_subcategory_sweep(
             if staged_lines:
                 now_ts_ms = int(time.time() * 1000)
                 with _DIRECT_DB_LOCK:
+                    written_inodes = set()
                     for db_cand in [
                         "/home/thehightable/bizsearch24v4/data/db.json",
                         "/home/thehightable/bizsearch24v4/.data/db.json"
                     ]:
                         if os.path.exists(os.path.dirname(db_cand)):
+                            try:
+                                if os.path.exists(db_cand):
+                                    ino = os.stat(db_cand).st_ino
+                                    if ino in written_inodes:
+                                        continue
+                                    written_inodes.add(ino)
+                            except Exception:
+                                pass
                             _append_ndjson_records_to_db_file(db_cand, staged_lines, now_ts_ms)
                 total_ads_placed = len(staged_lines)
-                try:
-                    api_request("/api/storage?reload=true", method="GET")
-                except Exception:
-                    pass
+                if pool.mode != "mega_swarm":
+                    try:
+                        api_request("/api/storage?reload=true", method="GET")
+                    except Exception:
+                        pass
             del staged_lines
     except Exception as live_stream_err:
         logger.debug(f"[SubAgent-{worker_id}] Live category disk stream note: {live_stream_err}")
@@ -11644,24 +11654,36 @@ def extract_social_media_dict(social_links_str: str, row_getter=None) -> dict:
     return res
 
 _CAT_NAME_TO_CODE_MAP: Dict[str, str] = {}
+_CODE_TO_CAT_NAME_MAP: Dict[str, str] = {}
+
+def _ensure_cat_code_maps_populated():
+    if _CAT_NAME_TO_CODE_MAP and _CODE_TO_CAT_NAME_MAP:
+        return
+    try:
+        for raw_sub in ALL_145_SUBCATEGORIES:
+            m_sub = re.match(r'^(\d+\.\d+)\s*(.*)$', str(raw_sub).strip())
+            if m_sub:
+                c_code = m_sub.group(1).strip()
+                c_name = m_sub.group(2).strip()
+                if c_code and c_name:
+                    _CODE_TO_CAT_NAME_MAP[c_code] = c_name
+                    _CAT_NAME_TO_CODE_MAP[c_name.lower()] = c_code
+                    _CAT_NAME_TO_CODE_MAP[re.sub(r'[^a-z0-9]', '', c_name.lower())] = c_code
+                    _CAT_NAME_TO_CODE_MAP[raw_sub.strip().lower()] = c_code
+    except Exception:
+        pass
 
 def resolve_category_code_fast(cat_name: str, fallback_code: str = "") -> str:
     """Fast O(1) lookup of canonical SearchBiz categoryCode (1.1 - 20.15) from category name."""
     if fallback_code:
         return fallback_code
-    if not _CAT_NAME_TO_CODE_MAP:
-        try:
-            for item in SUBCATEGORIES_313_LIST:
-                c_code = str(item.get("code") or "").strip()
-                c_name = str(item.get("name") or "").strip()
-                if c_code and c_name:
-                    _CAT_NAME_TO_CODE_MAP[c_name.lower()] = c_code
-                    _CAT_NAME_TO_CODE_MAP[re.sub(r'[^a-z0-9]', '', c_name.lower())] = c_code
-        except Exception:
-            pass
+    _ensure_cat_code_maps_populated()
     if not cat_name:
         return "20.1"
     low = cat_name.strip().lower()
+    m_prefix = re.match(r'^(\d+\.\d+)\b', low)
+    if m_prefix and m_prefix.group(1) in _CODE_TO_CAT_NAME_MAP:
+        return m_prefix.group(1)
     return (
         _CAT_NAME_TO_CODE_MAP.get(low)
         or _CAT_NAME_TO_CODE_MAP.get(re.sub(r'[^a-z0-9]', '', low))
@@ -11672,16 +11694,13 @@ def infer_category_from_csv_filename(csv_path: str, default_cat_name: str = "", 
     """Infers exact SearchBiz category name and code from any CSV filename."""
     if default_cat_name and default_cat_code:
         return default_cat_name, default_cat_code
+    _ensure_cat_code_maps_populated()
     fname = os.path.basename(csv_path or "")
     m_code = re.search(r'(?:SearchBiz_National_)?(\d{1,2})[._](\d{1,2})_(.+?)(?:_Consolidated)?\.csv$', fname, re.I)
     if m_code:
         c_code = f"{int(m_code.group(1))}.{int(m_code.group(2))}"
-        try:
-            for item in SUBCATEGORIES_313_LIST:
-                if item.get("code") == c_code:
-                    return item.get("name", default_cat_name or "General Services"), c_code
-        except Exception:
-            pass
+        if c_code in _CODE_TO_CAT_NAME_MAP:
+            return _CODE_TO_CAT_NAME_MAP[c_code], c_code
         raw_label = m_code.group(3).replace("_", " ")
         matched_cat = match_searchbiz_category(raw_label)
         return matched_cat, c_code
@@ -12488,10 +12507,12 @@ def _build_compact_searchbiz_ad(item: dict, seq_num: int, ts_ms: int, now_iso: s
             _CAT_RESOLVE_CACHE[raw_c] = clean_cat
         cat_code = str(item.get("categoryCode") or item.get("category_code") or "").strip() or resolve_category_code_fast(clean_cat)
 
-    comp_key = hash((title.lower(), town.lower(), (suburb or town).lower(), raw_addr[:24].lower(), primary_phone[-9:]))
-    if comp_key in seen_hashes:
+    comp_key_1 = hash((title.lower(), town.lower(), (suburb or town).lower(), raw_addr[:24].lower(), primary_phone[-9:]))
+    comp_key_2 = hash(("l1_tsc", title.lower(), (suburb or town).lower(), cat_code))
+    if comp_key_1 in seen_hashes or comp_key_2 in seen_hashes:
         return "DUPLICATE", None
-    seen_hashes.add(comp_key)
+    seen_hashes.add(comp_key_1)
+    seen_hashes.add(comp_key_2)
 
     final_suburb = suburb or town
     final_addr = raw_addr or f"{final_suburb}, {town}, {prov_name}, {postal_code}, South Africa"

@@ -43,21 +43,22 @@ export default function LocationListings({ ads: propAds, properName, initialTota
   const [serverTotalCount, setServerTotalCount] = useState<number | null>(typeof initialTotalCount === 'number' ? initialTotalCount : null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(999999);
-  const [visibleLimit, setVisibleLimit] = useState<number>(120);
+  const [visibleLimit, setVisibleLimit] = useState<number>(48);
   const listingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCurrentPage(1);
-    setVisibleLimit(120);
+    setVisibleLimit(48);
   }, [properName]);
 
   useEffect(() => {
     let active = true;
+    const needsMoreThanSsr = Boolean(propAds && visibleLimit > propAds.length);
     const loadAndFilter = async (forceFetch = false) => {
-      // If SSR already provided all ads for this location and user is on page 1, use SSR slice immediately without a redundant round-trip
+      // If SSR already provided the initial slice (or all ads) for this location on page 1, render immediately with ZERO extra network round-trip!
       const totalKnown = typeof initialTotalCount === 'number' ? initialTotalCount : (propAds ? propAds.length : 0);
-      if (!forceFetch && currentPage === 1 && propAds && propAds.length > 0 && propAds.length >= totalKnown && pageSize >= totalKnown) {
-        setServerAds(null);
+      if (!forceFetch && currentPage === 1 && propAds && (!needsMoreThanSsr || propAds.length >= totalKnown) && (propAds.length >= 48 || (totalKnown > 0 && propAds.length >= totalKnown))) {
+        setServerAds(propAds);
         setFilteredAds(propAds);
         if (typeof initialTotalCount === 'number') {
           setServerTotalCount(initialTotalCount);
@@ -88,8 +89,22 @@ export default function LocationListings({ ads: propAds, properName, initialTota
           if (!active || !data) return;
           if (Array.isArray(data.ads)) {
             const valid = (data.ads as Ad[]).filter(ad => ad && (ad as any).isActive !== false);
-            setServerAds(valid);
-            setFilteredAds(valid);
+            if (pageSize >= 999999 && currentPage > 1) {
+              setServerAds(prev => {
+                const existing = prev || [];
+                const seen = new Set(existing.map((a: any) => a.id));
+                const fresh = valid.filter((a: any) => !seen.has(a.id));
+                return [...existing, ...fresh];
+              });
+              setFilteredAds(prev => {
+                const seen = new Set(prev.map((a: any) => a.id));
+                const fresh = valid.filter((a: any) => !seen.has(a.id));
+                return [...prev, ...fresh];
+              });
+            } else {
+              setServerAds(valid);
+              setFilteredAds(valid);
+            }
           }
           if (typeof data.totalAdsCount === 'number') {
             setServerTotalCount(data.totalAdsCount);
@@ -106,7 +121,7 @@ export default function LocationListings({ ads: propAds, properName, initialTota
       active = false;
       window.removeEventListener("searchbiz_ads_updated", handleAdsUpdated);
     };
-  }, [properName, currentPage, pageSize, propAds, initialTotalCount]);
+  }, [properName, currentPage, pageSize, propAds, initialTotalCount, visibleLimit > 48]);
 
   // Sort them so Positions ("top", "middle", "bottom") and standard Priority are honored
   const sortedAds = sortAdsWithPositions(serverAds !== null ? serverAds : filteredAds);
@@ -272,9 +287,11 @@ export default function LocationListings({ ads: propAds, properName, initialTota
                           Admin Unlock
                         </span>
                       </div>
-                      <div className="blur-[5px] select-none pointer-events-none opacity-60 text-xs space-y-1.5">
-                        <AdDescription description={item.description || `${item.title} in ${item.location}`} />
-                        <p className="font-medium text-slate-500">
+                      <div className="blur-[2px] select-none pointer-events-none opacity-55 text-xs space-y-1">
+                        <p className="line-clamp-2 text-slate-600">
+                          {item.description || `${item.title} in ${item.location}`}
+                        </p>
+                        <p className="font-medium text-slate-500 truncate">
                           Services: {item.servicesOffered || item.category} | Hours, Website, Socials &amp; Email Locked
                         </p>
                       </div>
@@ -340,22 +357,33 @@ export default function LocationListings({ ads: propAds, properName, initialTota
           </div>
 
           {/* Progressive Load More for All Mode */}
-          {pageSize >= 999999 && paginatedAds.length > visibleLimit && (
+          {pageSize >= 999999 && (paginatedAds.length > visibleLimit || totalLocationCount > paginatedAds.length) && (
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <span className="text-xs font-bold text-slate-600">
                 Displaying <span className="text-emerald-700 font-extrabold">{displayedAds.length.toLocaleString()}</span> of <span className="text-slate-900 font-extrabold">{totalLocationCount.toLocaleString()}</span> listings
               </span>
               <button
-                onClick={() => setVisibleLimit(prev => prev + 240)}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition"
+                onClick={() => {
+                  const nextLim = visibleLimit + 120;
+                  setVisibleLimit(nextLim);
+                  if (nextLim > paginatedAds.length && paginatedAds.length < totalLocationCount) {
+                    setCurrentPage(prev => (prev === 1 && paginatedAds.length <= 48 ? 1 : prev + 1));
+                  }
+                }}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
               >
-                Load Next 240 Listings
+                Load Next 120 Listings
               </button>
               <button
-                onClick={() => setVisibleLimit(paginatedAds.length)}
-                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-sm transition"
+                onClick={() => {
+                  setVisibleLimit(paginatedAds.length + 250);
+                  if (paginatedAds.length < totalLocationCount) {
+                    setCurrentPage(prev => prev + 1);
+                  }
+                }}
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
               >
-                Render All {paginatedAds.length.toLocaleString()} Instantly
+                Load Next 250 Batch Instantly
               </button>
             </div>
           )}

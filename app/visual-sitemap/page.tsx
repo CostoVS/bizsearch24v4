@@ -155,7 +155,7 @@ export default async function SitemapPage() {
                 : 0;
 
               return (
-                <div key={prov.slug} id={prov.slug} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 animate-fade-in scroll-mt-24">
+                <div key={prov.slug} id={prov.slug} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 600px' }} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 animate-fade-in scroll-mt-24">
                   <Link prefetch={false} href={`/${prov.slug}`} className="text-xl font-bold text-slate-900 hover:text-emerald-600 mb-6 inline-block transition-colors border-b-2 border-emerald-500 pb-1">
                     {prov.name} Province {provinceSubMap ? `(${combinedTowns.length} Towns, ${totalSuburbs} Suburbs)` : ''}
                   </Link>

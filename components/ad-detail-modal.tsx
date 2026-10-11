@@ -259,7 +259,7 @@ ADMIN ACTION REQUIRED: Search for Ad ID [${ad.id}] in Admin Dashboard to inspect
     }
 
     try {
-      const storageRes = await fetch("/api/storage");
+      const storageRes = await fetch("/api/storage?claimsOnly=true");
       let currentStorage = { claimRequests: [], messages: [] };
       if (storageRes.ok) {
         currentStorage = await storageRes.json();
@@ -1895,7 +1895,7 @@ Business Bank Statement:${claimBankStatement}
                                     }
 
                                     try {
-                                      const storageRes = await fetch("/api/storage");
+                                      const storageRes = await fetch("/api/storage?claimsOnly=true");
                                       let currentStorage = { claimRequests: [], messages: [] };
                                       if (storageRes.ok) {
                                         currentStorage = await storageRes.json();

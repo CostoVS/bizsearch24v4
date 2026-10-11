@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CATEGORIES_STRUCTURED } from "@/lib/categories";
 import { cleanAd } from "@/lib/clean-ad";
 import { detectLocationFromPhoneAndText } from "@/lib/location-detector";
+import { resolveAdGeographyAndCategory, normalizeProvinceSlug } from "@/lib/ad-normalizer";
 import { isScraperStatusOrGarbage, isLikelyStreetAddress, isCategoryOrTradeName } from "@/lib/csv-parser";
 
 // All categories list for categorization
@@ -52,59 +53,83 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No businesses provided to categorize." }, { status: 400 });
     }
 
-    // Process each business ensuring that ACTUAL name, address, phone, email, and website are 100% PRESERVED
-    const finalBusinesses = businesses.map((b, index) => {
+    const isAllProvinces = !overrideProvince || overrideProvince === "all";
+    const fallbackProv = isAllProvinces ? "gauteng" : overrideProvince.toLowerCase();
+
+    // Process each business ensuring that ACTUAL name, address, phone, province, suburb, postalCode, email, and website are 100% PRESERVED
+    const finalBusinesses = businesses.map((b) => {
       const combinedText = `${b.title || ""} ${b.address || ""} ${b.servicesOffered || ""} ${b.description || ""}`;
-      const heuristicLocation = detectLocationFromPhoneAndText(b.phone || "", `${b.address || ""} ${b.city || ""} ${b.province || ""}`, overrideProvince || b.province);
+      const existingProvSlug = normalizeProvinceSlug(b.province);
+      const heuristicLocation = detectLocationFromPhoneAndText(
+        b.phone || b.telephone || b.whatsapp || "",
+        `${b.address || ""} ${b.suburb || ""} ${b.city || ""} ${b.province || ""}`,
+        existingProvSlug || fallbackProv
+      );
       const heuristicCategory = detectCategoryFromText(combinedText);
 
-      // Determine category: Priority -> Explicit Override -> Existing Valid Category -> Heuristic -> Fallback
+      // Determine category: Priority -> Explicit Admin Override -> Existing Valid Category -> Heuristic -> Fallback
       let category = b.category && b.category !== "Other" && b.category !== "General Business Services" ? b.category : "";
-      if (overrideCategory && overrideCategory !== "Other" && overrideCategory !== "General Business Services") {
+      if (overrideCategory && overrideCategory !== "Other" && overrideCategory !== "auto" && overrideCategory !== "General Business Services") {
         category = overrideCategory;
       } else if (!category) {
         category = heuristicCategory || "General Business Services";
       }
 
-      // Determine province: Priority -> Override -> Heuristic detected from address & phone -> Existing -> Fallback
-      let province = b.province;
-      if (overrideProvince) {
+      // Determine province: Priority -> Row's CSV province -> Geo/Suburb/PostalCode resolution -> Heuristic -> Override fallback
+      const geoCandidate: any = {
+        ...b,
+        category,
+        province: existingProvSlug || "",
+        city: b.city || b.town || "",
+        suburb: b.suburb || "",
+        postalCode: b.postalCode || "",
+        address: b.address || ""
+      };
+      resolveAdGeographyAndCategory(geoCandidate);
+
+      let province = existingProvSlug || geoCandidate.province || heuristicLocation.province || fallbackProv || "gauteng";
+      if (!isAllProvinces && !existingProvSlug && !geoCandidate.province) {
         province = overrideProvince.toLowerCase();
-      } else if (heuristicLocation.province) {
-        province = heuristicLocation.province;
-      } else if (!province || !["gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", "northern-cape"].includes(province.toLowerCase())) {
+      }
+      if (!["gauteng", "kwazulu-natal", "western-cape", "eastern-cape", "free-state", "limpopo", "mpumalanga", "north-west", "northern-cape"].includes(province)) {
         province = "gauteng";
       }
 
-      // Determine city
-      let city = b.city || heuristicLocation.city || "Johannesburg";
+      // Determine city & suburb
+      const city = b.city || geoCandidate.city || heuristicLocation.city || "Johannesburg";
+      const suburb = b.suburb || geoCandidate.suburb || "";
+      const postalCode = b.postalCode || geoCandidate.postalCode || "";
 
       // Determine services
-      let services = (b.servicesOffered || "").trim();
+      const services = (b.servicesOffered || "").trim();
 
       // Clean raw address if it contains garbage, category names, or invalid address text
       let cleanAddress = (b.address || "").trim();
-      if (!cleanAddress || isScraperStatusOrGarbage(cleanAddress) || isCategoryOrTradeName(cleanAddress) || !isLikelyStreetAddress(cleanAddress)) {
-        cleanAddress = "";
-      } else {
+      if (!cleanAddress && (suburb || city)) {
+        cleanAddress = [suburb, city, postalCode, province].filter(Boolean).join(", ");
+      } else if (cleanAddress && (isScraperStatusOrGarbage(cleanAddress) || isCategoryOrTradeName(cleanAddress))) {
+        cleanAddress = [suburb, city, postalCode, province].filter(Boolean).join(", ");
+      } else if (cleanAddress) {
         cleanAddress = cleanAddress.replace(/,\s*,+/g, ',').trim();
       }
 
-      // Build cleaned ad, strictly keeping b.title, cleanAddress, b.phone, b.email intact without website
       return cleanAd({
         ...b,
-        // MUST NEVER MUTATE ACTUAL BUSINESS CORE DATA:
         title: (b.title || "").trim(),
         address: cleanAddress,
-        phone: (b.phone || "").trim(),
+        phone: (b.phone || b.telephone || b.whatsapp || "").trim(),
+        telephone: (b.telephone || b.phone || "").trim(),
+        whatsapp: (b.whatsapp || "").trim(),
         email: (b.email || "").trim(),
-        website: "", // No website links on unpaid/unresolved CSV listings
-        // ENRICHED METADATA ONLY:
+        website: (b.website || "").trim(),
         category,
+        categoryCode: b.categoryCode || geoCandidate.categoryCode || "",
         province,
         city,
+        suburb,
+        postalCode,
         servicesOffered: services,
-        description: services ? `Services offered: ${services}` : `${category} business listed in ${city}.`,
+        description: b.description || (services ? `Services offered: ${services}` : `${category} business listed in ${suburb ? suburb + ', ' : ''}${city}.`),
         isVerified: false
       });
     });

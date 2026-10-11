@@ -111,8 +111,55 @@ function internStr(s: any): any {
   return s;
 }
 
+const EMPTY_OPTIONAL_AD_KEYS = [
+  'whatsapp', 'email', 'website', 'facebook', 'socialFacebook',
+  'instagram', 'socialInstagram', 'tiktok', 'socialTikTok',
+  'youtube', 'socialYoutube', 'twitter', 'x', 'socialX',
+  'linkedin', 'socialLinkedin', 'pinterest', 'threads', 'telegram',
+  'googleMapsUrl', 'socialLinks', 'image', 'videoUrl', 'mediaUrl',
+  'voiceNoteUrl', 'pdfBrochureUrl', 'customHtml', 'operatingHours',
+  'otherSocial', 'suburb', 'price'
+];
+
+const FALSY_FREE_AD_KEYS = [
+  'verified', 'isVerified', 'isRecommended', 'isPremium', 'isSponsor',
+  'isSpotlight', 'isBannerPlacement', 'isVideoPromo', 'isClaimed',
+  'isFeatured', 'hasTopBadge', 'hasUrgentBadge', 'autoRenew', 'hasAnalytics'
+];
+
+export function compactAdInPlace(ad: any): any {
+  if (!ad || typeof ad !== 'object') return ad;
+  const isPaid = Boolean(
+    ad.isPremium === true ||
+    ad.isSponsor === true ||
+    ad.isSpotlight === true ||
+    ad.isBannerPlacement === true ||
+    ad.isVideoPromo === true ||
+    ((ad.verified === true || ad.isClaimed === true) && ad.isLockedLevel1 !== true)
+  );
+  for (let i = 0; i < EMPTY_OPTIONAL_AD_KEYS.length; i++) {
+    const k = EMPTY_OPTIONAL_AD_KEYS[i];
+    if (ad[k] === '' || ad[k] === null || ad[k] === undefined) {
+      delete ad[k];
+    }
+  }
+  if (Array.isArray(ad.images) && ad.images.length === 0) delete ad.images;
+  if (Array.isArray(ad.serviceAreas) && ad.serviceAreas.length === 0) delete ad.serviceAreas;
+  if (!isPaid) {
+    for (let i = 0; i < FALSY_FREE_AD_KEYS.length; i++) {
+      const k = FALSY_FREE_AD_KEYS[i];
+      if (!ad[k]) delete ad[k];
+    }
+    if (typeof ad.description === 'string' && ad.description.length > 260) {
+      ad.description = ad.description.slice(0, 257) + '...';
+    }
+  }
+  return ad;
+}
+
 function internAdFieldsInPlace(ad: any): any {
   if (!ad || typeof ad !== 'object') return ad;
+  compactAdInPlace(ad);
   if (ad.userId) ad.userId = internStr(ad.userId);
   if (ad.category) ad.category = internStr(ad.category);
   if (ad.subcategory) ad.subcategory = internStr(ad.subcategory);
@@ -387,13 +434,61 @@ export function readServerDb(): any {
   }
 
   if (bestData) {
-    bestData.ads = Array.isArray(bestData.ads) ? bestData.ads : [];
-    for (let i = 0; i < bestData.ads.length; i++) {
-      const ad = bestData.ads[i];
-      if (ad && (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined)) {
-        resolveAdGeographyAndCategory(ad);
+    const rawAds = Array.isArray(bestData.ads) ? bestData.ads : [];
+    if (bestData._dedupedV2 === true && rawAds.length > 100000) {
+      for (let i = 0; i < rawAds.length; i++) {
+        const ad = rawAds[i];
+        if (!ad) continue;
+        if (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined) {
+          resolveAdGeographyAndCategory(ad);
+        }
       }
+      bestData.ads = rawAds;
+    } else {
+      const seenPaidIds = new Set<string>();
+      const seenFreeKeys = new Set<string>();
+      const dedupedAds: any[] = [];
+
+      for (let i = 0; i < rawAds.length; i++) {
+        const ad = rawAds[i];
+        if (!ad || !ad.title) continue;
+        if (!ad._geoNormalized || !ad.province || !ad.categoryCode || ad.postalCode === undefined) {
+          resolveAdGeographyAndCategory(ad);
+        }
+        compactAdInPlace(ad);
+        const isPaid = Boolean(
+          ad.isPremium === true ||
+          ad.isSponsor === true ||
+          ad.isSpotlight === true ||
+          ad.isBannerPlacement === true ||
+          ad.isVideoPromo === true ||
+          ((ad.verified === true || ad.isClaimed === true) && ad.isLockedLevel1 !== true)
+        );
+        if (isPaid) {
+          if (ad.id && seenPaidIds.has(ad.id)) continue;
+          if (ad.id) seenPaidIds.add(ad.id);
+          dedupedAds.push(ad);
+        } else {
+          const tNorm = String(ad.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const pNorm = String(ad.phone || ad.telephone || ad.landline || ad.whatsapp || '').replace(/[^0-9]/g, '').slice(-9);
+          const aNorm = String(ad.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
+          const townNorm = String(ad.city || ad.town || ad.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const subNorm = String(ad.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const catNorm = String(ad.categoryCode || ad.category || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+          const k1 = `${tNorm}_${aNorm || (townNorm + '_' + subNorm)}_${pNorm}`;
+          const k2 = `tsc_${tNorm}_${subNorm || townNorm}_${catNorm}`;
+          if (seenFreeKeys.has(k1) || seenFreeKeys.has(k2)) continue;
+          seenFreeKeys.add(k1);
+          seenFreeKeys.add(k2);
+          dedupedAds.push(ad);
+        }
+      }
+      seenPaidIds.clear();
+      seenFreeKeys.clear();
+      bestData.ads = dedupedAds;
+      bestData._dedupedV2 = true;
     }
+
     bestData.trashAds = Array.isArray(bestData.trashAds) ? bestData.trashAds : [];
     bestData.deletedAds = Array.isArray(bestData.deletedAds) ? bestData.deletedAds : [];
     globalRef.storageCache = bestData;
@@ -404,7 +499,7 @@ export function readServerDb(): any {
     return bestData;
   }
 
-  const empty = { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now() };
+  const empty = { ads: [], trashAds: [], deletedAds: [], updatedAt: Date.now(), _dedupedV2: true };
   globalRef.storageCache = empty;
   return empty;
 }
@@ -417,7 +512,7 @@ async function writeStorageJsonNonBlocking(targetPath: string, data: any): Promi
   const tempPath = `${targetPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
   const handle = await fs.promises.open(tempPath, 'w');
   try {
-    const meta: Record<string, any> = {};
+    const meta: Record<string, any> = { _dedupedV2: true };
     for (const k of Object.keys(data)) {
       if (k !== 'ads') meta[k] = data[k];
     }
@@ -523,6 +618,7 @@ async function flushToDiskAsync(data: any, forceAllBackups: boolean = false): Pr
 
 export function writeServerDb(data: any, immediate: boolean = false, keepIndexValid: boolean = false): void {
   data.updatedAt = Date.now();
+  data._dedupedV2 = true;
   globalRef.storageCache = data;
   globalRef.storageCacheTime = Date.now();
   if (!keepIndexValid) {
@@ -540,16 +636,17 @@ export function writeServerDb(data: any, immediate: boolean = false, keepIndexVa
   globalRef.lastSelfWriteTime = Date.now();
 
   const adCount = Array.isArray(data.ads) ? data.ads.length : 0;
-  const debounceMs = immediate && adCount < 1000 ? 300 : adCount > 5000 ? 25000 : 3000;
+  const debounceMs = immediate && adCount < 1000 ? 300 : adCount > 5000 ? 6000 : 2500;
 
-  if (!globalRef.flushTimer) {
-    globalRef.flushTimer = setTimeout(() => {
-      globalRef.flushTimer = null;
-      if (globalRef.storageCache) {
-        flushToDiskAsync(globalRef.storageCache);
-      }
-    }, debounceMs);
+  if (globalRef.flushTimer) {
+    clearTimeout(globalRef.flushTimer);
   }
+  globalRef.flushTimer = setTimeout(() => {
+    globalRef.flushTimer = null;
+    if (globalRef.storageCache) {
+      flushToDiskAsync(globalRef.storageCache);
+    }
+  }, debounceMs);
 }
 
 export function purgeAllServerAds(): void {
@@ -831,13 +928,21 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
     for (let i = 0; i < currentAds.length; i++) {
       const a = currentAds[i];
       if (!a) continue;
+      const isPaid = Boolean(
+        a.isPremium === true ||
+        a.isSponsor === true ||
+        ((a.verified === true || a.isClaimed === true) && a.isLockedLevel1 !== true)
+      );
+      if (isPaid) continue; // Paid Level 2+ ads are allowed to have duplicates across areas
       const titleNorm = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const phoneNorm = (a.phone || a.telephone || a.landline || a.whatsapp || '').replace(/[^0-9]/g, '').slice(-9);
       const addrNorm = (a.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
       const townNorm = (a.city || a.town || a.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const subNorm = (a.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const catNorm = (a.categoryCode || a.category || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
       if (titleNorm) {
         adMap.set(`${titleNorm}_${addrNorm || (townNorm + '_' + subNorm)}_${phoneNorm}`, a);
+        adMap.set(`tsc_${titleNorm}_${subNorm || townNorm}_${catNorm}`, a);
       }
     }
     globalRef.existingAdMap = adMap;
@@ -972,10 +1077,13 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
     const addrNorm = (candidateAd.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
     const townNorm = (candidateAd.city || candidateAd.town || candidateAd.location || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const subNorm = (candidateAd.suburb || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const catNorm = (candidateAd.categoryCode || candidateAd.category || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
 
     const compositeKey = `${titleNorm}_${addrNorm || (townNorm + '_' + subNorm)}_${phoneNorm}`;
+    const tscKey = `tsc_${titleNorm}_${subNorm || townNorm}_${catNorm}`;
 
-    const existingAd = existingAdMap.get(compositeKey);
+    const isPaidCandidate = Boolean(candidateAd.isPremium === true || candidateAd.isSponsor === true);
+    const existingAd = isPaidCandidate ? null : (existingAdMap.get(compositeKey) || existingAdMap.get(tscKey));
     if (existingAd) {
       // Enrich existing ad in-place so its province, town, city, suburb, postalCode, category, and contacts are 100% accurate
       existingAd.province = candidateAd.province;
@@ -1055,8 +1163,12 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
 
     const randomSuffix = Math.random().toString(36).substring(2, 8);
     candidateAd.id = `ad-agent-${Date.now()}-${randomSuffix}-${addedCount}`;
+    internAdFieldsInPlace(candidateAd);
 
-    existingAdMap.set(compositeKey, candidateAd);
+    if (!isPaidCandidate) {
+      existingAdMap.set(compositeKey, candidateAd);
+      existingAdMap.set(tscKey, candidateAd);
+    }
 
     newAdsToAppend.push(candidateAd);
     addedCount++;
@@ -1065,21 +1177,21 @@ export async function createBotAdBatch(items: BotAdPayload[]): Promise<{
   if (addedCount > 0 || updatedCount > 0) {
     if (addedCount > 0) {
       const cleanedBatch = cleanAdsArray(newAdsToAppend);
-      if (typeof globalRef.incrementallyIndexAds === 'function' && cleanedBatch.length > 0 && updatedCount === 0) {
+      for (let i = 0; i < cleanedBatch.length; i++) {
+        currentAds.push(cleanedBatch[i]);
+      }
+      dbData.ads = currentAds;
+      if (typeof globalRef.incrementallyIndexAds === 'function' && cleanedBatch.length > 0) {
         try {
-          globalRef.incrementallyIndexAds(cleanedBatch);
+          globalRef.incrementallyIndexAds(cleanedBatch, dbData);
         } catch (e) {
           globalRef.indexedDataset = null;
         }
       } else {
         globalRef.indexedDataset = null;
       }
-      for (let i = 0; i < cleanedBatch.length; i++) {
-        currentAds.push(cleanedBatch[i]);
-      }
-      dbData.ads = currentAds;
-    } else {
-      globalRef.indexedDataset = null;
+    } else if (globalRef.indexedDataset && globalRef.indexedDataset.queryCache instanceof Map) {
+      globalRef.indexedDataset.queryCache.clear();
     }
     writeServerDb(dbData, false, Boolean(globalRef.indexedDataset));
   }

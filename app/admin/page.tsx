@@ -131,13 +131,14 @@ export default function AdminDashboard() {
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [seoGeneratorLog, setSeoGeneratorLog] = useState<string[]>([]);
 
-  // CSV Import dynamic configurations
-  const [csvDefaultProvince, setCsvDefaultProvince] = useState("gauteng");
+  // CSV Import dynamic configurations (Defaults to "all" to auto-sort every row into its province from the CSV file)
+  const [csvDefaultProvince, setCsvDefaultProvince] = useState("all");
   const [csvDefaultCategory, setCsvDefaultCategory] = useState("Other");
   const [csvAiEnable, setCsvAiEnable] = useState(true);
 
   // New CSV Upload Center Tab state variables
   const [csvFileParsed, setCsvFileParsed] = useState<any[]>([]); 
+  const [csvPreviewLimit, setCsvPreviewLimit] = useState<number>(50);
   const [csvEditIndex, setCsvEditIndex] = useState<number | null>(null); 
   const [csvUploadLoading, setCsvUploadLoading] = useState(false);
   const [csvSearchQuery, setCsvSearchQuery] = useState("");
@@ -507,7 +508,7 @@ export default function AdminDashboard() {
         phone: "",
         email: "",
         category: csvDefaultCategory !== "General" ? csvDefaultCategory : "Other",
-        province: csvDefaultProvince || "gauteng",
+        province: csvDefaultProvince && csvDefaultProvince !== "all" ? csvDefaultProvince : "gauteng",
         city: "Johannesburg",
         servicesOffered: ""
       },
@@ -2780,12 +2781,22 @@ export default function AdminDashboard() {
             {/* Ingestion Config Panels */}
             <div className="relative z-10 mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Fallback Province</label>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Target / Fallback Province</label>
                 <select
                   value={csvDefaultProvince}
-                  onChange={(e) => setCsvDefaultProvince(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCsvDefaultProvince(val);
+                    if (val !== "all" && csvFileParsed.length > 0) {
+                      setCsvFileParsed(prev => prev.map(row => ({
+                        ...row,
+                        province: row.rawCsvProvince ? row.province : val
+                      })));
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-bold cursor-pointer"
                 >
+                  <option value="all">🌍 All Provinces (Auto-Sort from CSV)</option>
                   <option value="gauteng">Gauteng</option>
                   <option value="kwazulu-natal">KwaZulu-Natal</option>
                   <option value="western-cape">Western Cape</option>
@@ -2799,12 +2810,25 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Fallback Category</label>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5 ml-1">Choose Category (Applied to CSV)</label>
                 <select
                   value={csvDefaultCategory}
-                  onChange={(e) => setCsvDefaultCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-medium cursor-pointer"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCsvDefaultCategory(val);
+                    if (val && val !== "Other" && csvFileParsed.length > 0) {
+                      const codeMatch = val.match(/^(\d+\.\d+)\s+/);
+                      const extractedCode = codeMatch ? codeMatch[1] : "";
+                      setCsvFileParsed(prev => prev.map(row => ({
+                        ...row,
+                        category: val,
+                        ...(extractedCode ? { categoryCode: extractedCode } : {})
+                      })));
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-800 font-bold cursor-pointer"
                 >
+                  <option value="Other" className="font-bold text-emerald-700">Auto-Detect from CSV / Choose Category...</option>
                   {CATEGORIES_STRUCTURED.map((group) => (
                     <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-white">
                       <option value={group.name} className="font-extrabold text-emerald-900 bg-emerald-50">
@@ -2817,54 +2841,50 @@ export default function AdminDashboard() {
                       ))}
                     </optgroup>
                   ))}
-                  <option value="Other" className="font-bold text-emerald-700">Other</option>
                 </select>
               </div>
 
               {/* CSV Parsing Target File Box */}
               <div className="md:col-span-2">
-                <label className="text-[10px] font-bold uppercase text-slate-550 block mb-1.5 ml-1">Select CSV Directory File</label>
+                <label className="text-[10px] font-bold uppercase text-slate-550 block mb-1.5 ml-1">Select CSV Directory File(s)</label>
                 <div className="relative flex items-center">
                   <input
                     type="file"
                     accept=".csv"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        const text = event.target?.result as string;
-                        if (text) {
-                          // Robust multi-line CSV client parse
-                          const rawRows = parseCsvText(text);
-                          if (rawRows.length < 2) {
-                            alert("Your CSV file must contain a header row and at least one data row.");
-                            return;
+                    multiple
+                    onChange={async (e) => {
+                      const files = e.target.files ? Array.from(e.target.files) : [];
+                      if (files.length === 0) return;
+                      setCsvUploadLoading(true);
+                      try {
+                        const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
+                        const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                        const seenCsvKeys = new Set<string>();
+                        const existingDbKeys = new Set<string>();
+                        ads.forEach(ad => {
+                          if (ad.isPremium || ad.isSponsor || (ad.verified && !ad.isLockedLevel1)) return;
+                          const nt = normTitle(ad.title);
+                          const np = normPhone(ad.phone || ad.telephone || ad.whatsapp);
+                          const na = normAddr(ad.address || `${ad.suburb || ''} ${ad.location || ''}`);
+                          if (nt && np && na) {
+                            existingDbKeys.add(`${nt}|${np}|${na}`);
                           }
+                        });
+
+                        const parsedRows: any[] = [];
+                        let skippedNoPhone = 0;
+                        let skippedDuplicates = 0;
+
+                        for (const file of files) {
+                          const text = await file.text();
+                          if (!text) continue;
+                          const rawRows = parseCsvText(text);
+                          if (rawRows.length < 2) continue;
 
                           const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
-                          const parsedRows = [];
-                          let skippedNoPhone = 0;
-                          let skippedDuplicates = 0;
-
-                          // Helper normalizers for exact match comparison
-                          const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
-                          const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
-                          const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
-
-                          // Track signatures seen in current upload batch and existing directory ads
-                          const seenCsvKeys = new Set<string>();
-
-                          // Existing directory keys
-                          const existingDbKeys = new Set<string>();
-                          ads.forEach(ad => {
-                            const nt = normTitle(ad.title);
-                            const np = normPhone(ad.phone || ad.telephone || ad.whatsapp);
-                            const na = normAddr(ad.address || `${ad.suburb || ''} ${ad.location || ''}`);
-                            if (nt && np && na) {
-                              existingDbKeys.add(`${nt}|${np}|${na}`);
-                            }
-                          });
+                          const provHeaderIdx = headers.findIndex(h => h === "province" || h === "state" || h === "region");
 
                           for (let i = 1; i < rawRows.length; i++) {
                             const values = rawRows[i];
@@ -2874,223 +2894,278 @@ export default function AdminDashboard() {
                             const hasAddress = Boolean((rec.address || rec.suburb || rec.city || "").trim());
                             if (!rec.title || !hasAddress || !primaryPhone || primaryPhone === "·" || primaryPhone === "" || primaryPhone.length < 7) {
                               skippedNoPhone++;
-                              continue; // MINIMUM REQUIREMENT: Business name, Address, and at least 1 number (Phone, Telephone, or WhatsApp)
+                              continue;
                             }
-                            if (rec.title) {
-                              const nT = normTitle(rec.title);
-                              const nP = normPhone(primaryPhone);
-                              const nA = normAddr(rec.address || `${rec.suburb || ''} ${rec.city || ''}`);
-                              
-                              if (nT && nP && nA) {
-                                const tripletKey = `${nT}|${nP}|${nA}`;
-                                if (existingDbKeys.has(tripletKey) || seenCsvKeys.has(tripletKey)) {
-                                  skippedDuplicates++;
-                                  continue;
-                                }
-                                seenCsvKeys.add(tripletKey);
-                              }
 
-                              parsedRows.push(rec);
+                            const nT = normTitle(rec.title);
+                            const nP = normPhone(primaryPhone);
+                            const nA = normAddr(rec.address || `${rec.suburb || ''} ${rec.city || ''}`);
+
+                            if (nT && nP && nA) {
+                              const tripletKey = `${nT}|${nP}|${nA}`;
+                              if (existingDbKeys.has(tripletKey) || seenCsvKeys.has(tripletKey)) {
+                                skippedDuplicates++;
+                                continue;
+                              }
+                              seenCsvKeys.add(tripletKey);
                             }
+
+                            parsedRows.push({
+                              ...rec,
+                              rawCsvProvince: provHeaderIdx >= 0 ? (values[provHeaderIdx] || "").trim() : ""
+                            });
                           }
-                          setCsvFileParsed(parsedRows);
-                          
-                          const messages = [];
-                          if (parsedRows.length > 0) {
-                            messages.push(`Loaded ${parsedRows.length.toLocaleString()} valid business records.`);
-                          } else {
-                            messages.push(`No new records loaded.`);
-                          }
-                          if (skippedDuplicates > 0) {
-                            messages.push(`${skippedDuplicates.toLocaleString()} exact duplicate row(s) were skipped.`);
-                          }
-                          if (skippedNoPhone > 0) {
-                            messages.push(`${skippedNoPhone.toLocaleString()} row(s) missing minimum requirements (Business Name, Address, or Phone/Telephone/WhatsApp) were skipped.`);
-                          }
-                          alert(messages.join(" "));
                         }
-                      };
-                      reader.readAsText(file);
+
+                        setCsvPreviewLimit(50);
+                        setCsvFileParsed(parsedRows);
+
+                        const provBreakdown: Record<string, number> = {};
+                        for (const r of parsedRows) {
+                          const pKey = r.province || "gauteng";
+                          provBreakdown[pKey] = (provBreakdown[pKey] || 0) + 1;
+                        }
+                        const provSummaryStr = Object.entries(provBreakdown)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([k, v]) => `${k.replace(/-/g, ' ').toUpperCase()}: ${v.toLocaleString()}`)
+                          .join(" | ");
+
+                        const messages = [];
+                        if (parsedRows.length > 0) {
+                          messages.push(`Loaded ${parsedRows.length.toLocaleString()} valid business records across ${Object.keys(provBreakdown).length} province(s) (${provSummaryStr}).`);
+                        } else {
+                          messages.push(`No new records loaded.`);
+                        }
+                        if (skippedDuplicates > 0) {
+                          messages.push(`${skippedDuplicates.toLocaleString()} exact duplicate Free Level 1 row(s) skipped.`);
+                        }
+                        if (skippedNoPhone > 0) {
+                          messages.push(`${skippedNoPhone.toLocaleString()} row(s) missing minimum requirements skipped.`);
+                        }
+                        alert(messages.join(" "));
+                      } finally {
+                        setCsvUploadLoading(false);
+                        e.target.value = "";
+                      }
                     }}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full bg-slate-50 border-2 border-dashed border-slate-250 rounded-xl px-4 py-2 text-xs font-bold text-slate-650 flex items-center justify-center gap-2 hover:bg-slate-100 hover:border-emerald-500 transition-colors">
-                     📁 Click or Drag to Parse Directory CSV (Auto-captures Name, Address, Phone/Tel/WhatsApp, Postal Code, Hours, Services, Socials)
+                     📁 Click or Drag to Parse Directory CSV (Auto-sorts into All 9 Provinces, Towns, Suburbs &Chosen Category)
                   </div>
                 </div>
               </div>
             </div>
 
             {/* CSV AI Sort & Action Trigger Deck */}
-            {csvFileParsed.length > 0 && (
-              <div className="relative z-10 mt-6 bg-slate-50 p-5 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-500 p-2.5 rounded-xl text-white shadow-md shadow-emerald-500/10">
-                     ✨
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">Workspace populated with {csvFileParsed.length} pending listing(s)</h4>
-                    <p className="text-xs text-slate-500 font-medium">All listings verified to include contact phone numbers. Review categorization and location before publishing.</p>
-                  </div>
-                </div>
-                <div className="flex gap-2.5 w-full md:w-auto shrink-0">
-                  <button
-                    onClick={async () => {
-                      if (csvFileParsed.length === 0) return;
-                      setCsvUploadLoading(true);
-                      try {
-                        const res = await fetch("/api/admin/csv-ai-sort", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            businesses: csvFileParsed,
-                            overrideProvince: csvDefaultProvince,
-                            overrideCategory: csvDefaultCategory
-                          })
-                        });
-                        if (res.ok) {
-                          const result = await res.json();
-                          if (Array.isArray(result.businesses)) {
-                            setCsvFileParsed(result.businesses);
-                            alert("AI has successfully categorized and province-mapped all rows!");
-                          } else {
-                            alert("AI sorting complete, but the server returned unrecognized formats.");
+            {csvFileParsed.length > 0 && (() => {
+              const provCounts: Record<string, number> = {};
+              for (let i = 0; i < csvFileParsed.length; i++) {
+                const p = (csvFileParsed[i].province || (csvDefaultProvince !== "all" ? csvDefaultProvince : "gauteng")).toLowerCase().trim();
+                provCounts[p] = (provCounts[p] || 0) + 1;
+              }
+              return (
+                <div className="relative z-10 mt-6 bg-slate-50 p-5 rounded-2xl border border-slate-200 flex flex-col gap-4">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-emerald-500 p-2.5 rounded-xl text-white shadow-md shadow-emerald-500/10">
+                        ✨
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">
+                          Ready to Upload: {csvFileParsed.length.toLocaleString()} Listing(s) Auto-Sorted into {Object.keys(provCounts).length} Province(s)
+                        </h4>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Category: <span className="font-bold text-emerald-700">{csvDefaultCategory !== "Other" ? csvDefaultCategory : (csvFileParsed[0]?.category || "Auto-Detected from CSV")}</span> • Click the green Upload button below to publish all listings into their provinces.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2.5 w-full md:w-auto shrink-0">
+                      <button
+                        onClick={async () => {
+                          if (csvFileParsed.length === 0) return;
+                          setCsvUploadLoading(true);
+                          try {
+                            const res = await fetch("/api/admin/csv-ai-sort", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                businesses: csvFileParsed,
+                                overrideProvince: csvDefaultProvince,
+                                overrideCategory: csvDefaultCategory
+                              })
+                            });
+                            if (res.ok) {
+                              const result = await res.json();
+                              if (Array.isArray(result.businesses)) {
+                                setCsvFileParsed(result.businesses);
+                                alert("Successfully auto-sorted and verified provinces and categories for all rows!");
+                              } else {
+                                alert("Sorting complete, but the server returned unrecognized formats.");
+                              }
+                            } else {
+                              const errData = await res.json();
+                              alert("Error from sorter: " + (errData.error || "Unknown"));
+                            }
+                          } catch (err) {
+                            alert("Error connecting with sorting server.");
+                          } finally {
+                            setCsvUploadLoading(false);
                           }
-                        } else {
-                          const errData = await res.json();
-                          alert("Error from AI sorter: " + (errData.error || "Unknown"));
-                        }
-                      } catch (err) {
-                        alert("Error connecting with sorting server.");
-                      } finally {
-                        setCsvUploadLoading(false);
-                      }
-                    }}
-                    disabled={csvUploadLoading}
-                    className="flex-1 md:flex-none px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                  >
-                    {csvUploadLoading ? (
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : "🪄 Auto-Sort with AI"}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (csvFileParsed.length === 0) return;
-                      
-                      const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
-                      const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
-                      const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                        }}
+                        disabled={csvUploadLoading}
+                        className="flex-1 md:flex-none px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                      >
+                        {csvUploadLoading ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : "🪄 Verify Province & Category Sort"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (csvFileParsed.length === 0) return;
+                          
+                          const normTitle = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const normPhone = (s: string) => (s || "").replace(/[^0-9]/g, '');
+                          const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                      const seenCommitKeys = new Set<string>();
-                      let commitDuplicates = 0;
+                          const seenCommitKeys = new Set<string>();
+                          let commitDuplicates = 0;
 
-                      const validWithPhone = csvFileParsed.filter(item => {
-                        const primaryPhone = (item.phone || item.telephone || item.whatsapp || "").replace(/[\s\-\(\)\.]/g, '');
-                        const hasAddr = Boolean((item.address || item.suburb || item.city || "").trim());
-                        if (!item.title || !hasAddr || !primaryPhone || primaryPhone === "·" || primaryPhone === "" || primaryPhone.length < 7) {
-                          return false;
-                        }
-                        const nt = normTitle(item.title);
-                        const np = normPhone(primaryPhone);
-                        const na = normAddr(item.address || `${item.suburb || ''} ${item.city || ''}`);
-                        if (nt && np && na) {
-                          const key = `${nt}|${np}|${na}`;
-                          if (seenCommitKeys.has(key)) {
-                            commitDuplicates++;
-                            return false;
-                          }
-                          seenCommitKeys.add(key);
-                        }
-                        return true;
-                      });
-
-                      if (validWithPhone.length === 0) {
-                        alert(`Cannot publish: No unique listings meeting minimum requirements (Business Name, Address, and at least 1 Phone/Telephone/WhatsApp number) found.`);
-                        return;
-                      }
-
-                      if (!confirm(`Are you sure you want to commit these ${validWithPhone.length.toLocaleString()} listing(s) directly to the live SearchBiz directory and search console?`)) return;
-                      
-                      setCsvUploadLoading(true);
-                      try {
-                        const chunkSize = 2000;
-                        let totalAdded = 0;
-                        let totalUpdated = 0;
-                        for (let c = 0; c < validWithPhone.length; c += chunkSize) {
-                          const batchSlice = validWithPhone.slice(c, c + chunkSize).map((item) => {
-                            const prov = (item.province || csvDefaultProvince || "gauteng").toLowerCase().trim();
-                            const addr = item.address || "";
-                            const defaultCity = item.city || item.town || "";
-                            const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
-                            const rawServices = item.servicesOffered || "";
-                            const cat = item.category || csvDefaultCategory || "Other";
-                            const primaryPhone = item.phone || item.telephone || item.whatsapp || "";
-                            return {
-                              title: item.title || "Unnamed Business",
-                              category: cat,
-                              categoryCode: item.categoryCode || "",
-                              province: prov,
-                              city: item.city || parsedLoc.town,
-                              town: item.city || parsedLoc.town,
-                              location: item.city || parsedLoc.town,
-                              suburb: item.suburb || parsedLoc.suburb,
-                              postalCode: item.postalCode || "",
-                              description: item.description || (rawServices ? `Services offered: ${rawServices}` : `${cat} business in ${item.suburb || parsedLoc.suburb}, ${item.city || parsedLoc.town}.`),
-                              tradingHours: item.tradingHours || "",
-                              servicesOffered: rawServices || cat,
-                              address: addr,
-                              phone: primaryPhone,
-                              telephone: item.telephone || primaryPhone,
-                              whatsapp: item.whatsapp || primaryPhone,
-                              email: item.email || "",
-                              website: item.website || "",
-                              socialLinks: item.socialLinks || "",
-                              twitter: item.twitter || "",
-                              tiktok: item.tiktok || "",
-                              facebook: item.facebook || "",
-                              instagram: item.instagram || "",
-                              youtube: item.youtube || "",
-                              linkedin: item.linkedin || "",
-                              isApproved: true,
-                              status: "active",
-                            };
+                          const validWithPhone = csvFileParsed.filter(item => {
+                            const primaryPhone = (item.phone || item.telephone || item.whatsapp || "").replace(/[\s\-\(\)\.]/g, '');
+                            const hasAddr = Boolean((item.address || item.suburb || item.city || "").trim());
+                            if (!item.title || !hasAddr || !primaryPhone || primaryPhone === "·" || primaryPhone === "" || primaryPhone.length < 7) {
+                              return false;
+                            }
+                            const nt = normTitle(item.title);
+                            const np = normPhone(primaryPhone);
+                            const na = normAddr(item.address || `${item.suburb || ''} ${item.city || ''}`);
+                            if (nt && np && na) {
+                              const key = `${nt}|${np}|${na}`;
+                              if (seenCommitKeys.has(key)) {
+                                commitDuplicates++;
+                                return false;
+                              }
+                              seenCommitKeys.add(key);
+                            }
+                            return true;
                           });
 
-                          const res = await fetch("/api/bot/ad/bulk", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ items: batchSlice })
-                          });
-                          if (res.ok) {
-                            const rData = await res.json();
-                            totalAdded += Number(rData.addedCount || 0);
-                            totalUpdated += Number(rData.updatedCount || 0);
+                          if (validWithPhone.length === 0) {
+                            alert(`Cannot publish: No unique listings meeting minimum requirements (Business Name, Address, and at least 1 Phone/Telephone/WhatsApp number) found.`);
+                            return;
                           }
-                        }
 
-                        await refreshAdminServerAds();
-                        setCsvFileParsed([]);
-                        alert(`Success! Synced ${validWithPhone.length.toLocaleString()} listings (${totalAdded.toLocaleString()} newly added, ${totalUpdated.toLocaleString()} updated/enriched) directly to the live SearchBiz search console across their respected address, area/suburb, town/city, province, postal code & category!`);
-                      } catch (err) {
-                        alert("Error writing committed rows to directories.");
-                      } finally {
-                        setCsvUploadLoading(false);
-                      }
-                    }}
-                    className="flex-1 md:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-                  >
-                    Publish to Directory Indexes (Commit)
-                  </button>
+                          setCsvUploadLoading(true);
+                          try {
+                            const chunkSize = 2500;
+                            let totalAdded = 0;
+                            let totalUpdated = 0;
+                            const chosenCat = (csvDefaultCategory && csvDefaultCategory !== "Other" && csvDefaultCategory !== "auto") ? csvDefaultCategory : "";
+                            const chosenCodeMatch = chosenCat ? chosenCat.match(/^(\d+\.\d+)\s+/) : null;
+                            const chosenCode = chosenCodeMatch ? chosenCodeMatch[1] : "";
+
+                            for (let c = 0; c < validWithPhone.length; c += chunkSize) {
+                              const batchSlice = validWithPhone.slice(c, c + chunkSize).map((item) => {
+                                const rawItemProv = (item.province && item.province !== "all") ? item.province : (csvDefaultProvince !== "all" ? csvDefaultProvince : "gauteng");
+                                const prov = rawItemProv.toLowerCase().trim();
+                                const addr = item.address || "";
+                                const defaultCity = item.city || item.town || "";
+                                const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
+                                const rawServices = item.servicesOffered || "";
+                                const cat = chosenCat || item.category || "General Business Services";
+                                const catCode = chosenCode || item.categoryCode || "";
+                                const primaryPhone = item.phone || item.telephone || item.whatsapp || "";
+                                return {
+                                  title: item.title || "Unnamed Business",
+                                  category: cat,
+                                  categoryCode: catCode,
+                                  province: prov,
+                                  city: item.city || parsedLoc.town,
+                                  town: item.city || parsedLoc.town,
+                                  location: item.city || parsedLoc.town,
+                                  suburb: item.suburb || parsedLoc.suburb,
+                                  postalCode: item.postalCode || "",
+                                  description: item.description || (rawServices ? `Services offered: ${rawServices}` : `${cat} business in ${item.suburb || parsedLoc.suburb}, ${item.city || parsedLoc.town}.`),
+                                  tradingHours: item.tradingHours || "",
+                                  servicesOffered: rawServices || cat,
+                                  address: addr,
+                                  phone: primaryPhone,
+                                  telephone: item.telephone || primaryPhone,
+                                  whatsapp: item.whatsapp || primaryPhone,
+                                  email: item.email || "",
+                                  website: item.website || "",
+                                  socialLinks: item.socialLinks || "",
+                                  twitter: item.twitter || "",
+                                  tiktok: item.tiktok || "",
+                                  facebook: item.facebook || "",
+                                  instagram: item.instagram || "",
+                                  youtube: item.youtube || "",
+                                  linkedin: item.linkedin || "",
+                                  isApproved: true,
+                                  status: "active",
+                                };
+                              });
+
+                              const res = await fetch("/api/bot/ad/bulk", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ items: batchSlice })
+                              });
+                              if (res.ok) {
+                                const rData = await res.json();
+                                totalAdded += Number(rData.addedCount || 0);
+                                totalUpdated += Number(rData.updatedCount || 0);
+                              }
+                            }
+
+                            await refreshAdminServerAds();
+                            setCsvFileParsed([]);
+                            alert(`Success! Uploaded and sorted ${validWithPhone.length.toLocaleString()} listings (${totalAdded.toLocaleString()} newly added, ${totalUpdated.toLocaleString()} updated) across their respected South African provinces, towns, suburbs, postal codes & category!`);
+                          } catch (err) {
+                            alert("Error writing committed rows to directories.");
+                          } finally {
+                            setCsvUploadLoading(false);
+                          }
+                        }}
+                        disabled={csvUploadLoading}
+                        className="flex-1 md:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-60"
+                      >
+                        {csvUploadLoading ? "Uploading & Sorting Provinces..." : `🚀 Upload & Sort into Provinces (${csvFileParsed.length.toLocaleString()} Ads)`}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Province Sorting Breakdown Pills */}
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-200/80">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Sorted Provinces Breakdown:</span>
+                    {Object.entries(provCounts).sort((a, b) => b[1] - a[1]).map(([provSlug, cnt]) => (
+                      <span key={provSlug} className="px-2.5 py-1 rounded-lg bg-white border border-emerald-200 text-emerald-900 text-[11px] font-bold capitalize shadow-2xs">
+                        {provSlug.replace(/-/g, ' ')}: <span className="text-emerald-600 font-extrabold">{cnt.toLocaleString()}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
-            {/* Live Interactive Spreadsheet Editor */}
+            {/* Live Interactive Spreadsheet Editor (Paginated to prevent mobile browser freeze on 10k+ row CSVs) */}
             {csvFileParsed.length > 0 && (
               <div className="mt-6 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 relative w-full max-w-full">
-                <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
-                  <span>Interactive Listing Spreadsheet Editor (Double-check or modify values directly)</span>
-                  <span className="text-[10px] text-slate-500 font-mono">Row Count: {csvFileParsed.length}</span>
+                <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700">
+                  <span>Interactive Listing Spreadsheet Preview (Showing {Math.min(csvPreviewLimit, csvFileParsed.length).toLocaleString()} of {csvFileParsed.length.toLocaleString()} rows)</span>
+                  <div className="flex items-center gap-2">
+                    {csvFileParsed.length > csvPreviewLimit && (
+                      <button
+                        type="button"
+                        onClick={() => setCsvPreviewLimit(prev => prev + 100)}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                      >
+                        Show Next 100 Rows
+                      </button>
+                    )}
+                    <span className="text-[10px] text-slate-500 font-mono">Total Rows: {csvFileParsed.length.toLocaleString()}</span>
+                  </div>
                 </div>
                 <div className="overflow-x-auto w-full max-w-full block max-h-[450px]">
                   <table className="w-full text-left border-collapse text-xs">
@@ -3108,7 +3183,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-150">
-                      {csvFileParsed.map((item, idx) => (
+                      {csvFileParsed.slice(0, csvPreviewLimit).map((item, idx) => (
                         <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
                           <td className="py-2.5 px-4 font-mono text-slate-400 text-center font-bold">{idx + 1}</td>
                           <td className="py-2 px-2">
@@ -3145,32 +3220,19 @@ export default function AdminDashboard() {
                             />
                           </td>
                           <td className="py-2 px-2">
-                            <select
+                            <input
+                              type="text"
                               value={item.category || "Other"}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, category: val } : row));
                               }}
-                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                            >
-                              {CATEGORIES_STRUCTURED.map((group) => (
-                                <optgroup key={group.name} label={group.name} className="font-bold text-slate-950 bg-white">
-                                  <option value={group.name} className="font-extrabold text-emerald-900 bg-emerald-50">
-                                    📂 ALL {group.name}
-                                  </option>
-                                  {group.subcategories.map((sub) => (
-                                    <option key={sub} value={sub} className="font-normal text-slate-700">
-                                      {sub}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              ))}
-                              <option value="Other" className="font-bold text-emerald-700">Other</option>
-                            </select>
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-emerald-500"
+                            />
                           </td>
                           <td className="py-2 px-2">
                             <select
-                              value={item.province || ""}
+                              value={item.province || "gauteng"}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setCsvFileParsed(prev => prev.map((row, i) => i === idx ? { ...row, province: val } : row));
@@ -3628,12 +3690,15 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6 pb-6 border-b border-indigo-900/30">
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">Default Target Province</label>
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">Target Province (Auto-Sort or Fallback)</label>
                   <select
                     value={csvDefaultProvince}
                     onChange={(e) => setCsvDefaultProvince(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   >
+                    <option value="all" className="bg-slate-900 text-emerald-300 font-bold">
+                      🌍 All Provinces (Auto-Sort from CSV)
+                    </option>
                     {SA_PROVINCES.map((prov) => (
                       <option key={prov.slug} value={prov.slug} className="bg-slate-900 text-slate-100">
                         {prov.name} ({prov.slug})
@@ -3643,16 +3708,26 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">Default Target Category</label>
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">Choose Target Category</label>
                   <select
                     value={csvDefaultCategory}
                     onChange={(e) => setCsvDefaultCategory(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat} className="bg-slate-900 text-slate-100">
-                        {cat}
-                      </option>
+                    <option value="Other" className="bg-slate-900 text-emerald-300 font-bold">
+                      Auto-Detect from CSV / Choose Category...
+                    </option>
+                    {CATEGORIES_STRUCTURED.map((group) => (
+                      <optgroup key={group.name} label={group.name} className="bg-slate-900 text-white">
+                        <option value={group.name} className="bg-slate-800 text-emerald-300 font-bold">
+                          📂 ALL {group.name}
+                        </option>
+                        {group.subcategories.map((sub) => (
+                          <option key={sub} value={sub} className="bg-slate-900 text-slate-100">
+                            {sub}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
@@ -3660,7 +3735,7 @@ export default function AdminDashboard() {
                 <div>
                   <label className="block text-[11px] font-black uppercase tracking-wider text-slate-300 mb-2">AI Local NLP Routing</label>
                   <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-2.5 h-[46px] justify-between">
-                    <span className="text-xs text-slate-200 font-bold">Auto-sort by Content & Info</span>
+                    <span className="text-xs text-slate-200 font-bold">Auto-sort into Provinces from CSV</span>
                     <button
                       type="button"
                       onClick={() => setCsvAiEnable(!csvAiEnable)}
@@ -3674,25 +3749,16 @@ export default function AdminDashboard() {
 
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-6">
                 <div className="text-xs text-slate-400">
-                  <span className="font-bold text-white block">CSV Template Header Guide:</span>
-                  Name/Title, Address, Telephone, Offered Services
+                  <span className="font-bold text-white block">CSV Auto-Sort Engine Active:</span>
+                  Automatically sorts every business into its Province, Town/City &amp; Suburb from the CSV file and assigns your chosen Category.
                 </div>
                 <label className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3.5 rounded-xl font-bold text-sm transition cursor-pointer text-center shadow-lg shadow-indigo-600/30">
-                  Select and Upload CSV
-                  <input type="file" accept=".csv" className="hidden" onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = async (event) => {
-                      const content = event.target?.result as string;
-                      if (!content) return;
-                      const rawRows = parseCsvText(content);
-                      if (rawRows.length < 2) {
-                        alert("CSV must have headers and at least one entry row.");
-                        return;
-                      }
-
-                      const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
+                  {csvUploadLoading ? "Uploading & Sorting Provinces..." : "Select and Upload CSV File(s)"}
+                  <input type="file" accept=".csv" multiple className="hidden" onChange={async (e) => {
+                    const files = e.target.files ? Array.from(e.target.files) : [];
+                    if (files.length === 0) return;
+                    setCsvUploadLoading(true);
+                    try {
                       const newAds: any[] = [];
                       let skippedNoPhone = 0;
                       let skippedDuplicates = 0;
@@ -3702,162 +3768,121 @@ export default function AdminDashboard() {
                       const normAddr = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, '');
 
                       const seenBatchKeys = new Set<string>();
+                      const chosenCat = (csvDefaultCategory && csvDefaultCategory !== "Other" && csvDefaultCategory !== "auto") ? csvDefaultCategory : "";
+                      const chosenCodeMatch = chosenCat ? chosenCat.match(/^(\d+\.\d+)\s+/) : null;
+                      const chosenCode = chosenCodeMatch ? chosenCodeMatch[1] : "";
 
-                      for (let i = 1; i < rawRows.length; i++) {
-                        const cols = rawRows[i];
-                        if (!cols || cols.length < 1 || cols.every(c => !c)) continue;
-                        
-                        const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince, file.name);
-                        const title = rec.title;
-                        const address = rec.address;
-                        const primaryPhone = rec.phone || rec.telephone || rec.whatsapp || "";
-                        const services = rec.servicesOffered;
-                        const website = rec.website;
+                      for (const file of files) {
+                        const content = await file.text();
+                        if (!content) continue;
+                        const rawRows = parseCsvText(content);
+                        if (rawRows.length < 2) continue;
 
-                        // Minimum requirement: Business Name, Address, and at least 1 number (Phone, Telephone, or WhatsApp)
-                        const cleanPhone = primaryPhone.replace(/[\s\-\(\)\.]/g, '');
-                        const hasAddress = Boolean((address || rec.suburb || rec.city || "").trim());
-                        if (!title || !hasAddress || !cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
-                          skippedNoPhone++;
-                          continue;
-                        }
+                        const headers = rawRows[0].map(h => (h || "").trim().toLowerCase());
 
-                        const nT = normTitle(title);
-                        const nP = normPhone(primaryPhone);
-                        const nA = normAddr(address || `${rec.suburb || ''} ${rec.city || ''}`);
-                        if (nT && nP && nA) {
-                          const tripletKey = `${nT}|${nP}|${nA}`;
-                          if (seenBatchKeys.has(tripletKey)) {
-                            skippedDuplicates++;
+                        for (let i = 1; i < rawRows.length; i++) {
+                          const cols = rawRows[i];
+                          if (!cols || cols.length < 1 || cols.every(c => !c)) continue;
+                          
+                          const rec = parseCsvRowToRecord(headers, cols, csvDefaultCategory, csvDefaultProvince, file.name);
+                          const title = rec.title;
+                          const address = rec.address;
+                          const primaryPhone = rec.phone || rec.telephone || rec.whatsapp || "";
+                          const services = rec.servicesOffered;
+                          const website = rec.website;
+
+                          const cleanPhone = primaryPhone.replace(/[\s\-\(\)\.]/g, '');
+                          const hasAddress = Boolean((address || rec.suburb || rec.city || "").trim());
+                          if (!title || !hasAddress || !cleanPhone || cleanPhone === "·" || cleanPhone === "" || cleanPhone.length < 7) {
+                            skippedNoPhone++;
                             continue;
                           }
-                          seenBatchKeys.add(tripletKey);
+
+                          const nT = normTitle(title);
+                          const nP = normPhone(primaryPhone);
+                          const nA = normAddr(address || `${rec.suburb || ''} ${rec.city || ''}`);
+                          if (nT && nP && nA) {
+                            const tripletKey = `${nT}|${nP}|${nA}`;
+                            if (seenBatchKeys.has(tripletKey)) {
+                              skippedDuplicates++;
+                              continue;
+                            }
+                            seenBatchKeys.add(tripletKey);
+                          }
+
+                          const category = chosenCat || rec.category || "General Business Services";
+                          const categoryCode = chosenCode || rec.categoryCode || "";
+                          const location = (rec.province && rec.province !== "all") ? rec.province : (csvDefaultProvince !== "all" ? csvDefaultProvince : "gauteng");
+                          const parsedLoc = findSuburbAndTown(location, address ? `${address} ${title}` : title, rec.city);
+
+                          newAds.push({
+                            title: title || "Unknown Business",
+                            category: category,
+                            categoryCode: categoryCode,
+                            province: location,
+                            city: rec.city || parsedLoc.town,
+                            town: rec.city || parsedLoc.town,
+                            location: rec.city || parsedLoc.town,
+                            suburb: rec.suburb || parsedLoc.suburb,
+                            postalCode: rec.postalCode || "",
+                            description: rec.description || (services ? `Services offered: ${services}` : `${category} business listed in ${rec.suburb || parsedLoc.suburb}, ${rec.city || parsedLoc.town}.`),
+                            tradingHours: rec.tradingHours || "",
+                            servicesOffered: services || category,
+                            address: address || "",
+                            phone: primaryPhone,
+                            telephone: rec.telephone || primaryPhone,
+                            whatsapp: rec.whatsapp || primaryPhone,
+                            email: rec.email || "",
+                            website: website || "",
+                            socialLinks: rec.socialLinks || "",
+                            twitter: rec.twitter || "",
+                            tiktok: rec.tiktok || "",
+                            facebook: rec.facebook || "",
+                            instagram: rec.instagram || "",
+                            youtube: rec.youtube || "",
+                            linkedin: rec.linkedin || "",
+                            isApproved: true,
+                            status: "active",
+                          });
                         }
-
-                        let category = rec.category || csvDefaultCategory;
-                        let location = rec.province || csvDefaultProvince;
-
-                        if (csvAiEnable) {
-                          const combinedString = `${title} ${address || ""} ${services || ""}`.toLowerCase();
-                          let detectedCategory = "";
-                          if (combinedString.includes("solar") || combinedString.includes("inverter") || combinedString.includes("battery") || combinedString.includes("panels") || combinedString.includes("backup power")) {
-                            detectedCategory = "Solar Power Installers";
-                          } else if (combinedString.includes("electrician") || combinedString.includes("electrical") || combinedString.includes("electricity") || combinedString.includes("db board")) {
-                            detectedCategory = "Electricians";
-                          } else if (combinedString.includes("mechanic") || combinedString.includes("auto repairs") || combinedString.includes("automotive") || combinedString.includes("garage") || combinedString.includes("gearbox")) {
-                            detectedCategory = "Auto Repairs & Mechanics";
-                          } else if (combinedString.includes("contractor") || combinedString.includes("builder") || combinedString.includes("construction") || combinedString.includes("renovations")) {
-                            detectedCategory = "Builders & Contractors";
-                          } else if (combinedString.includes("cleaning") || combinedString.includes("clean") || combinedString.includes("maid") || combinedString.includes("janitor")) {
-                            detectedCategory = "Cleaning Services";
-                          } else if (combinedString.includes("accounting") || combinedString.includes("accountant") || combinedString.includes("bookkeep") || combinedString.includes("tax")) {
-                            detectedCategory = "Accounting";
-                          } else if (combinedString.includes("it support") || combinedString.includes("computer repair") || combinedString.includes("software") || combinedString.includes("wifi")) {
-                            detectedCategory = "Computer Repairs & IT";
-                          } else if (combinedString.includes("attorney") || combinedString.includes("lawyer") || combinedString.includes("advocate") || combinedString.includes("legal")) {
-                            detectedCategory = "Attorneys & Lawyers";
-                          } else if (combinedString.includes("doctor") || combinedString.includes("medical") || combinedString.includes("dentist") || combinedString.includes("clinic")) {
-                            detectedCategory = "Doctors & Medical";
-                          } else {
-                            const looseMatch = CATEGORIES.find(cat => combinedString.includes(cat.toLowerCase()));
-                            if (looseMatch) detectedCategory = looseMatch;
-                          }
-
-                          if (detectedCategory && (!rec.category || rec.category === csvDefaultCategory)) {
-                            category = detectedCategory;
-                          }
-
-                          let detectedProvince = "";
-                          if (combinedString.includes("kzn") || combinedString.includes("natal") || combinedString.includes("durban") || combinedString.includes("pietermaritzburg") || combinedString.includes("ballito") || combinedString.includes("pmb") || combinedString.includes("margate") || combinedString.includes("umhlanga") || combinedString.includes("stanger")) {
-                            detectedProvince = "kwazulu-natal";
-                          } else if (combinedString.includes("gauteng") || combinedString.includes("gp") || combinedString.includes("johannesburg") || combinedString.includes("joburg") || combinedString.includes("pretoria") || combinedString.includes("midrand") || combinedString.includes("sandton") || combinedString.includes("centurion") || combinedString.includes("randburg")) {
-                            detectedProvince = "gauteng";
-                          } else if (combinedString.includes("western cape") || combinedString.includes("cape town") || combinedString.includes("wc") || combinedString.includes("stellenbosch") || combinedString.includes("paarl") || combinedString.includes("knysna") || combinedString.includes("george") || combinedString.includes("hermanus")) {
-                            detectedProvince = "western-cape";
-                          } else if (combinedString.includes("eastern cape") || combinedString.includes("ec") || combinedString.includes("port elizabeth") || combinedString.includes("gqeberha") || combinedString.includes("east london") || combinedString.includes("mthatha")) {
-                            detectedProvince = "eastern-cape";
-                          } else if (combinedString.includes("free state") || combinedString.includes("fs") || combinedString.includes("bloemfontein") || combinedString.includes("welkom") || combinedString.includes("sasolburg")) {
-                            detectedProvince = "free-state";
-                          } else if (combinedString.includes("limpopo") || combinedString.includes("lp") || combinedString.includes("polokwane") || combinedString.includes("tzaneen") || combinedString.includes("mokopane")) {
-                            detectedProvince = "limpopo";
-                          } else if (combinedString.includes("mpumalanga") || combinedString.includes("mp") || combinedString.includes("nelspruit") || combinedString.includes("mbombela") || combinedString.includes("secunda")) {
-                            detectedProvince = "mpumalanga";
-                          } else if (combinedString.includes("north west") || combinedString.includes("nw") || combinedString.includes("rustenburg") || combinedString.includes("potchefstroom") || combinedString.includes("klerksdorp")) {
-                            detectedProvince = "north-west";
-                          } else if (combinedString.includes("northern cape") || combinedString.includes("nc") || combinedString.includes("kimberley") || combinedString.includes("upington")) {
-                            detectedProvince = "northern-cape";
-                          }
-
-                          if (detectedProvince && (!rec.province || rec.province === csvDefaultProvince)) {
-                            location = detectedProvince;
-                          }
-                        }
-
-                        const parsedLoc = findSuburbAndTown(location, address ? `${address} ${title}` : title, rec.city);
-
-                        newAds.push({
-                          title: title || "Unknown Business",
-                          category: category,
-                          categoryCode: rec.categoryCode || "",
-                          province: location,
-                          city: rec.city || parsedLoc.town,
-                          town: rec.city || parsedLoc.town,
-                          location: rec.city || parsedLoc.town,
-                          suburb: rec.suburb || parsedLoc.suburb,
-                          postalCode: rec.postalCode || "",
-                          description: rec.description || (services ? `Services offered: ${services}` : `${category} business listed in ${rec.suburb || parsedLoc.suburb}, ${rec.city || parsedLoc.town}.`),
-                          tradingHours: rec.tradingHours || "",
-                          servicesOffered: services || category,
-                          address: address || "",
-                          phone: primaryPhone,
-                          telephone: rec.telephone || primaryPhone,
-                          whatsapp: rec.whatsapp || primaryPhone,
-                          email: rec.email || "",
-                          website: website || "",
-                          socialLinks: rec.socialLinks || "",
-                          twitter: rec.twitter || "",
-                          tiktok: rec.tiktok || "",
-                          facebook: rec.facebook || "",
-                          instagram: rec.instagram || "",
-                          youtube: rec.youtube || "",
-                          linkedin: rec.linkedin || "",
-                          isApproved: true,
-                          status: "active",
-                        });
                       }
 
                       if (newAds.length > 0) {
-                        setCsvUploadLoading(true);
-                        try {
-                          const chunkSize = 2000;
-                          let totalAdded = 0;
-                          let totalUpdated = 0;
-                          for (let c = 0; c < newAds.length; c += chunkSize) {
-                            const chunk = newAds.slice(c, c + chunkSize);
-                            const res = await fetch("/api/bot/ad/bulk", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ items: chunk })
-                            });
-                            if (res.ok) {
-                              const rData = await res.json();
-                              totalAdded += Number(rData.addedCount || 0);
-                              totalUpdated += Number(rData.updatedCount || 0);
-                            }
+                        const chunkSize = 2500;
+                        let totalAdded = 0;
+                        let totalUpdated = 0;
+                        for (let c = 0; c < newAds.length; c += chunkSize) {
+                          const chunk = newAds.slice(c, c + chunkSize);
+                          const res = await fetch("/api/bot/ad/bulk", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ items: chunk })
+                          });
+                          if (res.ok) {
+                            const rData = await res.json();
+                            totalAdded += Number(rData.addedCount || 0);
+                            totalUpdated += Number(rData.updatedCount || 0);
                           }
-                          await refreshAdminServerAds();
-                          alert(`Successfully synced ${newAds.length.toLocaleString()} business listings (${totalAdded.toLocaleString()} added, ${totalUpdated.toLocaleString()} updated) directly to the SearchBiz live directory & search console!${skippedDuplicates > 0 ? ` (${skippedDuplicates.toLocaleString()} duplicates skipped)` : ''}${skippedNoPhone > 0 ? ` (${skippedNoPhone.toLocaleString()} missing required fields skipped)` : ''}`);
-                        } catch (err) {
-                          alert("Error syncing CSV batch to SearchBiz server.");
-                        } finally {
-                          setCsvUploadLoading(false);
                         }
+                        await refreshAdminServerAds();
+                        const provBreakdown: Record<string, number> = {};
+                        for (const a of newAds) {
+                          provBreakdown[a.province] = (provBreakdown[a.province] || 0) + 1;
+                        }
+                        const provSummary = Object.entries(provBreakdown)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([k, v]) => `${k.replace(/-/g, ' ').toUpperCase()}: ${v.toLocaleString()}`)
+                          .join(" | ");
+                        alert(`Successfully uploaded and sorted ${newAds.length.toLocaleString()} business listings (${totalAdded.toLocaleString()} added, ${totalUpdated.toLocaleString()} updated) into ${Object.keys(provBreakdown).length} province(s) (${provSummary})!${skippedDuplicates > 0 ? ` (${skippedDuplicates.toLocaleString()} duplicates skipped)` : ''}${skippedNoPhone > 0 ? ` (${skippedNoPhone.toLocaleString()} missing required fields skipped)` : ''}`);
                       } else {
                         alert(`No new listings were imported.${skippedDuplicates > 0 ? ` (${skippedDuplicates.toLocaleString()} duplicates skipped)` : ''}${skippedNoPhone > 0 ? ` (${skippedNoPhone.toLocaleString()} rows missing Business Name, Address, or Phone/Telephone/WhatsApp skipped)` : ''}`);
                       }
+                    } catch (err) {
+                      alert("Error syncing CSV batch to SearchBiz server.");
+                    } finally {
+                      setCsvUploadLoading(false);
                       e.target.value = "";
-                    };
-                    reader.readAsText(file);
+                    }
                   }} />
                 </label>
               </div>

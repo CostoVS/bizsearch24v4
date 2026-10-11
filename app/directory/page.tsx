@@ -62,9 +62,10 @@ function DirectoryContent() {
   const [isLocalLoading, setIsLocalLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(999999);
-  const [visibleRenderLimit, setVisibleRenderLimit] = useState<number>(300);
+  const [visibleRenderLimit, setVisibleRenderLimit] = useState<number>(48);
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const locationInfo: LocationMatchResult = useMemo(() => {
     return resolveLocationDetails({
@@ -109,12 +110,12 @@ function DirectoryContent() {
   // Reset page to 1 when search filters change
   useEffect(() => {
     setCurrentPage(1);
-    setVisibleRenderLimit(300);
+    setVisibleRenderLimit(48);
   }, [q, category, town, province, suburb, postalCode]);
 
   useEffect(() => {
     setIsLocalLoading(true);
-    if (hasFilters || currentPage > 1) {
+    if (hasFilters && currentPage === 1) {
       setServerFilteredAds(null);
     }
 
@@ -148,8 +149,22 @@ function DirectoryContent() {
         if (!isCurrent) return;
         if (data && Array.isArray(data.ads)) {
           const validAds = data.ads.filter(isAdVisible);
-          setServerFilteredAds(validAds);
-          setAllAds(validAds);
+          if (pageSize >= 999999 && currentPage > 1) {
+            setServerFilteredAds(prev => {
+              const existing = prev || [];
+              const seen = new Set(existing.map((a: any) => a.id));
+              const fresh = validAds.filter((a: any) => !seen.has(a.id));
+              return [...existing, ...fresh];
+            });
+            setAllAds(prev => {
+              const seen = new Set(prev.map((a: any) => a.id));
+              const fresh = validAds.filter((a: any) => !seen.has(a.id));
+              return [...prev, ...fresh];
+            });
+          } else {
+            setServerFilteredAds(validAds);
+            setAllAds(validAds);
+          }
           if (typeof data.totalAdsCount === 'number') {
             setServerTotalCount(data.totalAdsCount);
           }
@@ -792,13 +807,15 @@ function DirectoryContent() {
                           Paid Tier
                         </span>
                       </div>
-                      <div className="blur-[5px] select-none pointer-events-none opacity-60 text-xs space-y-1.5">
-                        <AdDescription description={ad.description || `${ad.title} operating in ${ad.location}`} />
-                        <p className="font-medium text-slate-600">
-                          Services Offered: {ad.servicesOffered || ad.category} | Trading Hours: {(ad as any).tradingHours || '08:00 - 17:00'}
+                      <div className="blur-[2px] select-none pointer-events-none opacity-55 text-xs space-y-1">
+                        <p className="line-clamp-2 text-slate-600">
+                          {ad.description || `${ad.title} operating in ${ad.city || ad.location}`}
                         </p>
-                        <p className="font-medium text-slate-600">
-                          Website: {ad.website || 'www.business.co.za'} | Email: {ad.email || 'info@business.co.za'} | Socials: X • Facebook • Instagram • YouTube • TikTok
+                        <p className="font-medium text-slate-600 truncate">
+                          Services: {ad.servicesOffered || ad.category} | Hours: {(ad as any).tradingHours || '08:00 - 17:00'}
+                        </p>
+                        <p className="font-medium text-slate-600 truncate">
+                          Web & Email • Social Links Locked
                         </p>
                       </div>
                     </div>
@@ -879,25 +896,36 @@ function DirectoryContent() {
           </div>
 
           {/* Progressive Render / No-Limit Load More when All (No Limit) is active */}
-          {pageSize >= 999999 && fullPaginatedResults.length > visibleRenderLimit && (
-            <div className="mt-8 bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+          {pageSize >= 999999 && (fullPaginatedResults.length > visibleRenderLimit || totalMatchingAds > fullPaginatedResults.length) && (
+            <div ref={loadMoreSentinelRef} className="mt-8 bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-xs sm:text-sm font-bold text-slate-700">
-                Displaying <span className="text-emerald-700 font-extrabold">{visibleRenderLimit.toLocaleString()}</span> of <span className="text-slate-900 font-extrabold">{totalMatchingAds.toLocaleString()}</span> matching businesses (No Limits Active)
+                Displaying <span className="text-emerald-700 font-extrabold">{Math.min(visibleRenderLimit, fullPaginatedResults.length).toLocaleString()}</span> of <span className="text-slate-900 font-extrabold">{totalMatchingAds.toLocaleString()}</span> matching businesses (No Limits Active)
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setVisibleRenderLimit(prev => prev + 500)}
+                  onClick={() => {
+                    const nextLimit = visibleRenderLimit + 120;
+                    setVisibleRenderLimit(nextLimit);
+                    if (nextLimit >= fullPaginatedResults.length && fullPaginatedResults.length < totalMatchingAds) {
+                      setCurrentPage(prev => prev + 1);
+                    }
+                  }}
                   className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wide transition shadow-sm cursor-pointer"
                 >
-                  Show Next 500 Businesses
+                  Show Next 120 Businesses
                 </button>
                 <button
                   type="button"
-                  onClick={() => setVisibleRenderLimit(fullPaginatedResults.length)}
+                  onClick={() => {
+                    setVisibleRenderLimit(fullPaginatedResults.length + 250);
+                    if (fullPaginatedResults.length < totalMatchingAds) {
+                      setCurrentPage(prev => prev + 1);
+                    }
+                  }}
                   className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wide transition shadow-sm cursor-pointer"
                 >
-                  Show All {fullPaginatedResults.length.toLocaleString()} Instantly
+                  Load Next 250 Batch Instantly
                 </button>
               </div>
             </div>
