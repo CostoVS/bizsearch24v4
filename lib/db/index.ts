@@ -15,6 +15,10 @@ export const markDbOffline = () => {
 };
 
 export const isDbCurrentlyOffline = () => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString || connectionString.includes('@db:5432')) {
+    return true; // Permanent offline: use lightning-fast RAM/disk store without reconnection churn
+  }
   if (isDbOffline) {
     if (Date.now() - lastOfflineCheck < 60000) {
       return true;

@@ -797,11 +797,11 @@ export function parseCsvRowToRecord(
   if (!rawCsvProvince) {
     const locDetection = detectLocationFromPhoneAndText(
       phone || "",
-      `${title || ""} ${address || ""} ${resolvedSuburb || ""} ${city || ""}`,
+      `${title || ""} ${address || ""} ${resolvedSuburb || ""} ${city || ""} ${postalCode || ""}`,
       effectiveFallbackProv,
       coords || undefined
     );
-    if (!province || (province === "gauteng" && locDetection.province && locDetection.province !== "gauteng")) {
+    if (!province || (province === "gauteng" && locDetection.province && locDetection.province !== "gauteng") || (!rawCsvProvince && locDetection.province)) {
       province = locDetection.province || effectiveFallbackProv;
     }
     if (!city || (city === "Johannesburg" && locDetection.city && locDetection.city !== "Johannesburg")) {

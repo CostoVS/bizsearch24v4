@@ -154,8 +154,8 @@ export function DataSyncer() {
     };
 
     // Delay first background sync so initial page render and interactions have 100% network priority
-    const initialTimer = setTimeout(performSync, 2500);
-    const syncInterval = setInterval(performSync, 45000); // 45s background sync
+    const initialTimer = setTimeout(performSync, 5000);
+    const syncInterval = setInterval(performSync, 60000); // 45s background sync
 
     const handleVisibilityChange = () => {
       if (!document.hidden) performSync();

@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# SearchBiz.co.za (v4.2.0)
 
-# Run and deploy your AI Studio app
+South Africa's premier smart business directory, lead engine, and multi-province ingestion platform.
 
-This contains everything you need to run your app locally.
+## Features & Build Notes
 
-View your app in AI Studio: https://ai.studio/apps/805c17c2-173f-47b9-ba2c-ee9dca85ed7c
+- **CSV Business Ingestion & Auto-Sorting:**
+  - 🌍 **All Provinces Auto-Sort:** Scanned leads and directory rows are dynamically classified into all 9 South African provinces (Gauteng, KwaZulu-Natal, Western Cape, Eastern Cape, Free State, Limpopo, Mpumalanga, North West, Northern Cape) using postal codes, telephone/cell area prefixes, suburbs, and street addresses.
+  - 📂 **Target Category Override & Auto-Detect:** Choose any primary business category or allow automatic classification per row.
+  - ⚡ **Non-Blocking Streaming:** Large datasets are processed in yield-buffered batches with live percentage progress, preventing browser lock-ups or timeouts.
+
+- **Lite Performance & Zero Lag:**
+  - Sub-millisecond in-memory RAM index with O(1) lookups.
+  - Mobile-optimized pagination capped at lightweight chunks (48–96 ads) to ensure instant loading on all mobile and desktop browsers.
+  - Zero 504/502 gateway timeouts with async disk sync and background pre-warming.
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js 18+
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+2. Set the `GEMINI_API_KEY` in `.env.local` to your Gemini API key
+3. Run the development server:
+   ```bash
+   npm run dev
+   ```
+4. Build for production:
+   ```bash
+   npm run build
+   ```

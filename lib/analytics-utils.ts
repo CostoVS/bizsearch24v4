@@ -137,8 +137,10 @@ async function getIpAndGeo() {
   }
 
   try {
-    // Attempt to hit ipapi.co (highly reliable free public endpoint)
-    const res = await fetch("https://ipapi.co/json/", { cache: 'no-store' });
+    // Safe non-blocking check with strict 400ms timeout so pages NEVER stall
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 400);
+    const res = await fetch("https://ipapi.co/json/", { cache: 'no-store', signal: controller.signal }).finally(() => clearTimeout(timeoutId));
     if (res.ok) {
       const data = await res.json();
       ipCache = {
@@ -150,22 +152,7 @@ async function getIpAndGeo() {
       return ipCache;
     }
   } catch (err) {
-    // Fallback to a secondary free check if blocked
-    try {
-      const res2 = await fetch("https://api.ipify.org?format=json");
-      if (res2.ok) {
-        const data2 = await res2.json();
-        ipCache = {
-          ip: data2.ip || "102.132.0.1",
-          city: "Cape Town",
-          region: "Western Cape",
-          country: "South Africa"
-        };
-        return ipCache;
-      }
-    } catch {
-      // noop
-    }
+    // Non-blocking fallback
   }
 
   // Final representative IP/Geo fallback (Soweto, Johannesburg, Gauteng) if offline or blocked

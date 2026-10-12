@@ -127,12 +127,10 @@ function DirectoryContent() {
     if (suburb) params.set('suburb', suburb);
     if (postalCode) params.set('postalCode', postalCode);
 
-    const effectiveSize = pageSize >= 999999 ? 100000 : pageSize;
+    // Fast, lightweight pagination to prevent mobile browser freeze or OOM
+    const effectiveSize = pageSize >= 999999 ? 48 : Math.min(pageSize, 96);
     params.set('page', String(currentPage));
     params.set('pageSize', String(effectiveSize));
-    if (pageSize >= 999999) {
-      params.set('noLimit', 'true');
-    }
 
     const endpoint = `/api/storage?${params.toString()}`;
     let isCurrent = true;

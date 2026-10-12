@@ -141,6 +141,7 @@ export default function AdminDashboard() {
   const [csvPreviewLimit, setCsvPreviewLimit] = useState<number>(50);
   const [csvEditIndex, setCsvEditIndex] = useState<number | null>(null); 
   const [csvUploadLoading, setCsvUploadLoading] = useState(false);
+  const [csvUploadProgressText, setCsvUploadProgressText] = useState("");
   const [csvSearchQuery, setCsvSearchQuery] = useState("");
   const [csvProvinceFilter, setCsvProvinceFilter] = useState("all");
   const [csvCategoryFilter, setCsvCategoryFilter] = useState("all");
@@ -3065,10 +3066,26 @@ export default function AdminDashboard() {
                             const chosenCodeMatch = chosenCat ? chosenCat.match(/^(\d+\.\d+)\s+/) : null;
                             const chosenCode = chosenCodeMatch ? chosenCodeMatch[1] : "";
 
+                            const totalBatches = Math.ceil(validWithPhone.length / chunkSize);
                             for (let c = 0; c < validWithPhone.length; c += chunkSize) {
+                              const currentBatch = Math.floor(c / chunkSize) + 1;
+                              const currentCount = Math.min(c + chunkSize, validWithPhone.length);
+                              setCsvUploadProgressText(`Uploading batch ${currentBatch} of ${totalBatches} (${currentCount.toLocaleString()} / ${validWithPhone.length.toLocaleString()} ads)...`);
+
                               const batchSlice = validWithPhone.slice(c, c + chunkSize).map((item) => {
-                                const rawItemProv = (item.province && item.province !== "all") ? item.province : (csvDefaultProvince !== "all" ? csvDefaultProvince : "gauteng");
-                                const prov = rawItemProv.toLowerCase().trim();
+                                let prov = (item.province && item.province !== "all") ? item.province.toLowerCase().trim() : "";
+                                if (!prov) {
+                                  if (csvDefaultProvince !== "all") {
+                                    prov = csvDefaultProvince.toLowerCase().trim();
+                                  } else {
+                                    const loc = detectLocationFromPhoneAndText(
+                                      item.phone || item.telephone || item.whatsapp || "",
+                                      `${item.title || ""} ${item.address || ""} ${item.suburb || ""} ${item.city || ""} ${item.postalCode || ""}`,
+                                      "gauteng"
+                                    );
+                                    prov = (loc.province || "gauteng").toLowerCase().trim();
+                                  }
+                                }
                                 const addr = item.address || "";
                                 const defaultCity = item.city || item.town || "";
                                 const parsedLoc = findSuburbAndTown(prov, addr ? `${addr} ${item.title || ""}` : (item.title || ""), defaultCity);
@@ -3117,21 +3134,25 @@ export default function AdminDashboard() {
                                 totalAdded += Number(rData.addedCount || 0);
                                 totalUpdated += Number(rData.updatedCount || 0);
                               }
+                              // Non-blocking yield to keep browser completely responsive
+                              await new Promise(resolve => setTimeout(resolve, 20));
                             }
 
                             await refreshAdminServerAds();
                             setCsvFileParsed([]);
+                            setCsvUploadProgressText("");
                             alert(`Success! Uploaded and sorted ${validWithPhone.length.toLocaleString()} listings (${totalAdded.toLocaleString()} newly added, ${totalUpdated.toLocaleString()} updated) across their respected South African provinces, towns, suburbs, postal codes & category!`);
                           } catch (err) {
                             alert("Error writing committed rows to directories.");
                           } finally {
                             setCsvUploadLoading(false);
+                            setCsvUploadProgressText("");
                           }
                         }}
                         disabled={csvUploadLoading}
                         className="flex-1 md:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-60"
                       >
-                        {csvUploadLoading ? "Uploading & Sorting Provinces..." : `🚀 Upload & Sort into Provinces (${csvFileParsed.length.toLocaleString()} Ads)`}
+                        {csvUploadLoading ? (csvUploadProgressText || "Uploading & Sorting Provinces...") : `🚀 Upload & Sort into Provinces (${csvFileParsed.length.toLocaleString()} Ads)`}
                       </button>
                     </div>
                   </div>

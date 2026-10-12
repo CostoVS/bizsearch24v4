@@ -676,36 +676,20 @@ async function checkAndReloadFromDiskAsync(force: boolean = false): Promise<void
     const memCount = Array.isArray(globalRef.storageCache?.ads) ? globalRef.storageCache.ads.length : 0;
     const memPurgeTime = globalRef.storageCache?.lastPurgeAt || 0;
 
-    // Atomic synchronous swap: never yield between freeing old cache and assigning new cache so concurrent HTTP requests never trigger a double load!
-    if (force || maxSize > 25 * 1024 * 1024) {
-      globalRef.indexedDataset = null;
-      globalRef.adminStatsCache = null;
-      globalRef.existingAdMap = null;
-      globalRef.storageCache = null;
-    }
-
+    // Safe atomic swap: Never nullify in-memory cache beforehand so concurrent requests always succeed with zero downtime!
     const diskData = readLargeStorageJsonSync(targetPathToRead);
+    if (!diskData || typeof diskData !== 'object') {
+      return;
+    }
     const diskCount = Array.isArray(diskData?.ads) ? diskData.ads.length : 0;
     const diskUpdatedAt = diskData?.updatedAt || 0;
     const diskPurgeTime = diskData?.lastPurgeAt || 0;
 
-    // If disk has active ads, always load them into memory index!
-    if (diskCount > 0) {
-      diskData.updatedAt = diskData.updatedAt || Date.now();
-      const prebuiltIndex = buildIndexedDatasetSync(diskData);
-      globalRef.storageCache = diskData;
-      globalRef.storageMtime = currentMtime;
-      globalRef.storageCacheTime = Date.now();
-      globalRef.indexedDataset = prebuiltIndex;
-      globalRef.adminStatsCache = prebuiltIndex.adminStats;
-      globalRef.existingAdMap = null;
-      return;
-    }
-
     const diskWasPurged = (diskPurgeTime > memPurgeTime) || (diskCount === 0 && diskPurgeTime > 0);
-    if (force || diskWasPurged || diskCount >= memCount) {
+    if (force || diskCount > 0 || diskWasPurged || diskCount >= memCount) {
       diskData.updatedAt = diskData.updatedAt || Date.now();
       const prebuiltIndex = buildIndexedDatasetSync(diskData);
+      // Atomic pointer swap: zero downtime, continuous serving
       globalRef.storageCache = diskData;
       globalRef.storageMtime = currentMtime;
       globalRef.storageCacheTime = Date.now();

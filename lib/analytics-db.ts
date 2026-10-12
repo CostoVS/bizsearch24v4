@@ -89,16 +89,10 @@ export async function saveAnalyticsEvents(events: any[]): Promise<void> {
   // Preserve up to 5000 rich analytics events
   const trimmed = deduped.slice(0, 5000);
 
-  // Write to local file backup instantly
-  try {
-    const dir = path.dirname(ANALYTICS_FILE_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(ANALYTICS_FILE_PATH, JSON.stringify(trimmed, null, 2), 'utf-8');
-  } catch (e) {
-    console.error("Failed to write local analytics file:", e);
-  }
+  // Write to local file backup asynchronously - NEVER block main event loop
+  fs.promises.mkdir(path.dirname(ANALYTICS_FILE_PATH), { recursive: true })
+    .then(() => fs.promises.writeFile(ANALYTICS_FILE_PATH, JSON.stringify(trimmed), 'utf-8'))
+    .catch((e) => console.error("Async analytics file write error:", e?.message));
 
   // Write to DB asynchronously in background - NEVER block HTTP response thread
   Promise.resolve().then(async () => {
