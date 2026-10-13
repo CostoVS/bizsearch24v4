@@ -166,8 +166,16 @@ export const normalizeBusinessRecord = (raw: Partial<BusinessRecord>): BusinessR
     if (found) postalCode = found;
   }
 
-  return {
-    id: normalizeText(raw.id) || `${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+  // Ensure CSV uploads are clearly marked and never auto-approved/verified
+  const source = (raw.source || "").toString().toLowerCase();
+
+  let id = normalizeText(raw.id) || `${Date.now()}-${Math.random().toString(16).slice(2, 7)}`;
+  if (source === 'csv' || source === 'csv_upload' || String(id).startsWith('csv-') === false && source === 'csv') {
+    if (!String(id).startsWith('csv-')) id = `csv-${id}`;
+  }
+
+  const result: BusinessRecord = {
+    id,
     name,
     category,
     province,
@@ -182,6 +190,18 @@ export const normalizeBusinessRecord = (raw: Partial<BusinessRecord>): BusinessR
     createdAt: normalizeText(raw.createdAt) || new Date().toISOString(),
     source: normalizeText(raw.source) || "manual",
   };
+
+  // If this was uploaded via CSV, explicitly force approval/verified flags to false
+  if (result.source && result.source.toLowerCase().includes('csv')) {
+    (result as any).adminApproved = false;
+    (result as any).isApproved = false;
+    (result as any).status = 'pending';
+    (result as any).approvalStatus = 'pending';
+    (result as any).verified = false;
+    (result as any).isVerified = false;
+  }
+
+  return result;
 };
 
 export const getBusinessesList = (filters?: { province?: string; category?: string; q?: string }) => {
@@ -291,7 +311,7 @@ export const saveBusiness = (record: Partial<BusinessRecord>) => {
 
 export const buildBusinessFromCsvRow = (row: Record<string, string>) => {
   const business: Partial<BusinessRecord> = {
-    id: "",
+    id: `csv-${Date.now()}-${Math.random().toString(16).slice(2,8)}`,
     name: row.business_name || row.name || row.company || row.title || "",
     category: row.category || row.business_category || row.industry || "General Business Services",
     province: row.province || row.state || row.region || "Gauteng",
@@ -303,7 +323,7 @@ export const buildBusinessFromCsvRow = (row: Record<string, string>) => {
     website: row.website || row.url || "",
     address: row.address || row.street_address || row.street || "",
     description: row.description || row.services || row.about || "",
-    source: "csv_upload",
+    source: "csv",
     createdAt: new Date().toISOString(),
   };
 
