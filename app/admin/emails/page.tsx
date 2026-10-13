@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 
 type Business = any;
 
-action async function fetchJson(url: string, opts?: any) {
+async function fetchJson(url: string, opts?: any) {
   const res = await fetch(url, opts);
   return res.json();
 }
@@ -21,9 +21,9 @@ export default function AdminBulkEmailPanel() {
 
   useEffect(() => {
     (async () => {
-      const b = await fetch('/api/admin/businesses').then(r => r.json());
+      const b = await fetchJson('/api/admin/businesses');
       if (b && b.success) setBusinesses(b.businesses || []);
-      const t = await fetch('/api/admin/email-templates').then(r => r.json());
+      const t = await fetchJson('/api/admin/email-templates');
       if (t && t.success) setTemplates(t.templates || []);
     })();
   }, []);
