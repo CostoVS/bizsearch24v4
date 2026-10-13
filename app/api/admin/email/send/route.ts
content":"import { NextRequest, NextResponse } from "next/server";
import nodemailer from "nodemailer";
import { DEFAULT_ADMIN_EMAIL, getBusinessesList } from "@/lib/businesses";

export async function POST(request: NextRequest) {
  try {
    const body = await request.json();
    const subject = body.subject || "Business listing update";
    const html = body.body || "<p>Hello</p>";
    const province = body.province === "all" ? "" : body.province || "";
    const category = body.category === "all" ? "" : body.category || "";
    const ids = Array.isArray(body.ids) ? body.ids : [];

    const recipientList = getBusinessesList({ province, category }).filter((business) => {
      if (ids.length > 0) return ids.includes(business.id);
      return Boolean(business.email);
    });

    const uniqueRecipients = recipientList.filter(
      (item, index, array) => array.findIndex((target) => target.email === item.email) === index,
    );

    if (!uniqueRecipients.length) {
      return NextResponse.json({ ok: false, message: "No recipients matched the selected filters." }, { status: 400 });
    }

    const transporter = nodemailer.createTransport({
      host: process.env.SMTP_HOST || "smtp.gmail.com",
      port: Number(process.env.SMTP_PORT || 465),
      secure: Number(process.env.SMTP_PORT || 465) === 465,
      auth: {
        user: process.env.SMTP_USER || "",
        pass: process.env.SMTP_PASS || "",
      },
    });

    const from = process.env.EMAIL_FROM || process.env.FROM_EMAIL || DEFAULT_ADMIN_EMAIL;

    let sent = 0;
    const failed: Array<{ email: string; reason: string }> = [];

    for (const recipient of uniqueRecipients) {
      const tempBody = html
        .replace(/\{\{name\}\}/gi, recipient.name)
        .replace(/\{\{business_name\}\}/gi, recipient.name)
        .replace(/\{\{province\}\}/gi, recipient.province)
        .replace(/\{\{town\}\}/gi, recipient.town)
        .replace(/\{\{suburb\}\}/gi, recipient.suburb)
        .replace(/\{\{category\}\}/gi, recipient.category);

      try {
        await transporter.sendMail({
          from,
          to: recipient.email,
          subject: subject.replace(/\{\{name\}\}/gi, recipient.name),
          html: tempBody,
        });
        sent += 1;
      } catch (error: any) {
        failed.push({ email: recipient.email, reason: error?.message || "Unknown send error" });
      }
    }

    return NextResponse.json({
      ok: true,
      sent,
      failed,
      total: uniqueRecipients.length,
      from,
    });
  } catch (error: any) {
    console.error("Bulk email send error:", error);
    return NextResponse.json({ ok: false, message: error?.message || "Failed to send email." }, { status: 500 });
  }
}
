@@ -1,0 +1,61 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getBusinessesList } from "@/lib/businesses";
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const province = searchParams.get("province") || "";
+  const category = searchParams.get("category") || "";
+  const q = searchParams.get("q") || "";
+  const page = Number(searchParams.get("page") || "1");
+  const limit = Number(searchParams.get("limit") || "50");
+
+  const items = getBusinessesList({ province: province === "all" ? "" : province, category: category === "all" ? "" : category, q });
+  const start = (page - 1) * limit;
+  const paged = items.slice(start, start + limit);
+
+  return NextResponse.json({
+    ok: true,
+    total: items.length,
+    page,
+    limit,
+    items: paged,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+
+  if (!body || !body.name) {
+    return NextResponse.json({ ok: false, message: "Business name is required." }, { status: 400 });
+  }
+
+  const business = {
+    ...body,
+    id: body.id || `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    province: body.province || "Gauteng",
+    createdAt: body.createdAt || new Date().toISOString(),
+  };
+
+  const { saveBusiness } = await import("@/lib/businesses");
+  const saved = saveBusiness(business);
+
+  return NextResponse.json({ ok: true, business: saved });
+}
+
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ ok: false, message: "No business id provided." }, { status: 400 });
+  }
+
+  const { readBusinessesStore, writeBusinessesStore } = await import("@/lib/businesses");
+  const businesses = readBusinessesStore();
+  const updated = businesses.filter((item) => item.id !== id);
+  writeBusinessesStore(updated);
+
+  return NextResponse.json({ ok: true, deleted: true });
+}
+
+export const dynamic = "force-dynamic";
