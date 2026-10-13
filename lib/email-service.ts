@@ -6,9 +6,9 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'admin@searchbiz.co.za';
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: any = null;
 
-function getTransporter() {
+function getTransporter(): any {
   if (transporter) return transporter;
 
   if (!SMTP_HOST || !SMTP_PORT) {
@@ -32,7 +32,7 @@ function getTransporter() {
 }
 
 export async function sendEmail(to: string, subject: string, html: string, from?: string) {
-  const tr = getTransporter();
+  const tr: any = getTransporter();
   const info = await tr.sendMail({
     from: from || FROM_EMAIL,
     to,
