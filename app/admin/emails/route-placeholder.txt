@@ -1,0 +1,22 @@
+import React from 'react';
+import Link from 'next/link';
+
+export default function AdminEmailsIndex() {
+  return (
+    <div className="p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">Admin — Emails</h1>
+          <p className="text-sm text-slate-600">Send bulk emails to businesses by selection, province or category. Uses admin@searchbiz.co.za as sender when configured.</p>
+        </div>
+        <div>
+          <React.Suspense fallback={<div>Loading...</div>}>
+            {/* @ts-ignore server component import of client component */}
+            {/* Client component lives at app/admin/emails/page.tsx and will render the UI */}
+            <div id="bulk-email-panel-root"></div>
+          </React.Suspense>
+        </div>
+      </div>
+    </div>
+  );
+}
