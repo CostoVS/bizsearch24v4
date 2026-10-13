@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { findPostalCode } from "./po-map";
+import { ALL_TOWNS } from "./locations";
 
 export type BusinessRecord = {
   id: string;
@@ -92,6 +93,37 @@ const normForKey = (s: string) =>
     .replace(/[^a-z0-9]/g, "")
     .trim();
 
+const normalizeString = (v: string) =>
+  (v || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// Find the canonical town from ALL_TOWNS with exact, startsWith, or includes matching
+function canonicalTownMatch(candidate?: string): string | null {
+  const input = normalizeString(candidate || "");
+  if (!input) return null;
+
+  // exact match first
+  for (const t of ALL_TOWNS) {
+    if (normalizeString(t) === input) return t;
+  }
+  // startsWith
+  for (const t of ALL_TOWNS) {
+    const n = normalizeString(t);
+    if (n.startsWith(input) || input.startsWith(n)) return t;
+  }
+  // includes
+  for (const t of ALL_TOWNS) {
+    const n = normalizeString(t);
+    if (n.includes(input) || input.includes(n)) return t;
+  }
+  return null;
+}
+
 export const dedupeBusinessKey = (record: Partial<BusinessRecord>) => {
   const phone = toPhoneDigits(record.phone || "").replace(/^[+]?27/, "0");
   const email = normalizeText(record.email).toLowerCase();
@@ -109,14 +141,26 @@ export const normalizeBusinessRecord = (raw: Partial<BusinessRecord>): BusinessR
   const name = normalizeText(raw.name) || "Unnamed Business";
   const category = normalizeText(raw.category) || "General Business Services";
   const province = normalizeProvince(normalizeText(raw.province));
-  const town = normalizeText(raw.town || raw.suburb);
-  const suburb = normalizeText(raw.suburb || raw.town);
-  let postalCode = normalizeText(raw.postalCode || raw.postal || '');
+  let town = normalizeText(raw.town || raw.city || raw.location || "");
+  let suburb = normalizeText(raw.suburb || raw.area || raw.neighbourhood || "");
+  let postalCode = normalizeText(raw.postalCode || raw.postal || "");
   const phone = toPhoneDigits(raw.phone);
   const email = normalizeText(raw.email).toLowerCase();
   const website = normalizeText(raw.website).toLowerCase();
 
-  // Attempt to find postal code from PO map if missing
+  // canonicalize town/suburb using ALL_TOWNS where possible
+  const townCandidate = town || suburb || name;
+  const canonicalTown = canonicalTownMatch(townCandidate);
+  if (canonicalTown) {
+    town = canonicalTown;
+    // if suburb is empty, try to set suburb = town for lookup
+    if (!suburb) suburb = town;
+  } else {
+    // try to use existing town candidate as-is
+    town = town || suburb;
+  }
+
+  // Attempt to find postal code from PO map if missing, using canonicalized values
   if (!postalCode) {
     const found = findPostalCode(suburb || town || name, town || suburb);
     if (found) postalCode = found;
